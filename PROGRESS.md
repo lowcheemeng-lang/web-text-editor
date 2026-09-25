@@ -34,7 +34,7 @@ A new session (human or agent) needs zero prior context if it reads these three 
 
 | # | Task | Status | Evidence | Commit |
 |---|------|--------|----------|--------|
-| 1 | Define scope & compatibility matrix | DONE | `docs/scope.md` — 3 tiers, capability matrix, encoding matrix, R1–R7 risks; all claims sourced | `task-1: scope` |
+| 1 | Define scope & compatibility matrix | DONE | `docs/scope.md` — 3 tiers, capability matrix, encoding matrix, R1–R7 risks; all claims sourced | `1b5bcd4` |
 | 2 | Initialize project scaffold | TODO | - | - |
 | 3 | Editor core with N++ defaults | TODO | - | - |
 | 4 | File operations without backend | TODO | - | - |
@@ -112,9 +112,10 @@ told otherwise, and treat that choice as reversible until Task 3 starts.
 - D1–D9 are *proposed*, not confirmed.
 
 **Repo state at session end**
+- Everything from this session is committed in `1b5bcd4`, except the SHA-recording edit itself.
 - Pre-existing: commit `25c7edd "First release of Hello World!"` with `sample.html`
-  deleted in the worktree. Left untouched — not this project's file to remove.
-- New untracked: `docs/`, `scripts/`, `PROGRESS.md`, `.gitignore`, `.hermes/plans/`.
+  deleted in the worktree and **not staged** — not this project's file to remove, left for
+  the user to decide. `node scripts/status.mjs` will keep reporting it as uncommitted.
 
 ## Blockers / open questions
 
