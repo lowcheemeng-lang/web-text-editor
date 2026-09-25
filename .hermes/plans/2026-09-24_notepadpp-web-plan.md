@@ -6,7 +6,7 @@
 > spec (what to build, which files, how to verify). Start any new session by reading
 > `PROGRESS.md` → `docs/scope.md` → this plan, in that order.
 
-**Status:** Task 1 ✅ done · Tasks 2–8 ⬜ todo · see `PROGRESS.md` for live state (`node scripts/status.mjs`)
+**Status:** Tasks 1–2 ✅ done · Tasks 3–8 ⬜ todo · see `PROGRESS.md` for live state (`npm run status`)
 
 **Goal:** Produce a browser-based text editor inspired by Notepad++ that runs fully client-side with no backend dependency.
 

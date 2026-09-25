@@ -1,0 +1,46 @@
+/*
+ * Minimal shell styles. Task 3 owns the real Notepad++ look (menu, toolbar,
+ * tabs, status bar, theme), so this file only guarantees the editor fills the
+ * viewport and respects the system colour scheme.
+ */
+:root {
+  color-scheme: light dark;
+  --shell-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono-font: "Cascadia Mono", "Consolas", "DejaVu Sans Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--shell-font);
+}
+
+#app {
+  flex: 1 1 auto;
+  min-height: 0; /* let the editor scroll instead of stretching the page */
+  display: flex;
+  flex-direction: column;
+}
+
+/* CodeMirror needs a sized ancestor to scroll internally. */
+.cm-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  font-family: var(--mono-font);
+  font-size: 14px;
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}

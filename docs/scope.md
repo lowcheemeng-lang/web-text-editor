@@ -1,8 +1,8 @@
 # Scope & Browser Compatibility Matrix
 
 **Deliverable:** Task 1 of the Notepad++ Web Edition plan.
-**Status:** D7 accepted (user-confirmed 2026-09-25). **D2 under review** — see
-`docs/editor-core-decision.md`. D1, D3–D6, D8–D9 still need a yes/no.
+**Status:** D7 accepted (user-confirmed 2026-09-25). D2 **accepted 2026-09-25** — CodeMirror 6
+is the editor core (`docs/editor-core-decision.md`). D1, D3–D6, D8–D9 still need a yes/no.
 **Reference target:** Notepad++ 8.9.8 (Scintilla-based, C++/Win32, GPL).
 **Verified on:** 2026-09-25. Source links in [Sources](#sources).
 

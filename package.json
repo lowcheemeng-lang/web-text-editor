@@ -1,0 +1,23 @@
+{
+  "name": "notepadpp-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Browser-based, backend-free text editor in the spirit of Notepad++",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "status": "node scripts/status.mjs"
+  },
+  "dependencies": {
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.13",
+    "codemirror": "^6.0.2"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}
