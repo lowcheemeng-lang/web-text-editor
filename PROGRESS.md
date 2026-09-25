@@ -38,7 +38,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | # | Task | Status | Evidence | Commit |
 |---|------|--------|----------|--------|
 | 1 | Define scope & compatibility matrix | DONE | `docs/scope.md` — 3 tiers, capability matrix, encoding matrix, R1–R7 risks; all claims sourced | `1b5bcd4` |
-| 2 | Initialize project scaffold | DONE | `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **382.37 kB / 123.08 kB gz**; `python3 scripts/verify-task2.py` → **PASS** (HTTP 200, 1 CM6 instance, 15 lines, typing verified, 0 console errors) | _this commit_ |
+| 2 | Initialize project scaffold | DONE | `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **382.37 kB / 123.08 kB gz**; `python3 scripts/verify-task2.py` → **PASS** (HTTP 200, 1 CM6 instance, 15 lines, typing verified, 0 console errors) | `26aaea6` |
 | 3 | Editor core with N++ defaults | TODO | - | - |
 | 4 | File operations without backend | TODO | - | - |
 | 5 | Search, replace, navigation | TODO | - | - |
