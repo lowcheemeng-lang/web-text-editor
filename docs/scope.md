@@ -1,7 +1,8 @@
 # Scope & Browser Compatibility Matrix
 
 **Deliverable:** Task 1 of the Notepad++ Web Edition plan.
-**Status:** Draft for sign-off — decisions D1–D9 below need a yes/no.
+**Status:** D7 accepted (user-confirmed 2026-09-25). **D2 under review** — see
+`docs/editor-core-decision.md`. D1, D3–D6, D8–D9 still need a yes/no.
 **Reference target:** Notepad++ 8.9.8 (Scintilla-based, C++/Win32, GPL).
 **Verified on:** 2026-09-25. Source links in [Sources](#sources).
 
@@ -184,8 +185,16 @@ The MVP is done when, in Chrome **and** Firefox:
 
 ## 10. Open questions needing your decision
 
-1. **Confirm D2 (CodeMirror 6 over Monaco).** The only reason to prefer Monaco is its built-in minimap and VS-Code-grade IntelliSense — neither is a Notepad++ feature. If you disagree, this is the cheapest moment to change the core.
-2. **Confirm D7** — accepting that Run/exec and native plugins are permanently out.
+1. **Confirm D2 (CodeMirror 6 over Monaco).** Full advantages/drawbacks analysis with sources:
+   `docs/editor-core-decision.md`. Headline: CM6 wins on payload (1.26 MB gz vs 5.01 MB), mobile
+   (Monaco is officially unsupported on mobile browsers), CSS theming to an N++ look, multiple
+   independently-configured instances, plugin hosting, and viewport rendering for large files.
+   Monaco's only real wins here are its built-in minimap and diff editor — both Tier 3, both
+   substitutable. Reversal trigger: if Minimap **and** Compare are MVP requirements on a
+   Chromium-only target, Monaco becomes the cheaper route.
+2. ~~**Confirm D7** — accepting that Run/exec and native plugins are permanently out.~~
+   **RESOLVED 2026-09-25: user confirmed D7.** Run/exec, NppExec, external tools and native
+   plugin DLLs are permanently out of scope.
 3. **Tier 3 priority** — UDL support, or better encoding/large-file handling? Only one fits phase 3.
 4. **Firefox/Safari in the MVP acceptance gate, or Chromium-only first?** Including them roughly doubles the file-I/O test matrix. Recommendation: keep them, since D3 exists precisely for them.
 

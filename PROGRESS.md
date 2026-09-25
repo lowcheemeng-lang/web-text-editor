@@ -8,17 +8,18 @@ The plan is the *spec*; this ledger is the *state*. Keep them separate.
 | `PROGRESS.md` (this file) | Current status, next action, decisions, session log | Updated at the **end of every work session** |
 | `.hermes/plans/2026-09-24_notepadpp-web-plan.md` | Task specs (what to build, file paths, verification) | Edited only when the plan genuinely changes |
 | `docs/scope.md` | Locked scope + browser compatibility matrix | Edited when a decision is *reversed* |
+| `docs/editor-core-decision.md` | D2 evidence: CodeMirror 6 vs Monaco, sourced | Edited when D2 is confirmed or reversed |
 
 ---
 
 ## Session start protocol
 
-A new session (human or agent) needs zero prior context if it reads these three files
-**in this order**:
+A new session (human or agent) needs zero prior context if it reads these files **in this order**:
 
 1. `PROGRESS.md` — where we are, what is next (this file)
-2. `docs/scope.md` — what is in scope, what is impossible, locked decisions D1–D9
-3. `.hermes/plans/2026-09-24_notepadpp-web-plan.md` — the task-by-task spec
+2. `docs/scope.md` — what is in scope, what is impossible, decisions D1–D9
+3. `docs/editor-core-decision.md` — the D2 analysis (only if touching the editor core)
+4. `.hermes/plans/2026-09-24_notepadpp-web-plan.md` — the task-by-task spec
 
 **Verify state before trusting it:** `node scripts/status.mjs`
 
@@ -56,10 +57,13 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 `tsconfig.json`, `index.html`, `src/main.ts`), per the plan's Task 2 spec. Acceptance for
 that task is `npm install && npm run dev` serving the editor on `http://localhost:5173`.
 
-Before writing code, get sign-off on the four open questions in `docs/scope.md` §10 —
-especially **D2 (CodeMirror 6 vs Monaco)**, because Task 3's editor core depends on it.
-Working agreement for now: proceed on the documented recommendations (`CodeMirror 6`) unless
-told otherwise, and treat that choice as reversible until Task 3 starts.
+Task 2 is **not** blocked by anything: it is core-agnostic (Vite + TS + an empty shell).
+D2 must be settled before **Task 3** begins, since Task 3's editor core is where CM6 vs
+Monaco becomes real code. `docs/editor-core-decision.md` recommends CodeMirror 6 and lists
+the conditions that would reverse it.
+
+Still open from `docs/scope.md` §10: D2 confirmation, Tier-3 priority, and the
+Firefox/Safari-in-MVP question. D7 is resolved.
 
 ## Conventions
 
@@ -69,18 +73,19 @@ told otherwise, and treat that choice as reversible until Task 3 starts.
 - **Evidence before status:** update the board in the same session as the work, never later from memory.
 - **Never edit a `DONE` row's evidence** to make a later failure go away — add a new session-log entry instead.
 - **Decisions get an ID** (`D1`–`D9` in scope, `S1`+ below for implementation decisions). Reference the ID in commit messages and code comments so the "why" survives.
+- **Decision statuses:** `Proposed` → `Accepted` (user said yes) or `Rejected` (user said no). Only the user moves a `D*` from Proposed to Accepted.
 
 ## Decision log
 
 | ID | Date | Decision | Rationale | Status |
 |----|------|----------|-----------|--------|
 | D1 | 2026-09-25 | Browser-first SPA/PWA; desktop wrapper deferred | Reuses same bundle later; not a one-way door | Proposed |
-| D2 | 2026-09-25 | CodeMirror 6 as the editor core | 4× smaller than Monaco incl. languages; modular; syntax tree enables Function List/folding; `StreamLanguage` is the only UDL path | **Proposed — blocks Task 3** |
+| D2 | 2026-09-25 | CodeMirror 6 as the editor core | Full analysis in `docs/editor-core-decision.md`: 1.26 MB gz vs 5.01 MB; mobile supported vs officially unsupported; CSS theming for an N++ look; independent per-tab configs; native plugin-composition; viewport rendering for big files. Monaco's only wins here are built-in minimap + diff editor (both Tier 3, both substitutable) | **Proposed — awaiting confirmation. Blocks Task 3** |
 | D3 | 2026-09-25 | Two-tier file I/O, feature-detected | Pickers are Chromium-only; Mozilla position on them is *harmful* | Proposed |
 | D4 | 2026-09-25 | Encoding: WHATWG label set only in MVP; UTF-32/DOS codepages deferred to WASM | Encoding API's label list is fixed | Proposed |
 | D5 | 2026-09-25 | Plugins = runtime-loaded ES modules + WASM, no native ABI | Only backend-free option | Proposed |
 | D6 | 2026-09-25 | Macros = editor transaction record/replay | CM6 exposes all changes as transactions | Proposed |
-| D7 | 2026-09-25 | Run/exec + native plugins permanently out of scope | Impossible without a process/shell | Proposed |
+| D7 | 2026-09-25 | Run/exec + native plugins permanently out of scope | Impossible without a process/shell | **Accepted — user-confirmed 2026-09-25** |
 | D8 | 2026-09-25 | OPFS for documents, IndexedDB for metadata/prefs | OPFS is Baseline cross-browser since March 2023 | Proposed |
 | D9 | 2026-09-25 | MVP: ~20 official CM6 languages + legacy-modes long tail | Official packages cover the popular set; legacy-modes covers breadth | Proposed |
 | S0 | 2026-09-25 | Progress tracked in this ledger + `scripts/status.mjs`, not in chat history | Chat transcripts do not survive into new sessions; a repo file does | Accepted |
@@ -109,7 +114,7 @@ told otherwise, and treat that choice as reversible until Task 3 starts.
 
 **Not done / carried forward**
 - No code yet. No `package.json` — Task 2 owns that.
-- D1–D9 are *proposed*, not confirmed.
+- D1, D3–D6, D8–D9 are *proposed*, not confirmed.
 
 **Repo state at session end**
 - Everything from this session is committed in `1b5bcd4`, except the SHA-recording edit itself.
@@ -117,13 +122,47 @@ told otherwise, and treat that choice as reversible until Task 3 starts.
   deleted in the worktree and **not staged** — not this project's file to remove, left for
   the user to decide. `node scripts/status.mjs` will keep reporting it as uncommitted.
 
+#### Session 1, continued — D2 review & D7 sign-off
+
+**User input received**
+- D7: **confirmed** — "yes, no Run/exec". Recorded as `Accepted` in the decision log; the
+  superseded open question is struck through in `docs/scope.md` §10.
+- D2: requested an advantages/drawbacks list for CodeMirror 6 over Monaco before confirming.
+
+**Done**
+- `docs/editor-core-decision.md` written: 11 evidence-backed advantages (A1–A11) and
+  8 drawbacks (B1–B8) each weighted for *this* project, a feature-by-feature head-to-head
+  against the N++ tier list, the reversal triggers, and the cost attached to the recommendation.
+- Key finding that reframes D2: Monaco's headline strengths (IntelliSense via workers,
+  command palette, sticky scroll) **are not Notepad++ features**, while its official
+  non-support of mobile browsers *is* a direct hit for a web port.
+- `docs/scope.md` status line and §10 updated; D7 struck as resolved.
+
+**Verified**
+- Claims sourced to: Replit (bundle sizes 1.26 MB gz vs 5.01 MB gz; no Monaco lazy-loading;
+  CM6's touch motivation), Sourcegraph's Monaco→CM6 migration (Monaco = 40% of their JS,
+  hard to trim, poor docs, global reference model, hardcoded-hex theming), Monaco's own site
+  ("not supported in mobile browsers"), Monaco typedoc (`largeFileOptimizations`,
+  `maxTokenizationLineLength`), microsoft/monaco-editor#2054 (Monarch runs on the main thread;
+  VS Code's async tokenization is not in Monaco), the CM6 reference (core `rectangularSelection`,
+  `StreamLanguage`, million-line example), vitejs/vite#21426 (Monaco worker bundling friction).
+- npm versions checked live 2026-09-25, including `@codemirror/lsp-client@6.3.0` — the official
+  LSP client that closes most of Monaco's IntelliSense gap, and `@replit/codemirror-minimap@0.5.2`
+  (third-party, pre-1.0) which is why the minimap is still a real CM6 drawback.
+
+**Carried forward**
+- D2 still `Proposed`. Tasks 2–8 unchanged. No code written.
+
 ## Blockers / open questions
 
-Nothing blocking. Four decisions await the user (`docs/scope.md` §10):
-1. Confirm D2 — CodeMirror 6 over Monaco (**blocks Task 3**).
-2. Confirm D7 — Run/exec and native plugins permanently out.
-3. Tier-3 priority: UDL parity vs encoding/large-file handling (pick one).
-4. Firefox/Safari inside the MVP acceptance gate, or Chromium-only first.
+Nothing blocking. Three decisions await the user (`docs/scope.md` §10):
+
+1. **D2 — confirm CodeMirror 6 over Monaco.** Analysis in `docs/editor-core-decision.md`.
+   Blocks Task 3 only; Task 2 can proceed without it.
+2. **Tier-3 priority** — UDL parity, or encoding/large-file handling? Pick one.
+3. **Firefox/Safari inside the MVP acceptance gate, or Chromium-only first?**
+
+Resolved: ~~D7 — Run/exec and native plugins permanently out~~ (accepted 2026-09-25).
 
 ## Definition of done for the whole project
 
