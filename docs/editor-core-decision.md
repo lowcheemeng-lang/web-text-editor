@@ -1,8 +1,7 @@
 # D2 — Editor Core: CodeMirror 6 vs Monaco
 
-**Decision under review:** D2 in `docs/scope.md` §3 — use CodeMirror 6 (CM6) as the editor core
-rather than Monaco.
-**Status:** Recommendation below, **awaiting your confirmation.** D2 blocks Task 3, not Task 2.
+**Decision:** D2 in `docs/scope.md` §3 — use CodeMirror 6 (CM6) as the editor core rather than Monaco.
+**Status:** ✅ **Confirmed by the user 2026-09-25.** Recorded as `Accepted` in `PROGRESS.md`.
 **Written:** 2026-09-25. Every factual claim is attributed in [Sources](#sources).
 
 ---
@@ -34,14 +33,31 @@ viable CM6 substitutes.
 **Reversal trigger, stated plainly:** if this becomes a Chromium-only desktop-class app and you
 insist on Document Map *and* Compare in the MVP, Monaco is the cheaper route. Otherwise CM6.
 
+### Post-decision note (2026-09-25)
+
+Two later decisions changed the surrounding scope; neither overturns the call, but both move the
+weights, so they are recorded here rather than left implicit:
+
+- **D11 (MVP is Chromium-only)** satisfies half of reversal trigger #2. The other half — payload
+  and worker friction (A1/A6) becoming irrelevant — does **not** hold: those still matter for a
+  Chromium-only PWA's first load. And trigger #1 remains unmet, because Minimap and Compare are
+  still not MVP requirements. **CM6 stands.**
+- **D11 also lowers the weight of A2 (mobile/touch)** from *High*. Mobile was never promised in
+  the MVP and the question is still open (the user's "Chrome only" answer did not address it). If
+  mobile is later dropped entirely, A2 becomes a footnote rather than a headline — the decision
+  does not depend on it.
+- **D10 (phase-3 priority = encoding + large-file mode)** converts drawback **B7** from an
+  unscheduled worry into planned work: the "no productised large-file switch" cost is now owned
+  explicitly.
+
 ---
 
 ## 2. Advantages of choosing CodeMirror 6 over Monaco
 
 | # | Advantage | Evidence | Weight here |
 |---|-----------|----------|-------------|
-| A1 | **~4× smaller shipped payload.** CM6 + all extensions and language packages = 8.23 MB raw / **1.26 MB gzip**; Monaco = 51.17 MB raw / **5.01 MB gzip** (Replit). Sourcegraph measured Monaco at **2.4 MB of their 6 MB** search-page JS (40% of all JS); dropping it cut their JS download **43%**. | Replit blog; Sourcegraph blog | **High** — a PWA's first load is the app's install experience |
-| A2 | **Mobile/touch actually works.** Monaco's own project page states: *"The Monaco editor is not supported in mobile browsers or mobile web frameworks."* CM6 was rewritten around native browser editing (contentEditable) specifically to support touch — that was a stated motivation for the 6.0 rewrite, and it's why Replit standardised on it. | microsoft.github.io/monaco-editor; Replit blog | **High** — Notepad++ is desktop-only; a web port's genuinely new audience is phones/tablets |
+| A1 | **~4× smaller shipped payload.** CM6 + all extensions and language packages = 8.23 MB raw / **1.26 MB gzip**; Monaco = 51.17 MB raw / **5.01 MB gzip** (Replit). Sourcegraph measured Monaco at **2.4 MB of their 6 MB** search-page JS (40% of all JS); dropping it cut their JS download **43%**. Measured locally in Task 2: the CM6 core chunk is **123.08 kB gzip**. | Replit blog; Sourcegraph blog; `PROGRESS.md` Task 2 evidence | **High** — a PWA's first load is the app's install experience |
+| A2 | **Mobile/touch actually works.** Monaco's own project page states: *"The Monaco editor is not supported in mobile browsers or mobile web frameworks."* CM6 was rewritten around native browser editing (contentEditable) specifically to support touch — that was a stated motivation for the 6.0 rewrite, and it's why Replit standardised on it. | microsoft.github.io/monaco-editor; Replit blog | **High → Medium** — lowered by D11: mobile is not in the MVP and the question is open. Still a real capability gap, not a preference |
 | A3 | **You can style it to look like Notepad++, using CSS.** CM6 themes are ordinary CSS with variables. Sourcegraph on Monaco: to customise its look they *"had to hard-code hex color codes into our JavaScript instead of being able to use our site-wide CSS classes and variables."* | Sourcegraph blog | **High** — the goal is N++ chrome (menu, toolbar, tab bar, status bar), not a VS Code clone |
 | A4 | **Multiple instances with different configuration are trivial.** Sourcegraph: *"Monaco has a global reference model, which makes it tricky to run several instances of it on the same page with small configuration differences."* CM6 is `EditorState` per document + `EditorView` per pane. | Sourcegraph blog | **High** — tabs each need their own language/config; split view needs a second view |
 | A5 | **The plugin host (D5) is the native extension model, not a bolt-on.** CM6 *is* a composition of extensions, so an in-app plugin API is a thin wrapper over first-class concepts. VS Code extensions do **not** run inside Monaco — Monaco gives you its API, not an ecosystem. | CM6 reference; Monaco docs | **High** — D5 is a committed project goal |
@@ -58,13 +74,13 @@ insist on Document Map *and* Compare in the MVP, Monaco is the cheaper route. Ot
 
 | # | Drawback | Detail | Weight here | Mitigation |
 |---|----------|--------|-------------|------------|
-| B1 | **No built-in minimap** → Notepad++'s *Document Map* has no first-party CM6 equivalent. | The only off-the-shelf option is `@replit/codemirror-minimap@0.5.2` — third-party and pre-1.0, i.e. same maintenance risk class as any small dependency. Monaco's minimap is built in and free. | **Medium** | Canvas minimap (~150 lines, already Tier 3 in scope / risk R5), or pin the package behind our own thin wrapper. **Do not promise Document Map in the MVP.** |
-| B2 | **No built-in diff editor** → Notepad++'s Compare plugin. | Monaco's diff editor ships in the box. CM6's is a separate package, `@codemirror/merge@6.12.2`. | **Low-Medium** | Use `@codemirror/merge`. Official-scope package, so lower risk than B1. No MVP promise. |
+| B1 | **No built-in minimap** → Notepad++'s *Document Map* has no first-party CM6 equivalent. | The only off-the-shelf option is `@replit/codemirror-minimap@0.5.2` — third-party and pre-1.0, i.e. same maintenance risk class as any small dependency. Monaco's minimap is built in and free. | **Medium** | Canvas minimap (~150 lines, Tier 2/3 in scope / risk R5), or pin the package behind our own thin wrapper. **Do not promise Document Map in the MVP.** Still unscheduled after D10. |
+| B2 | **No built-in diff editor** → Notepad++'s Compare plugin. | Monaco's diff editor ships in the box. CM6's is a separate package, `@codemirror/merge@6.12.2`. | **Low-Medium** | Use `@codemirror/merge`. Official-scope package, so lower risk than B1. No MVP promise. Still unscheduled after D10. |
 | B3 | **No zero-config language services** (TypeScript/JSON/CSS/HTML diagnostics + completion via workers). | Monaco gets these for free. CM6 requires wiring: `@codemirror/lsp-client@6.3.0` now exists officially, plus community `codemirror-languageserver`. | **Low** — this is the important one to price correctly | **Notepad++ has no IntelliSense either.** Its completion is word-from-document. Since parity with N++ is the goal, this is a non-feature, and a language *server* implies a backend, which D1 forbids. Word completion via `@codemirror/autocomplete` is all we need. |
 | B4 | **Bus factor and funding.** | CM6 is primarily one very capable maintainer (Marijn Haverbeke) plus community; its site states a social-but-not-legal expectation that commercial users fund maintenance. Monaco is Microsoft-backed and structurally tied to VS Code's survival. | **Medium** | MIT licence + vendorable source means an unmaintained CM6 keeps working; the API is stable, so "frozen" ≠ "broken". Donate via thanks.dev if this becomes commercial. This is a real, non-zero risk — accepted knowingly, not waved away. |
 | B5 | **Smaller ecosystem noise floor.** | Monaco: ~38k GitHub stars, ~2M weekly npm downloads. CM6: ~7.5k stars, ~5M weekly downloads. Stars favour Monaco; actual installs favour CM6. Fewer blog posts and StackOverflow answers for CM6. | **Low-Medium** | CM6 has a responsive forum/Discord; the complete reference manual compensates (A9). |
 | B6 | **You assemble the shell yourself.** | Tabs, dialogs, panels, keymaps, gutters, context menus, find UI: Monaco hands you a VS Code-like shell. CM6 hands you bricks. Also a steeper architecture to learn (facets, state fields, transactions). | **Medium** | The shell Monaco gives is *not* the shell we want (A3), so this is work we'd do anyway — but it is real, additional code, and it lands in Tasks 3–5. Budget for it rather than being surprised. |
-| B7 | **No productised large-file switch.** | Monaco has `largeFileOptimizations` + `maxTokenizationLineLength`. CM6 has no equivalent flag; you degrade your own extensions above a threshold (already scoped as Tier-3 "large-file mode"). | **Medium** | Implement the threshold ourselves and spike the million-line example early (adds to R2/R5 work). |
+| B7 | **No productised large-file switch.** | Monaco has `largeFileOptimizations` + `maxTokenizationLineLength`. CM6 has no equivalent flag; you degrade your own extensions above a threshold. | **Medium** | **Scheduled work as of D10** — "large-file mode" is now part of the phase-3 priority, replacing the earlier "Tier-3 maybe". Building it also exercises the million-line example early. |
 | B8 | **A few Monaco conveniences need packages.** | Bracket-pair colourisation, sticky scroll, fold gutters, placeholder text, word-based suggestions: some built in with Monaco, extensions with CM6. (Sourcegraph also hit a long-standing Monaco limitation on placeholder text — so this cuts both ways.) | **Low** | All covered by `@codemirror/language`, `@codemirror/autocomplete`, `@codemirror/view`; a few lines each. |
 
 **Sticker-shock summary of §3:** the honest cost of choosing CM6 is *more assembly work* (B6),
@@ -88,12 +104,12 @@ safety net* (B4). Nothing in §3 is a functional dead end.
 | **Document Map / minimap (T2/T3)** | Third-party pre-1.0, or canvas | **Built in** | **Monaco** |
 | **Compare / diff (T3)** | `@codemirror/merge` | **Built in** | **Monaco** |
 | Function List (T2) | Walk the Lezer syntax tree directly | Write a `DocumentSymbolProvider` | CM6 |
-| User Defined Language (T3) | `StreamLanguage` (runtime stream parsers) | Monarch (declarative runtime tokenizer) | Tie — both need a UDL2 XML converter |
+| User Defined Language (T3) | `StreamLanguage` (runtime stream parsers) | Monarch (declarative runtime tokenizer) | Tie — both need a UDL2 XML converter. **D10 ranks this below encoding/large-file work** |
 | Macro record / replay (T2) | Record transactions — clean | Record model content deltas — workable | Tie |
-| Large-file handling (T3) | Viewport rendering; **no flag** | **`largeFileOptimizations` flag**; Monarch on main thread | Monaco (slightly) |
+| Large-file handling (T3) | Viewport rendering; **no flag** | **`largeFileOptimizations` flag**; Monarch on main thread | Monaco (slightly) — but **now scheduled work under D10**, not a gap we ignore |
 | Theming to N++ palette (T1) | Plain CSS + variables | Hardcoded hex, per Sourcegraph | CM6 |
 | Plugin host API (D5) | Composition model = native | Its own API only, no ecosystem | **CM6** |
-| Mobile / touch | Designed for it | **Officially unsupported** | **CM6** |
+| Mobile / touch | Designed for it | **Officially unsupported** | **CM6** — subject to whether mobile stays in scope at all |
 | PWA offline payload | 1.26 MB gz | 5.01 MB gz + worker bundles | CM6 |
 | LSP-grade IntelliSense | `@codemirror/lsp-client`, wiring needed | Built in | Monaco — **but N++ has no such feature (B3)** |
 
@@ -105,22 +121,22 @@ defaults — precisely the set weighted Medium or below, and three of them are T
 
 ## 5. What would reverse this decision
 
-1. MVP must include **Document Map and Compare**, and hand-rolling a minimap is unacceptable → Monaco.
-2. Target is **Chromium-only desktop-class** usage, making A2 (mobile) and A1/A6 (payload, workers) irrelevant → the gap narrows to roughly a tie.
-3. **IntelliSense becomes a headline goal** (contradicting N++ parity and D1's no-backend rule) → Monaco.
-4. CM6's maintenance (B4) deteriorates — e.g. an extended period of no releases across the `@codemirror/*` scope.
+Status as of 2026-09-25, after D11 made the MVP Chromium-only:
 
-None of these hold today.
+1. MVP must include **Document Map and Compare**, and hand-rolling a minimap is unacceptable → Monaco. **Not triggered** — both are Tier 2/3 with no MVP promise.
+2. Target is **Chromium-only desktop-class** usage, making A2 (mobile) and A1/A6 (payload, workers) irrelevant → the gap narrows to roughly a tie. **Partially triggered, insufficient** — D11 chose Chromium-only, and A2's weight did drop, but A1/A6 still count for a PWA's first load and trigger #1 is unmet, so the call stands.
+3. **IntelliSense becomes a headline goal** (contradicting N++ parity and D1's no-backend rule) → Monaco. **Not triggered.**
+4. CM6's maintenance (B4) deteriorates — e.g. an extended period of no releases across the `@codemirror/*` scope. **Not triggered.**
 
 ---
 
 ## 6. Cost attached to the recommendation
 
-Choosing CM6 obliges us to do the following, already reflected in the scope:
+Choosing CM6 obliges us to do the following. Status updated after D10/D2 confirmation:
 
-- **Implement a canvas minimap** or pin a pre-1.0 third-party one (B1) — Tier 3, no MVP promise.
-- **Use `@codemirror/merge` for Compare** rather than a built-in diff (B2) — Tier 3.
-- **Build our own large-file mode** and spike the million-line case early (B7, R2) — Tier 3.
+- **Implement a canvas minimap** or pin a pre-1.0 third-party one (B1) — Tier 2/3, **still unscheduled**, no MVP promise.
+- **Use `@codemirror/merge` for Compare** rather than a built-in diff (B2) — Tier 3, **still unscheduled**.
+- **Build our own large-file mode** and spike the million-line case early (B7, R2) — **now scheduled** as part of the D10 phase-3 priority.
 - **Budget extra assembly work** in Tasks 3–5 for chrome Monaco would have supplied (B6).
 - **Treat the maintainer funding ask** as a real obligation if this goes commercial (B4).
 
@@ -137,4 +153,5 @@ Choosing CM6 obliges us to do the following, already reflected in the scope:
 - **Marijn Haverbeke**, *CodeMirror 6.0* (June 2022) — extensibility and accessibility goals; Prototype Fund funding.
 - **vitejs/vite discussion #21426** and the `vite-plugin-monaco-editor-esm` docs — Monaco worker/ESM resolution problems in Vite; shared-worker language constraints.
 - **npm versions checked live 2026-09-25:** `@codemirror/lsp-client@6.3.0`, `@codemirror/merge@6.12.2`, `@replit/codemirror-minimap@0.5.2`, `@codemirror/legacy-modes@6.5.4` (1.96 MB unpacked), `@codemirror/autocomplete@6.20.3`, `codemirror-languageserver@1.22.1`, `monaco-editor@0.57.0`.
+- **Local measurement (Task 2, 2026-09-25):** CM6 core chunk 382.37 kB raw / **123.08 kB gzip** — see `PROGRESS.md`.
 - **pkgpulse** comparison table — GitHub stars (Monaco ~38k vs CM6 ~7.5k) and weekly npm downloads (Monaco ~2M vs CM6 ~5M).

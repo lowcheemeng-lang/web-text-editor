@@ -1,8 +1,8 @@
 # Scope & Browser Compatibility Matrix
 
 **Deliverable:** Task 1 of the Notepad++ Web Edition plan.
-**Status:** D7 accepted (user-confirmed 2026-09-25). D2 **accepted 2026-09-25** — CodeMirror 6
-is the editor core (`docs/editor-core-decision.md`). D1, D3–D6, D8–D9 still need a yes/no.
+**Status:** Accepted — D2 (CodeMirror 6), D7 (no Run/exec), D10 (phase-3 priority), D11 (Chromium-only
+MVP), all user-confirmed 2026-09-25. D1, D3–D6, D8–D9 remain proposed.
 **Reference target:** Notepad++ 8.9.8 (Scintilla-based, C++/Win32, GPL).
 **Verified on:** 2026-09-25. Source links in [Sources](#sources).
 
@@ -18,6 +18,8 @@ Two questions drive almost every scoping call:
 
 1. **Can the browser do it at all?** (no OS shell, no native plugin ABI)
 2. **Can it be done in every target browser, or only Chromium?**
+   → **Answered 2026-09-25 (D11): Chromium only for the MVP.** The Firefox/Safari
+   analysis below is still maintained, but as phase-2 planning rather than MVP scope.
 
 ## 2. Non-goals
 
@@ -26,19 +28,24 @@ Two questions drive almost every scoping call:
 - No native plugin (`.dll` / Plugin Admin) compatibility — see §5.
 - Windows-only integration (registry, shell context menu, GPG release flow) is out of scope.
 
-## 3. Decisions to confirm
+## 3. Decisions
+
+Proposed at Task 1; D2, D7, D10 and D11 have since been accepted by the user (see the
+decision log in `PROGRESS.md`, which is the authority on status).
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
 | **D1** | **Browser-first SPA/PWA.** Desktop packaging (Tauri/Wails/Electron) deferred to a later phase. | Answers open question 1 in the plan. Desktop wrappers can reuse the same bundle later, so this is not a one-way door. |
 | **D2** | **Editor core: CodeMirror 6** (not Monaco). | Monaco is monolithically loaded (no lazy loading) and Replit measured it at 51.17 MB raw / 5.01 MB gzip vs CM6 + all languages at 8.23 MB raw / 1.26 MB gzip. CM6 is modular, its syntax tree powers Function List and folding for free, and `StreamLanguage` lets us build runtime-defined tokenizers — the only credible path to UDL parity. Monaco's minimap is the one thing we lose; a canvas minimap is a Tier-3 substitute. |
-| **D3** | **Two-tier file I/O, capability-detected at runtime.** Tier A (Chromium): File System Access pickers, real in-place save. Tier B (Firefox/Safari/iOS): `<input type=file>` read + Blob download write, with OPFS as the editable home. | Pickers are Chromium-only and Mozilla's standards position is formally *harmful*, so a single-API implementation would exclude ~30% of users. |
-| **D4** | **Encoding: what the Encoding API gives us, and be honest about the rest.** | The WHATWG label list is fixed; UTF-32 and DOS/IBM codepages are absent. See §6. |
+| **D3** | **Two-tier file I/O, capability-detected at runtime.** Tier A (Chromium): File System Access pickers, real in-place save. Tier B (Firefox/Safari/iOS): `<input type=file>` read + Blob download write, with OPFS as the editable home. | Pickers are Chromium-only and Mozilla's standards position is formally *harmful*, so a single-API implementation would exclude ~30% of users. **Narrowed by D11:** the MVP implements Tier A only; the Tier B/C fallback I/O moves to phase 2. The feature-detection *principle* survives as the thin capability check in Task 4 (S4). |
+| **D4** | **Encoding: what the Encoding API gives us, and be honest about the rest.** | The WHATWG label list is fixed; UTF-32 and DOS/IBM codepages are absent. See §6. **Split by D10:** the MVP ships the WHATWG label set; the WASM half (UTF-32, DOS codepages) is the scheduled phase-3 priority. |
 | **D5** | **"Plugins" = runtime-loaded ES modules** against a documented host API, plus WASM. No native ABI. | The only backend-free option. Chromium can load them from a user-picked local folder; elsewhere, paste-source install. |
 | **D6** | **Macro recording = editor transaction recording**, not OS input replay. | CM6 exposes every change as a transaction, so record/replay/run-N-times is genuinely feasible without native hooks. |
 | **D7** | **Run/exec features (NppExec-style, external tools) are out of scope.** | Requires a process/shell. Impossible backend-free; would need a desktop wrapper. |
 | **D8** | **Persistence: OPFS for document bodies, IndexedDB for metadata/preferences.** Handles are also storable in IndexedDB, which is what makes Tier A "recent files" work. | OPFS is Baseline widely available (since March 2023) across Chromium/Firefox/Safari. |
-| **D9** | **MVP language set: ~20 first-class languages** (official CM6/Lezer packages) **+ the long tail via `@codemirror/legacy-modes`** ports. UDL via `StreamLanguage` is Tier 3. | NPP claims ~90 languages; official CM6 packages cover the popular set with better parsing, legacy-modes covers breadth. |
+| **D9** | **MVP language set: ~20 first-class languages** (official CM6/Lezer packages) **+ the long tail via `@codemirror/legacy-modes`** ports. UDL via `StreamLanguage` is Tier 3. | NPP claims ~90 languages; official CM6 packages cover the popular set with better parsing, legacy-modes covers breadth. **D10 ranks UDL below encoding/large-file work**; the MVP language set is unaffected. |
+| **D10** | **Phase-3 priority: encoding fidelity + large-file mode.** WASM decoding for UTF-32 and DOS/IBM codepages, plus our own large-file threshold. UDL parity ranks below it and stays unscheduled. | Correctness beats breadth: a mis-decoded legacy file or a stalled editor is silent data loss or a hard block (R1, R3, B7), whereas UDL is a visible missing feature with a documented workaround. |
+| **D11** | **MVP browser scope: Chromium only** (Chrome, Edge, Opera). Firefox/Safari fallback UX (§7 tiers B/C) moves to phase 2; §8 acceptance is Chrome-only. | User decision. Keeps the MVP on the single File System Access path and halves the file-I/O test matrix. Its cost is carried as risk R8 (retrofit risk). |
 
 ## 4. Feature tiers
 
@@ -47,7 +54,7 @@ Two questions drive almost every scoping call:
 | Notepad++ feature | Web implementation | Confidence |
 |---|---|---|
 | Multi-document tabs | Custom tab strip; one `EditorState` per doc | High |
-| Open / Save / Save As | Tier A pickers, Tier B input+download (D3) | High |
+| Open / Save / Save As | Tier A pickers (Tier B input+download deferred by D11) | High |
 | New document, dirty indicator, close prompt | App state + `beforeunload` guard | High |
 | Find / Replace: regex, match case, whole word, wrap, replace-all | `@codemirror/search` `SearchQuery` + custom N++-style dialog | High |
 | Go to line | `EditorView.dispatch` selection jump | High |
@@ -62,7 +69,7 @@ Two questions drive almost every scoping call:
 | EOL conversion (CRLF/LF/CR) | `EditorState.lineSeparator` + document-wide re-write | Medium — see R3 |
 | Case conversion (UPPER/lower/Title), duplicate/delete/move/sort lines, trim trailing whitespace, remove blank/duplicate lines | Pure JS line operations over the doc | High |
 | Session restore (open tabs, caret, scroll) | OPFS + IndexedDB (D8) | High |
-| Recent files | Tier A: stored handles. Tier B: names only | Medium |
+| Recent files | Stored handles via File System Access (D11) | High |
 | Dark mode / themes | CM6 theme, N++-style palette | High |
 | Line ending + encoding + language indicator in status bar | Status bar component | High |
 | Keyboard shortcuts matching N++ defaults | Custom keymap | High |
@@ -79,7 +86,8 @@ Two questions drive almost every scoping call:
 | Column/block edit mode UI (Alt-drag, Alt+Shift+arrows) | `rectangularSelection` + keymap | High |
 | Document map (minimap) | Canvas render of doc + viewport box | Medium — hand-rolled |
 | Auto-completion (word-from-document, HTML/XML close tags) | `@codemirror/autocomplete` | High |
-| Drop files onto window to open | `DataTransferItem.getAsFileSystemHandle()` (Chromium), `File` API elsewhere | High |
+| Drop files onto window to open | `DataTransferItem.getAsFileSystemHandle()` | Chromium-only in the MVP; the `File`-API fallback goes to phase 2 with the rest of tier B |
+| **Non-Chromium file I/O** (Tier B/C fallback UX) | `<input type=file>` + Blob download, OPFS working copy | **Moved here by D11** — see §7 |
 | Print | `window.print()` + print stylesheet | Medium — degraded vs N++ (R4) |
 | Macro record / replay / save with shortcut | Transaction recording (D6) | Medium |
 | PWA install + offline | Service worker + manifest | High |
@@ -87,12 +95,17 @@ Two questions drive almost every scoping call:
 
 ### Tier 3 — nice-to-have / exploratory
 
-- **User Defined Language (UDL)** — N++'s UDL2 XML parsed into a CM6 `StreamLanguage`. Keyword lists, comments, operators map cleanly; folder/keyword nesting and delimiters only partially. Best-effort parity, not exact.
+**Scheduled first (D10 — phase-3 priority):**
+
+- **Encoding conversions requiring WASM** (UTF-32, DOS/IBM codepages) — see §6.
+- **Large-file mode** — disable expensive extensions above a threshold; spike the million-line case.
+
+**Below that, unscheduled:**
+
+- **User Defined Language (UDL)** — N++'s UDL2 XML parsed into a CM6 `StreamLanguage`. Keyword lists, comments, operators map cleanly; folder/keyword nesting and delimiters only partially. Best-effort parity, not exact. Ranked below D10.
 - **Plugin host API** — sandboxed ES module loader with a documented `hostAPI` (commands, decorations, panels, dialogs).
-- **Large-file mode** — disable expensive extensions above a threshold.
-- **Encoding conversions requiring WASM** (UTF-32, DOS codepages) — see §6.
 - **Column sort dialog, advanced regex helpers, spellcheck integration.**
-- **Compare / diff two open documents** — pure JS diff, no backend needed.
+- **Compare / diff two open documents** — `@codemirror/merge`; pure JS, no backend needed.
 
 ### Explicitly impossible backend-free
 
@@ -107,6 +120,9 @@ Two questions drive almost every scoping call:
 ## 5. Browser capability matrix
 
 Legend: ✅ supported · ⚠️ partial / with caveats · ❌ unavailable (fallback required)
+
+**The Firefox and Safari columns are phase-2 planning, not MVP scope (D11).** They are kept
+because the phase-2 work will need them, and because they explain *why* tier A is enough.
 
 | Capability (API) | Chrome/Edge | Firefox | Safari / iOS | Fallback when unavailable |
 |---|---|---|---|---|
@@ -123,8 +139,14 @@ Legend: ✅ supported · ⚠️ partial / with caveats · ❌ unavailable (fallb
 | Encoding API (see §6) | ✅ | ✅ | ✅ | WASM decoder, or warn + lossy read. |
 | Storage quota (`navigator.storage.estimate`) | ✅ | ✅ | ⚠️ quota can be aggressively cleared | Warn user; offer explicit export/backup. |
 
-**Consequence:** the app must be designed so that *nothing in the editing loop depends on a
-capability that is Chromium-only*. Pickers are an enhancement; OPFS/IndexedDB is the baseline.
+**Consequence for the MVP (as revised by D11):** Chromium is the only target, so the editing
+loop *may* depend on Chromium-only capabilities — the File System Access pickers are the MVP
+file path, not an enhancement.
+
+**Consequence for phase 2:** the retrofit must not require re-architecting. Keep file I/O
+behind a single module boundary (`src/file/file-io.ts`) so a tier-B implementation can be
+dropped in without touching the editor or the UI, and keep the thin capability check from
+Task 4 (S4) that reports "this browser is not supported yet" instead of throwing.
 
 ## 6. Text encoding matrix
 
@@ -136,7 +158,7 @@ UTF-8, UTF-16LE/BE, windows-1250–1258, ISO-8859-2/3/4/5/6/7/8/10/13/14/15/16,
 KOI8-R/U, IBM866, Macintosh, x-mac-cyrillic, windows-874 (TIS-620), GBK, GB18030,
 Big5, EUC-JP, ISO-2022-JP, Shift_JIS, EUC-KR.
 
-**NOT covered — needs WASM (Tier 3) or an honest warning:**
+**NOT covered — needs WASM (phase-3 priority per D10), or an honest warning until then:**
 - **UTF-32 (UCS-4) LE/BE** — not in the mandated list.
 - **DOS/IBM codepages** (cp437, cp850, …) beyond IBM866.
 - Autodetect of arbitrary legacy encodings (N++'s "Character sets → Autodetect").
@@ -151,52 +173,50 @@ save back as windows-1252 unless the user explicitly converts.
 
 ## 7. Per-browser fallback UX
 
-| Tier | Browsers | Behaviour |
-|---|---|---|
-| **A — full** | Chrome, Edge, Opera | Native pickers; Save writes in place; recent files reopen by handle; directory workspaces; drop-to-open. |
-| **B — degraded but complete** | Firefox | Open via file input, save via download, "Save" = re-download with a persistent OPFS working copy so nothing is lost between edits. Banner explains the difference once. |
-| **C — most degraded** | Safari, iOS, iPadOS | Same as B; plus storage-eviction warning and an "Export backup" action. No file handling, no picker. |
+| Tier | Browsers | Status | Behaviour |
+|---|---|---|---|
+| **A — full** | Chrome, Edge, Opera | **MVP (D11)** | Native pickers; Save writes in place; recent files reopen by handle; directory workspaces; drop-to-open. |
+| **B — degraded but complete** | Firefox | Phase 2 | Open via file input, save via download, "Save" = re-download with a persistent OPFS working copy so nothing is lost between edits. Banner explains the difference once. |
+| **C — most degraded** | Safari, iOS, iPadOS | Phase 2 | Same as B; plus storage-eviction warning and an "Export backup" action. No file handling, no picker. |
 
-Capability detection must be a single module (`src/platform/capabilities.ts`, built in Task 4)
-that feature-tests rather than sniffs user-agent strings.
+Capability detection stays a single module (`src/platform/capabilities.ts`, built in Task 4)
+that feature-tests rather than sniffs user-agent strings. In the MVP it only needs to answer
+"are the File System Access pickers available?" so the app can show a clear unsupported-browser
+message instead of throwing (S4); the tier B/C behaviour arrives in phase 2.
 
 ## 8. Acceptance criteria for the MVP
 
-The MVP is done when, in Chrome **and** Firefox:
+The MVP is done when, in **Chrome/Chromium** (D11):
 
 1. A user can create, edit, and save a text file without any network request after first load.
 2. Open → edit → save round-trips a file byte-identically when no edits are made (CRLF and CRLF+BOM included).
-3. All Tier 1 features in §4 pass their manual check on both browsers.
+3. All Tier 1 features in §4 pass their manual check in Chrome.
 4. A 50k-line file opens, scrolls, and regex-searches without a main-thread stall > 200 ms.
 5. Session restore returns the exact tabs, caret positions, and scroll offsets.
-6. Every capability in §5 marked ❌ on the test browser takes its documented fallback path with no crash and no silent data loss.
+6. Unsupported browsers fail loudly, not silently: a browser without the required capabilities
+   shows an explicit message, and no code path loses data without telling the user.
 
 ## 9. Risks
 
 | ID | Risk | Mitigation |
 |---|---|---|
-| R1 | Legacy encodings mis-decode silently | Only offer the §6 covered set in the MVP; explicit "unknown bytes" warning; WASM in Tier 3. |
+| R1 | Legacy encodings mis-decode silently | Only offer the §6 covered set in the MVP; explicit "unknown bytes" warning. WASM conversion is now the **scheduled** mitigation (D10), not a maybe. |
 | R2 | Two CM6 views on one `EditorState` may not give clean split-view semantics | Timeboxed spike at the start of Task 3; if it fails, fall back to independent states with a manual sync. |
 | R3 | CM6 normalises the document to a single line separator — **mixed per-line EOL is not preserved** (N++ shows "Mixed") | Detect and warn at load; store the original EOL style as document metadata; convert-on-save with a prompt. Per-line EOL fidelity is a genuine downgrade. |
 | R4 | Printing without the native dialog's control over colour/line numbers | Ship a print stylesheet; document the limitation. |
 | R5 | A canvas minimap is hand-rolled and may be slow on large files | Render throttled, viewport-relative; skip above a size threshold. |
 | R6 | Browser storage eviction loses unsaved work | Auto-export reminder + `navigator.storage.persist()` request + explicit backup action. |
-| R7 | UDL parity expectations | Publish the §4 Tier-3 limits up front; never call it "UDL-compatible". |
+| R7 | UDL parity expectations | Publish the §4 Tier-3 limits up front; never call it "UDL-compatible". UDL is also explicitly ranked below D10. |
+| R8 | **Chromium-only MVP means the non-Chromium paths are retrofitted later, which is usually when they get expensive** | Keep file I/O behind one module boundary and ship the capability check in Task 4 (S4); treat tier B/C as designed-but-deferred, not forgotten. Re-open D11 if the phase-2 estimate grows. |
 
-## 10. Open questions needing your decision
+## 10. Resolved decisions (history — was "open questions")
 
-1. **Confirm D2 (CodeMirror 6 over Monaco).** Full advantages/drawbacks analysis with sources:
-   `docs/editor-core-decision.md`. Headline: CM6 wins on payload (1.26 MB gz vs 5.01 MB), mobile
-   (Monaco is officially unsupported on mobile browsers), CSS theming to an N++ look, multiple
-   independently-configured instances, plugin hosting, and viewport rendering for large files.
-   Monaco's only real wins here are its built-in minimap and diff editor — both Tier 3, both
-   substitutable. Reversal trigger: if Minimap **and** Compare are MVP requirements on a
-   Chromium-only target, Monaco becomes the cheaper route.
-2. ~~**Confirm D7** — accepting that Run/exec and native plugins are permanently out.~~
-   **RESOLVED 2026-09-25: user confirmed D7.** Run/exec, NppExec, external tools and native
-   plugin DLLs are permanently out of scope.
-3. **Tier 3 priority** — UDL support, or better encoding/large-file handling? Only one fits phase 3.
-4. **Firefox/Safari in the MVP acceptance gate, or Chromium-only first?** Including them roughly doubles the file-I/O test matrix. Recommendation: keep them, since D3 exists precisely for them.
+All four original open questions are now closed. Kept for the audit trail.
+
+1. ~~Confirm D2 (CodeMirror 6 over Monaco)~~ — **RESOLVED 2026-09-25: accepted.** Analysis in `docs/editor-core-decision.md`.
+2. ~~Confirm D7 — Run/exec and native plugins permanently out~~ — **RESOLVED 2026-09-25: accepted.**
+3. ~~Tier 3 priority — UDL, or encoding/large-file handling?~~ — **RESOLVED 2026-09-25: encoding + large-file mode, recorded as D10.** UDL ranks below it.
+4. ~~Firefox/Safari in the MVP acceptance gate, or Chromium-only first?~~ — **RESOLVED 2026-09-25: Chromium only, recorded as D11.** Non-Chromium support moves to phase 2.
 
 ## Sources
 
