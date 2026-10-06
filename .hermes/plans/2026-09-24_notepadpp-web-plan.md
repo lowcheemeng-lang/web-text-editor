@@ -6,7 +6,7 @@
 > spec (what to build, which files, how to verify). Start any new session by reading
 > `PROGRESS.md` → `docs/scope.md` → this plan, in that order.
 
-**Status:** Tasks 1–2 ✅ done · Tasks 3–8 ⬜ todo · see `PROGRESS.md` for live state (`npm run status`)
+**Status:** Tasks 1–3 ✅ done · Tasks 4–8 ⬜ todo · see `PROGRESS.md` for live state (`npm run status`)
 
 **Scope settled 2026-09-25:** CodeMirror 6 (D2) · no Run/exec or native plugins (D7) ·
 phase-3 priority = encoding fidelity + large-file mode (D10) · **MVP is Chromium-only (D11)**.
@@ -101,10 +101,17 @@ tuned to Notepad++ behaviour, then add multi-document editing.
 **Steps:**
 0. **Spike first (risk R2, timeboxed):** prove that a second `EditorView` can render the same
    `EditorState` and behave as split view / "clone to other view". This gates steps 2–3.
+   **Done — and the step as written was wrong.** Two views handed one `EditorState` diverge
+   *silently* (no exception; the second view simply keeps rendering the old text). The working
+   design is two states with document changes forwarded between them under a `syncAnnotation`,
+   and only the owner view carrying `history()`. Evidence: `docs/r2-shared-state-spike.md`,
+   `python3 scripts/spike-r2-split.py` → PASS (12/12). Risk R2 is closed.
 1. Configure default font, tab size, indent unit, tabs-vs-spaces, word wrap, line numbering,
    current-line highlight, and caret behavior to match N++ defaults.
 2. Add multi-document interface via editor tabs (tab strip, dirty indicator, close prompt).
-3. Implement split-view and clone-to-other-view using a second view over the same state.
+3. Implement split-view and clone-to-other-view. **As shipped (S5):** the active document is
+   shown in both panes — two views, one document, one undo history, per-view caret and scroll.
+   Notepad++'s independent per-pane tab sets are Tier 2 and stay in phase 2.
 
 **Verification:** Open app; confirm tabbed editing, N++ default font/size, word-wrap toggle, and
 clone-document behavior work. Add `scripts/verify-task3.py` (S2) covering the same in Chrome.
@@ -267,5 +274,5 @@ All of the original three are closed; kept for the audit trail.
 
 ---
 
-Plan complete and saved. Task 3 is the next unit of work; see `PROGRESS.md` for the live next
-action and the R2 spike that must precede it.
+Plan complete and saved. Tasks 1–3 are done; Task 4 is the next unit of work and is gated on
+decisions **D3** and **D4** — see `PROGRESS.md` for the live next action.

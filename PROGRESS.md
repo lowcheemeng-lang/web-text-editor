@@ -39,7 +39,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 |---|------|--------|----------|--------|
 | 1 | Define scope & compatibility matrix | DONE | `docs/scope.md` — 3 tiers, capability matrix, encoding matrix, R1–R8 risks; all claims sourced | `1b5bcd4` |
 | 2 | Initialize project scaffold | DONE | `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **382.37 kB / 123.08 kB gz**; `python3 scripts/verify-task2.py` → **PASS** (HTTP 200, 1 CM6 instance, 15 lines, typing verified, 0 console errors) | `26aaea6` |
-| 3 | Editor core with N++ defaults | TODO | - | - |
+| 3 | Editor core with N++ defaults | DONE | `python3 scripts/verify-task3.py` → **PASS (56/56)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS** (12/12); `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** (down from 382.37 kB — `basicSetup` carried autocompletion/search that Tasks 5–6 own) | `<this commit>` |
 | 4 | File operations without backend | TODO | - | - |
 | 5 | Search, replace, navigation | TODO | - | - |
 | 6 | Syntax highlighting & language modes | TODO | - | - |
@@ -55,19 +55,18 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**Start Task 3 — editor core with Notepad++ defaults** (`src/editor/notepadpp-config.ts`,
-`src/main.ts`), per the plan's Task 3 spec: replace the provisional `basicSetup` in
-`src/main.ts` with an explicit extension list tuned to Notepad++ behaviour (indent unit and
-tabs-vs-spaces, word wrap toggle, line numbers, current-line highlight, caret behaviour),
-then add the multi-document tab strip and split view (a second `EditorView` over one
-`EditorState`).
+**Start Task 4 — file operations without backend** (`src/file/`, per the plan's Task 4 spec):
+the thin capability check required by **S4**, Tier-A `showOpenFilePicker` / `showSaveFilePicker`
+(D11: Chromium only), BOM-aware reads and writes, encoding selection, and the line-ending +
+encoding fields in the status bar (they are deliberately absent from Task 3 — a document has no
+file yet, so stating an encoding there would be a guess).
 
-**Do R2 first, as a timeboxed spike:** two CM6 views on a single `EditorState` is the
-assumption behind split view and "clone to other view", and risk R2 says it is unverified.
-Prove it or disprove it before building the tab strip on top of it.
+**Gates first: D3 and D4 must be answered before any code.** Both are still `Proposed`, and
+Task 4 cannot choose a picker design or an encoding policy without them. Ask for both before
+starting: D3 (two-tier file I/O, feature-detected) and D4 (WHATWG label set in the MVP, WASM
+for the rest — the WASM half is now scheduled phase-3 work per D10).
 
-Nothing gates Task 3. Later gates: Task 4 needs **D3** and **D4** (both proposed, both now
-narrowed by D10/D11 — see the decision log); Task 6 needs **D9** (proposed).
+Nothing else gates Task 4. Task 6 needs **D9** (proposed). Task 5 is ungated.
 
 ### Scope settled at sign-off (2026-09-25)
 
@@ -117,6 +116,7 @@ narrowed by D10/D11 — see the decision log); Task 6 needs **D9** (proposed).
 | S2 | 2026-09-25 | Each browser-verified task ships an executable check in `scripts/` | A prose "verified" claim cannot be re-checked by the next session; a script can | Accepted |
 | S3 | 2026-09-25 | `manualChunks` in `vite.config.ts` must stay in **function** form | Vite 8 bundles with Rolldown, which dropped the Rollup object form; the object form fails to type-check | Accepted |
 | S4 | 2026-09-25 | Task 4 ships a **thin capability check** (`src/platform/capabilities.ts`) that reports an unsupported browser instead of throwing; the full tier B/C implementation stays phase 2 | D11 defers non-Chromium support; a 10-line guard keeps the deferral honest and gives phase 2 a seam to plug into (mitigates R8) | Accepted |
+| S5 | 2026-10-06 | Split view shows the **active document** in two panes — Notepad++'s *clone to other view*. Notepad++'s other flavour, each pane carrying its own independent tab set, stays Tier 2 / phase 2 | R2 proved the plan's wording wrong in a load-bearing way: two views on one `EditorState` do not diverge *loudly*, they diverge silently. Two states plus annotation forwarding gives one document, one undo history, per-view caret and scroll (`docs/r2-shared-state-spike.md`). Per-pane tab membership would add a second tab strip with no document behind it and change nothing Task 3 verifies | Accepted |
 
 ## Session log
 
@@ -263,11 +263,85 @@ narrowed by D10/D11 — see the decision log); Task 6 needs **D9** (proposed).
   if it matters, since it affects the OPFS/eviction work in Task 7.
 - D1, D3–D6, D8, D9 remain `Proposed`. D3 and D4 gate Task 4; D9 gates Task 6.
 
+#### Session 1, continued (2026-09-25) — R2 spike and Task 3 core modules (landed, never recorded)
+
+**Done**
+- The R2 spike ran **before any tab-strip or split UI was written**, as the ledger demanded:
+  `src/editor/spike-r2.ts` driven by `scripts/spike-r2-split.py` (real Chrome, real keystrokes),
+  findings written up in `docs/r2-shared-state-spike.md`.
+  **Verdict: the plan's wording was wrong, and the correction is load-bearing.** Two views on one
+  `EditorState` do not stay in sync — CodeMirror's own example says the views "will simply
+  diverge" — and the failure is silent, not an exception. The working shape is two states plus
+  annotation-tagged forwarding, with only the owner view carrying `history()`, which is also what
+  gives N++'s one-history-per-document semantics.
+- Core modules written: `notepadpp-config.ts` (every default cited from Notepad++'s
+  `Parameters.h` / `stylers.model.xml`, plus a `DEVIATIONS_FROM_NPP` list for what a browser
+  cannot do), `split-view.ts` (`DocumentRuntime` + sync dispatcher), `tabs.ts` (document model),
+  `chrome.ts` (pure-DOM shell).
+- **Not recorded:** that turn's final report failed ("your request was not processed"), so none of
+  this reached the ledger. `PROGRESS.md` still read Task 3 `TODO` and `main.ts` was still the
+  Task 2 scaffold — the modules existed but nothing imported them.
+
+#### Session 2 (2026-10-06) — Task 3 completed and verified (DONE)
+
+**User input received**
+- "proceed to task 3" — first attempt errored and was resent; this session executed it.
+
+**Found on disk before writing anything**
+- Untracked `src/editor/`, `docs/r2-shared-state-spike.md`, `scripts/spike-r2-split.py` (mtime
+  2026-09-25) — half of Task 3 already existed, contradicting the handoff note that said Task 3
+  was untouched. Read all of it before proceeding.
+- **Deleted three files this session had started in parallel** (`spike.html`, `src/spike.ts`,
+  `src/editor/split-sync.ts`): they independently re-derived the R2 result the existing spike had
+  already measured, and two competing sync mechanisms in one codebase is a defect waiting to
+  happen. The existing `scripts/spike-r2-split.py` is the canonical check.
+
+**Done**
+- `src/editor/workspace.ts` — the missing orchestrator: toolbar, tab strip, status bar,
+  split/clone view, dirty tracking, close confirmation, keyboard handlers. The only module that
+  mutates documents, so `chrome.ts` stays free of editor state and `tabs.ts` free of DOM.
+- `src/main.ts` rewired off `basicSetup` onto `Workspace`; `src/style.css` grown into the real
+  Notepad++ shell; `tabs.ts` gained the `state` field the orchestrator reads (with its header
+  comment corrected to distinguish the live state from the `savedText` snapshot).
+- `scripts/verify-task3.py` — 56 checks in real Chrome.
+
+**Verified**
+- `python3 scripts/verify-task3.py` → **PASS (56/56)**.
+- `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS** (12/12), unaffected by this session.
+- `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **296.81 kB / 96.16 kB gz**.
+- Screenshot OCR (tesseract, 3× upscaled crops) confirms the rendered chrome rather than just the
+  DOM: toolbar `New Close Wrap _ Split`, tabs `*new2 × new4 ×`, status `Ln1,Col1 Sel:00 Text Tab4 Wrap off`.
+
+**Three defects the acceptance check found — all fixed, none papered over**
+1. **An unwrapped line never overflowed.** With the pane/host chain row-oriented, `.cm-editor`
+   sized itself to `max-content`: flexbox's `min-width: auto` resolves to the min-content width
+   of a `white-space: pre` line, so a 400-character line widened the editor to 3237px instead of
+   scrolling it (measured `scrollWidth == clientWidth == 3237`). Fixed with `flex: 1 1 0` +
+   `min-width: 0` on the editor and `overflow: hidden` on its host. Task 2 never hit this because
+   the editor was then a direct child of a *column* flex container.
+2. **`Alt+N` swallowed the next keystroke.** Mounting a new document destroyed the focused view
+   and its replacement started unfocused, so the following keystroke went nowhere. Fixed by
+   focusing the owner view on mount — a genuine UX bug, not a test artefact.
+3. **Two of my own checks were wrong,** and were corrected rather than relaxed: one pressed
+   Ctrl+Z immediately after deleting the probe line (undoing the deletion it had just made), and
+   one expected a close prompt on a document that had been fully undone back to its save point —
+   closing an *unmodified* document is correctly silent. The second case is now asserted as its
+   own check.
+
+**Carried forward**
+- **S5**: split view mirrors the active document in two panes; independent per-pane tab sets
+  stay Tier 2 / phase 2.
+- Fold state is not forwarded between panes — deferred to Task 6, which is when there will be
+  languages to fold (`docs/r2-shared-state-spike.md` §4).
+- **No menu bar exists yet**, deliberately: `chrome.ts` and `index.html` both record that it
+  arrives with Task 4, once File ▸ Open / Save have something to sit in. The toolbar currently
+  carries New / Close / Wrap / Split, all four functional.
+
 ## Blockers / open questions
 
 Nothing blocking. All four original scope questions are closed (see `docs/scope.md` §10).
 
-Still `Proposed` (not blocking Task 3, confirm when the owning task starts):
+Still `Proposed` (not blocking Task 4 until its own gate, confirm when the owning task starts):
 
 1. **D3 + D4** — the two-tier file-I/O design and the encoding policy, both as narrowed by
    D10/D11. Gate **Task 4**.

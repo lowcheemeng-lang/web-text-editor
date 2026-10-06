@@ -1,12 +1,21 @@
 /*
- * Minimal shell styles. Task 3 owns the real Notepad++ look (menu, toolbar,
- * tabs, status bar, theme), so this file only guarantees the editor fills the
- * viewport and respects the system colour scheme.
+ * Notepad++-style application shell (Task 3).
+ *
+ * Three bands stacked vertically — toolbar, workspace, status bar — with the
+ * workspace splitting horizontally into one or two panes. The editor itself is
+ * themed from `notepadpp-config.ts` (nppTheme: Courier New, N++'s own greys and
+ * active-line blue); this file only lays the chrome around it and keeps CodeMirror
+ * a sized, scrollable ancestor.
  */
 :root {
-  color-scheme: light dark;
-  --shell-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono-font: "Cascadia Mono", "Consolas", "DejaVu Sans Mono", ui-monospace, monospace;
+  color-scheme: light;
+  --shell-font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --chrome-bg: #f0f0f0;
+  --chrome-border: #cfcfcf;
+  --chrome-text: #1f1f1f;
+  --chrome-hover: #e2e6ea;
+  --chrome-active: #cdd9ea;
+  --strip-bg: #e9e9e9;
 }
 
 * {
@@ -33,14 +42,250 @@ body {
   flex-direction: column;
 }
 
-/* CodeMirror needs a sized ancestor to scroll internally. */
-.cm-editor {
+/* ------------------------------------------------------------------ layout */
+
+.npp-app {
+  display: flex;
+  flex-direction: column;
+  background: var(--chrome-bg);
+  color: var(--chrome-text);
+}
+
+.npp-workspace {
   flex: 1 1 auto;
   min-height: 0;
-  font-family: var(--mono-font);
-  font-size: 14px;
+  display: flex;
+}
+
+.npp-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+/*
+ * The second pane mirrors the active document (clone to other view), so it has
+ * no tab strip of its own to show — the primary pane's strip is the one list of
+ * open documents. Hiding it is a decision, not an oversight.
+ */
+.npp-pane[data-pane="clone"] .npp-tabstrip {
+  display: none;
+}
+
+.npp-editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  /* The editor must never widen the pane: a long unwrapped line has a
+     min-content width of its own, and without this the pane scrolls the
+     whole window instead of the scroller scrolling the line. */
+  overflow: hidden;
+}
+
+/* CodeMirror needs a sized ancestor to scroll internally. `flex-basis: 0` sizes
+   the editor from the available space rather than its content, and
+   `min-width: 0` is required to cancel flexbox's min-content default — without
+   both, a 400-character line widens the editor to fit instead of overflowing. */
+.npp-editor-host .cm-editor {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
 }
 
 .cm-editor.cm-focused {
   outline: none;
+}
+
+/* ----------------------------------------------------------------- toolbar */
+
+.npp-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 3px 4px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.npp-tool {
+  font: 12px/1 var(--shell-font);
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.npp-tool:hover {
+  background: var(--chrome-hover);
+  border-color: #c9ced3;
+}
+
+.npp-tool:active {
+  background: #d5dbe0;
+}
+
+/* Toggles (word wrap, split) stay lit while they are on. */
+.npp-tool.is-active {
+  background: var(--chrome-active);
+  border-color: #9db4d0;
+  color: #12263f;
+}
+
+/* --------------------------------------------------------------- tab strip */
+
+.npp-tabstrip {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 5px 4px 0;
+  min-height: 30px;
+  background: var(--strip-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.npp-tab {
+  display: flex;
+  align-items: center;
+  max-width: 220px;
+  padding: 4px 5px 4px 9px;
+  font-size: 12px;
+  color: #333;
+  background: #dcdcdc;
+  border: 1px solid #c4c4c4;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  cursor: default;
+}
+
+/* The active tab is the white one, lifted a pixel to sit on the editor pane. */
+.npp-tab.is-active {
+  background: #ffffff;
+  border-color: var(--chrome-border);
+  transform: translateY(1px);
+  color: #000;
+}
+
+.npp-tab-label {
+  max-width: 160px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: inherit;
+}
+
+.npp-tab-close {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: none;
+  color: #666;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.npp-tab-close:hover {
+  background: #e0b0b0;
+  color: #400;
+}
+
+/* ----------------------------------------------------------------- splitter */
+
+.npp-splitter {
+  flex: 0 0 6px;
+  background: var(--strip-bg);
+  border-left: 1px solid var(--chrome-border);
+  border-right: 1px solid var(--chrome-border);
+  cursor: col-resize;
+}
+
+.npp-splitter:hover {
+  background: var(--chrome-active);
+}
+
+/* --------------------------------------------------------------- status bar */
+
+.npp-statusbar {
+  display: flex;
+  background: var(--chrome-bg);
+  border-top: 1px solid var(--chrome-border);
+  font-size: 12px;
+  color: #333;
+}
+
+.npp-status-item {
+  padding: 3px 11px;
+  border-right: 1px solid #d8d8d8;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ dialogs */
+
+.npp-dialog {
+  width: min(440px, calc(100vw - 48px));
+  padding: 16px 18px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 5px;
+  background: #ffffff;
+  color: var(--chrome-text);
+  font-family: var(--shell-font);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 28%);
+}
+
+.npp-dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+.npp-dialog-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.npp-dialog-body {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #444;
+}
+
+.npp-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.npp-dialog-actions button {
+  min-width: 84px;
+  padding: 6px 12px;
+  font: 13px/1 var(--shell-font);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: #f7f7f7;
+  cursor: pointer;
+}
+
+.npp-dialog-actions button:hover {
+  background: var(--chrome-hover);
+}
+
+.npp-dialog-confirm {
+  border-color: #7f9dc0 !important;
+  background: var(--chrome-active) !important;
 }

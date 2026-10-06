@@ -78,8 +78,8 @@ decision log in `PROGRESS.md`, which is the authority on status).
 
 | Feature | Web implementation | Notes |
 |---|---|---|
-| Split view (two panes) | Second `EditorView` on the same `EditorState` | **Needs a spike** — verify two views on one state behave as required (R2) |
-| Clone document to other view | As above, sharing state | Same spike |
+| Split view (two panes) | Two `EditorView`s over **two** `EditorState`s, with each document change forwarded to the peer views under a `syncAnnotation` | **R2 closed** — the spike proved the original "one shared `EditorState`" design wrong: the views diverge *silently*. See `docs/r2-shared-state-spike.md`. A clone of the active document shipped early in Task 3 (S5); what stays phase 2 is **per-pane independent tab sets** |
+| Clone document to other view | As above | Shipped in Task 3 under S5: one undo history, per-view caret and scroll |
 | Bookmarks (toggle/goto/clear) | Custom `StateField` + gutter markers | High |
 | Mark all / highlight matches / incremental highlight | Decoration plugin | High |
 | Function List panel | Walk the CM6 syntax tree | High |
@@ -201,7 +201,7 @@ The MVP is done when, in **Chrome/Chromium** (D11):
 | ID | Risk | Mitigation |
 |---|---|---|
 | R1 | Legacy encodings mis-decode silently | Only offer the §6 covered set in the MVP; explicit "unknown bytes" warning. WASM conversion is now the **scheduled** mitigation (D10), not a maybe. |
-| R2 | Two CM6 views on one `EditorState` may not give clean split-view semantics | Timeboxed spike at the start of Task 3; if it fails, fall back to independent states with a manual sync. |
+| R2 | ~~Two CM6 views on one `EditorState` may not give clean split-view semantics~~ — **CLOSED 2026-10-06, risk confirmed real.** The spike reproduced it: views diverge *silently* (`a.state === b.state` before the dispatch, stale text in the second view after — no exception thrown) | Mitigated exactly as planned: independent states with a manual sync. `src/editor/split-view.ts` re-dispatches every document change to the peer views under `syncAnnotation`, and only the owner view carries `history()` so a document keeps one undo history. Evidence: `python3 scripts/spike-r2-split.py` → **PASS (12/12)**, write-up in `docs/r2-shared-state-spike.md` |
 | R3 | CM6 normalises the document to a single line separator — **mixed per-line EOL is not preserved** (N++ shows "Mixed") | Detect and warn at load; store the original EOL style as document metadata; convert-on-save with a prompt. Per-line EOL fidelity is a genuine downgrade. |
 | R4 | Printing without the native dialog's control over colour/line numbers | Ship a print stylesheet; document the limitation. |
 | R5 | A canvas minimap is hand-rolled and may be slow on large files | Render throttled, viewport-relative; skip above a size threshold. |
