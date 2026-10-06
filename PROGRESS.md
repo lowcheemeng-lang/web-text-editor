@@ -105,7 +105,7 @@ Nothing else gates Task 4. Task 6 needs **D9** (proposed). Task 5 is ungated.
 | D3 | 2026-09-25 | Two-tier file I/O, feature-detected | Pickers are Chromium-only; Mozilla position on them is *harmful* | Proposed — **narrowed by D11:** MVP ships Tier A only; tier B/C I/O is phase 2. Gates Task 4 |
 | D4 | 2026-09-25 | Encoding: WHATWG label set only in MVP; UTF-32/DOS codepages via WASM | Encoding API's label list is fixed | Proposed — **split by D10:** MVP = WHATWG set; the WASM half is the scheduled phase-3 priority. Gates Task 4 |
 | D5 | 2026-09-25 | Plugins = runtime-loaded ES modules + WASM, no native ABI | Only backend-free option | Proposed |
-| D6 | 2026-09-25 | Macros = editor transaction record/replay | CM6 exposes all changes as transactions | Proposed |
+| D6 | 2026-09-25 | Macros = editor transaction record/replay, not OS input replay | CM6 exposes every change as a transaction, so record/replay/run-N-times works without native hooks (N++'s macro playback is OS-input based and cannot be emulated literally) | **Accepted — user-confirmed 2026-10-06** |
 | D7 | 2026-09-25 | Run/exec + native plugins permanently out of scope | Impossible without a process/shell | **Accepted — user-confirmed 2026-09-25** |
 | D8 | 2026-09-25 | OPFS for documents, IndexedDB for metadata/prefs | OPFS is Baseline cross-browser since March 2023 | Proposed |
 | D9 | 2026-09-25 | MVP: ~20 official CM6 languages + legacy-modes long tail | Official packages cover the popular set; legacy-modes covers breadth | Proposed — **D10 ranks UDL below encoding/large-file**; the MVP language set is unaffected. Gates Task 6 |
@@ -346,8 +346,8 @@ Still `Proposed` (not blocking Task 4 until its own gate, confirm when the ownin
 1. **D3 + D4** — the two-tier file-I/O design and the encoding policy, both as narrowed by
    D10/D11. Gate **Task 4**.
 2. **D9** — the MVP language set. Gates **Task 6**.
-3. **D1, D5, D6, D8** — lower-stakes consolidations of choices already implied by the accepted
-   decisions.
+3. **D1, D5, D8** — lower-stakes consolidations of choices already implied by the accepted
+   decisions. (D6 left this group on 2026-10-06: accepted.)
 
 One loose end, not a decision: **is mobile/tablet in scope at all?** D11 didn't address it.
 
