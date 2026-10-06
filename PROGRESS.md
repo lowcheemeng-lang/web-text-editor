@@ -108,7 +108,7 @@ Nothing else gates Task 4. Task 6 needs **D9** (proposed). Task 5 is ungated.
 | D6 | 2026-09-25 | Macros = editor transaction record/replay, not OS input replay | CM6 exposes every change as a transaction, so record/replay/run-N-times works without native hooks (N++'s macro playback is OS-input based and cannot be emulated literally) | **Accepted — user-confirmed 2026-10-06** |
 | D7 | 2026-09-25 | Run/exec + native plugins permanently out of scope | Impossible without a process/shell | **Accepted — user-confirmed 2026-09-25** |
 | D8 | 2026-09-25 | OPFS for documents, IndexedDB for metadata/prefs | OPFS is Baseline cross-browser since March 2023 | Proposed |
-| D9 | 2026-09-25 (proposal refined 2026-10-06) | MVP language set: **all 22 official CM6 packages + all 103 legacy-modes ports**, lazily loaded per file; UDL stays Tier 3 | Counted and verified 2026-10-06: all 22 official `@codemirror/lang-*` packages and `legacy-modes@6.5.4` / `language-data@6.5.2` install from npm; the original "~20" was a guess. Lazily loaded per language, so extra languages cost 0 bytes until opened. Gaps vs N++: makefile, batch, INI, Kotlin, Scala, GraphQL, Objective-C, MATLAB (+ C# unconfirmed) | **Proposed — concrete proposal filed 2026-10-06, awaiting yes.** **D10 ranks UDL below encoding/large-file**; the MVP language set is unaffected. Gates Task 6 |
+| D9 | 2026-09-25 (proposal refined 2026-10-06) | MVP language set: **all 22 official CM6 packages + all 103 legacy-modes ports**, lazily loaded per file; UDL stays Tier 3 | Counted and verified 2026-10-06: all 22 official `@codemirror/lang-*` packages and `legacy-modes@6.5.4` / `language-data@6.5.2` install from npm; the original "~20" was a guess. Lazily loaded per language, so extra languages cost 0 bytes until opened. Gaps vs N++: makefile, batch, INI, Kotlin, Scala, GraphQL, Objective-C, MATLAB (+ C# unconfirmed) | **Accepted — user-confirmed 2026-10-06** (proposal filed in `7e1de3a`). **D10 ranks UDL below encoding/large-file**; the MVP language set is unaffected. Gates Task 6 |
 | D10 | 2026-09-25 | Phase-3 priority: encoding fidelity (WASM for UTF-32/DOS codepages) + large-file mode. UDL parity ranks below it and stays unscheduled | Correctness beats breadth — a mis-decoded legacy file or a stalled editor is silent data loss or a hard block (R1, R3, B7); UDL is a visible missing feature with a documented workaround | **Accepted — user-confirmed 2026-09-25** |
 | D11 | 2026-09-25 | MVP browser scope: **Chromium only** (Chrome/Edge/Opera). Firefox/Safari tier B/C fallback UX moves to phase 2; §8 acceptance is Chrome-only | User decision. Keeps the MVP on the single File System Access path; halves the file-I/O test matrix | **Accepted — user-confirmed 2026-09-25** |
 | S0 | 2026-09-25 | Progress tracked in this ledger + `scripts/status.mjs`, not in chat history | Chat transcripts do not survive into new sessions; a repo file does | Accepted |
@@ -337,6 +337,21 @@ Nothing else gates Task 4. Task 6 needs **D9** (proposed). Task 5 is ungated.
   arrives with Task 4, once File ▸ Open / Save have something to sit in. The toolbar currently
   carries New / Close / Wrap / Split, all four functional.
 
+#### Session 2, continued — D6 and D9 decided (docs only)
+
+**User input received**
+- **D6 accepted**: macros = editor transaction record/replay, not OS-input replay (`419dc54`).
+- **D9 accepted**: all 22 official CM6 packages + all 103 `legacy-modes`, lazily loaded. The
+  concrete proposal was filed first (`7e1de3a`), then the yes came on top of it.
+- **D5 still open.** Its mechanism (ES modules + WASM, no native ABI) is forced by the
+  environment, so only the installation model is genuinely unsettled — and no task gates on it.
+
+**Carried forward to Task 6 — neither is part of D9's acceptance**
+- Whether Task 6 *also* hand-writes `StreamLanguage` modes for **makefile, batch/.bat and INI**
+  (≈ half a day). The 125 languages ship either way; this is an addition, not a condition.
+- **C# coverage is unconfirmed.** CodeMirror 5's `clike` mode covered it, but we have not proven
+  `legacy-modes` does. Verify before ever claiming C# support.
+
 ## Blockers / open questions
 
 Nothing blocking. All four original scope questions are closed (see `docs/scope.md` §10).
@@ -345,13 +360,12 @@ Still `Proposed` (not blocking Task 4 until its own gate, confirm when the ownin
 
 1. **D3 + D4** — the two-tier file-I/O design and the encoding policy, both as narrowed by
    D10/D11. Gate **Task 4**.
-2. **D9** — the MVP language set. Gates **Task 6**.
-3. **D1, D5, D8** — lower-stakes consolidations of choices already implied by the accepted
-   decisions. (D6 left this group on 2026-10-06: accepted.)
+2. **D1, D5, D8** — lower-stakes consolidations of choices already implied by the accepted
+   decisions. (D6 and D9 left this group on 2026-10-06: both accepted.)
 
 One loose end, not a decision: **is mobile/tablet in scope at all?** D11 didn't address it.
 
-Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (all accepted 2026-09-25).
+Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D6~~ · ~~D9~~ (2026-10-06).
 
 ## Definition of done for the whole project
 
