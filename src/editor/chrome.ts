@@ -53,16 +53,37 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+export interface MenuItemSpec {
+  readonly id: string;
+  readonly label: string;
+  /** Shown right-aligned as a hint. The real binding lives in the keymap. */
+  readonly shortcut?: string;
+  readonly onClick: () => void;
+}
+
+export interface MenuSpec {
+  readonly label: string;
+  readonly items: readonly MenuItemSpec[];
+}
+
 export class Chrome {
+  /** The menu bar Task 3 deferred to this task, "once File ▸ Open / Save exist". */
+  readonly menuBar: HTMLElement;
   readonly toolbar: HTMLElement;
   readonly workspace: HTMLElement;
   readonly splitter: HTMLElement;
   readonly statusBar: HTMLElement;
 
   readonly #buttons = new Map<string, HTMLButtonElement>();
+  readonly #menus = new Map<string, { popup: HTMLElement; button: HTMLButtonElement }>();
+  #openMenu: string | null = null;
 
   constructor(host: HTMLElement) {
     host.classList.add("npp-app");
+    this.menuBar = el("div", {
+      className: "npp-menubar",
+      attrs: { role: "menubar", "aria-label": "Main menu" },
+    });
     this.toolbar = el("div", {
       className: "npp-toolbar",
       attrs: { role: "toolbar", "aria-label": "Editor toolbar" },
@@ -80,7 +101,77 @@ export class Chrome {
     this.splitter.hidden = true;
     this.statusBar = el("div", { className: "npp-statusbar", attrs: { role: "status" } });
     this.workspace.appendChild(this.splitter);
-    host.append(this.toolbar, this.workspace, this.statusBar);
+    host.append(this.menuBar, this.toolbar, this.workspace, this.statusBar);
+  }
+
+  /**
+   * Build the menu bar. A title click opens its popup; Escape, a click anywhere
+   * else, or choosing an item closes it. Menu items run the same actions as the
+   * keymap, so neither path is second-class.
+   */
+  addMenus(menus: readonly MenuSpec[]): void {
+    for (const menu of menus) {
+      const button = el("button", {
+        className: "npp-menu-title",
+        text: menu.label,
+        attrs: { type: "button", "aria-haspopup": "true", "aria-expanded": "false" },
+      });
+      const popup = el("div", { className: "npp-menu-popup", attrs: { role: "menu" } });
+      popup.hidden = true;
+
+      for (const item of menu.items) {
+        const entry = el("button", {
+          className: "npp-menu-item",
+          attrs: { type: "button", role: "menuitem", "data-menu-item": item.id },
+        });
+        entry.append(
+          el("span", { className: "npp-menu-label", text: item.label }),
+          el("span", { className: "npp-menu-shortcut", text: item.shortcut ?? "" }),
+        );
+        entry.addEventListener("click", () => {
+          this.#closeMenus();
+          item.onClick();
+          // The next keystroke belongs to the editor, not the menu.
+          document.querySelector<HTMLElement>(".npp-pane .cm-content")?.focus();
+        });
+        popup.appendChild(entry);
+      }
+
+      const wrapper = el("div", { className: "npp-menu" });
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.#toggleMenu(menu.label);
+      });
+      wrapper.append(button, popup);
+      this.#menus.set(menu.label, { popup, button });
+      this.menuBar.appendChild(wrapper);
+    }
+
+    document.addEventListener("click", () => this.#closeMenus());
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") this.#closeMenus();
+    });
+  }
+
+  #toggleMenu(label: string): void {
+    const target = this.#menus.get(label);
+    if (!target) return;
+    const wasOpen = this.#openMenu === label;
+    this.#closeMenus();
+    if (wasOpen) return;
+    target.popup.hidden = false;
+    target.button.setAttribute("aria-expanded", "true");
+    this.#openMenu = label;
+  }
+
+  #closeMenus(): void {
+    if (this.#openMenu === null) return;
+    const current = this.#menus.get(this.#openMenu);
+    if (current) {
+      current.popup.hidden = true;
+      current.button.setAttribute("aria-expanded", "false");
+    }
+    this.#openMenu = null;
   }
 
   addButton(spec: ToolbarButtonSpec): void {
@@ -202,6 +293,98 @@ export class Chrome {
 
   setTitle(text: string): void {
     document.title = text;
+  }
+
+  /**
+   * A message the user must acknowledge: an encoding that cannot be saved, a read
+   * that failed. Same visual language as `confirm`, one button.
+   */
+  alert(options: { title: string; body: string; okLabel?: string }): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const dialog = el("dialog", { className: "npp-dialog", attrs: { "data-dialog": "alert" } });
+      const title = el("h2", { className: "npp-dialog-title", text: options.title });
+      const body = el("p", { className: "npp-dialog-body", text: options.body });
+      const ok = el("button", {
+        className: "npp-dialog-confirm",
+        text: options.okLabel ?? "OK",
+        attrs: { type: "button", "data-dialog-action": "ok" },
+      });
+      const actions = el("div", { className: "npp-dialog-actions" });
+      ok.addEventListener("click", () => dialog.close("ok"));
+      actions.append(ok);
+      dialog.append(title, body, actions);
+      dialog.addEventListener("close", () => {
+        dialog.remove();
+        resolve();
+      });
+      document.body.appendChild(dialog);
+      dialog.showModal();
+      ok.focus();
+    });
+  }
+
+  /**
+   * Persistent banner for a browser that cannot do file I/O (S4, scope §8 criterion
+   * 6). It sits under the menu bar, is never auto-dismissed, and states plainly
+   * that nothing can be saved to a file — silence is the failure mode this exists
+   * to prevent.
+   */
+  showNotice(title: string, body: string): void {
+    const notice = el("div", {
+      className: "npp-notice",
+      attrs: { role: "alert", "data-notice": "unsupported" },
+    });
+    notice.append(
+      el("strong", { className: "npp-notice-title", text: title }),
+      el("span", { className: "npp-notice-body", text: body }),
+    );
+    this.menuBar.after(notice);
+  }
+
+  /**
+   * N++'s three-way close prompt: Save / Don't Save / Cancel. Two buttons cannot
+   * express it, and now that saving is real, offering only discard-or-cancel would
+   * hide the safe choice. Resolves `"cancel"` when the dialog is dismissed.
+   */
+  confirmSave(options: {
+    title: string;
+    body: string;
+    canSave: boolean;
+  }): Promise<"save" | "discard" | "cancel"> {
+    return new Promise((resolve) => {
+      const dialog = el("dialog", {
+        className: "npp-dialog",
+        attrs: { "data-dialog": "save-changes" },
+      });
+      const title = el("h2", { className: "npp-dialog-title", text: options.title });
+      const body = el("p", { className: "npp-dialog-body", text: options.body });
+      const actions = el("div", { className: "npp-dialog-actions" });
+
+      const addButton = (id: string, label: string, className: string) => {
+        const node = el("button", {
+          className,
+          text: label,
+          attrs: { type: "button", "data-dialog-action": id },
+        });
+        node.addEventListener("click", () => dialog.close(id));
+        actions.append(node);
+      };
+
+      // Without the pickers there is nothing Save could do, so do not offer it.
+      if (options.canSave) addButton("save", "Save", "npp-dialog-confirm");
+      addButton("discard", "Don't Save", "npp-dialog-discard");
+      addButton("cancel", "Cancel", "npp-dialog-cancel");
+
+      dialog.append(title, body, actions);
+      dialog.addEventListener("close", () => {
+        const choice = dialog.returnValue;
+        dialog.remove();
+        // Esc leaves returnValue empty; treating that as cancel keeps data safe.
+        resolve(choice === "save" || choice === "discard" ? choice : "cancel");
+      });
+      document.body.appendChild(dialog);
+      dialog.showModal();
+    });
   }
 
   /** Modal confirmation used by the close prompt. Resolves false on Esc or Cancel. */

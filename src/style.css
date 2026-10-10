@@ -235,6 +235,103 @@ body {
   white-space: nowrap;
 }
 
+/* ---------------------------------------------------------------- menu bar */
+
+.npp-menubar {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  padding: 0 4px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  font-size: 12px;
+  user-select: none;
+}
+
+.npp-menu {
+  position: relative;
+}
+
+.npp-menu-title {
+  height: 100%;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 0 0 3px 3px;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.npp-menu-title:hover {
+  background: var(--chrome-hover);
+}
+
+.npp-menu-title[aria-expanded="true"] {
+  background: var(--chrome-active);
+  border-color: #9db4d0;
+}
+
+.npp-menu-popup {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  min-width: 210px;
+  padding: 4px;
+  background: #ffffff;
+  border: 1px solid var(--chrome-border);
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+}
+
+.npp-menu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.npp-menu-item:hover {
+  background: var(--chrome-active);
+}
+
+.npp-menu-shortcut {
+  color: #777;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------ capability notice (S4) */
+
+/* Never auto-dismissed and never subtle: scope §8 criterion 6 is that an
+   unsupported browser fails loudly rather than losing data silently. */
+.npp-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 12px;
+  background: #fff4e5;
+  border-bottom: 1px solid #e0b070;
+  color: #5a3b00;
+  font-size: 12px;
+}
+
+.npp-notice-title {
+  font-weight: 600;
+}
+
+.npp-notice-body {
+  line-height: 1.4;
+}
+
 /* ------------------------------------------------------------------ dialogs */
 
 .npp-dialog {

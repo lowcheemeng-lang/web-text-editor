@@ -1,10 +1,11 @@
 /**
- * The orchestrator for Task 3: it ties the four existing pieces together.
+ * The orchestrator: it ties the pieces together.
  *
- *   chrome.ts             pure-DOM shell (toolbar, panes, tab strips, status bar)
+ *   chrome.ts             pure-DOM shell (menu bar, toolbar, panes, tab strips, status bar)
  *   tabs.ts               document model (dirty flag, save point, tab captions)
  *   notepadpp-config.ts   Notepad++ defaults: states, theme, keymaps
  *   split-view.ts         two views over one document with one undo history
+ *   ../file/file-io.ts    the whole file lifecycle (Task 4)
  *
  * It is the only module that mutates documents, so the chrome stays free of
  * editor state and `tabs.ts` stays free of DOM.
@@ -14,15 +15,36 @@
  * other view"). Both panes therefore show the same document, edits appear in
  * both, and there is one undo history — `views[0]` owns it. Notepad++'s other
  * flavour of split — each pane carrying its own independent tab set — is Tier 2
- * in `docs/scope.md` and is deliberately not built here; a single shared tab
- * strip plus a mirrored pane is what the plan's step 3 asks for ("a second view
- * over the same state").
+ * in `docs/scope.md` and is deliberately not built here.
  *
- * Keyboard: `WEB_PORT_KEYS` because Chrome owns Ctrl+N / Ctrl+W / Ctrl+Tab and
- * no page can intercept them (recorded in `DEVIATIONS_FROM_NPP`).
+ * ── File I/O (Task 4, decisions D3/D4) ───────────────────────────────────────
+ * Every open/save goes through `file-io.ts`; this class only decides *when* and
+ * what to tell the user. Two rules from that module's contract are easy to break
+ * from up here, so they are stated where they are used:
+ *   - a picker must be called synchronously from a user gesture, so nothing may
+ *     `await` before it — that is why the click handlers below call straight into
+ *     `openFile()` / `saveFile()` rather than after any setup;
+ *   - a dismissed picker is a cancel, not a failure, so a `null` handle returns
+ *     quietly and only real errors reach a dialog.
+ *
+ * Keyboard: `WEB_PORT_KEYS` because Chrome owns Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+W
+ * and no page can intercept them (recorded in `DEVIATIONS_FROM_NPP`).
  */
 import { EditorView } from "@codemirror/view";
 import { indentUnit } from "@codemirror/language";
+
+import {
+  canEncode,
+  encodeFile,
+  pickFileToOpen,
+  pickFileToSave,
+  readHandle,
+  toEditorLineEndings,
+  toFileLineEndings,
+  writeHandle,
+} from "../file/file-io";
+import type { DocumentFormat } from "../file/types";
+import { detectCapabilities, unsupportedNotice } from "../platform/capabilities";
 
 import { Chrome, type PaneElements, type TabDescriptor } from "./chrome";
 import {
@@ -43,24 +65,30 @@ import {
 } from "./split-view";
 import { backAtSavePoint, newDocumentName, tabLabel, type OpenDocument } from "./tabs";
 
-/** Shown in the first document so a fresh clone explains what it can do. */
-const WELCOME = `Notepad++ Web — Task 3
+/** What a scratch buffer claims until it is given a file of its own. */
+const DEFAULT_FORMAT: DocumentFormat = { encoding: "utf-8", bom: "none", eol: "LF" };
 
-Multi-document tabs, Notepad++'s editor defaults, and split view.
+/** Shown in the first document so a fresh clone explains what it can do. */
+const WELCOME = `Notepad++ Web — Task 4
+
+Multi-document tabs, Notepad++'s editor defaults, split view, and real files.
 
 Keys (the N++ ones are deliberately different — see below):
-  Alt+N          new document          Alt+W   close document
+  Alt+N          new document          Alt+O   open a file
+  Alt+S          save                  Alt+Shift+S  save as
+  Alt+W          close document        Alt+C   clone this document to a second pane
   Alt+PageUp     previous document     Alt+PageDown  next document
-  Alt+Z          toggle word wrap      Alt+S   split / clone this document
-  Ctrl+Z / Ctrl+Y                      undo / redo
-  Tab                                    indent by a real tab character
+  Alt+Z          toggle word wrap      Ctrl+Z / Ctrl+Y  undo / redo
+  Tab            indent by a real tab character
 
-Why not Ctrl+N and Ctrl+W? Chrome owns them (new window / close tab) and no web
-page can intercept them, so the menu-key equivalents move to Alt. N++'s Ctrl+N,
-Ctrl+W and Ctrl+Tab are listed in DEVIATIONS_FROM_NPP.
+Why not Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+W? Chrome owns all four (new window,
+open, save page, close tab) and no web page can intercept them, so the
+substitutes move to Alt. The originals are listed in DEVIATIONS_FROM_NPP.
 
-Nothing here talks to a server: open and save arrive in Task 4 via the File
-System Access API, and this editor has no backend at all (decision D1).
+Files are read and written with the File System Access API, which is what makes
+a byte-identical round-trip possible: the encoding, byte-order mark and line
+endings a file arrives with are the ones it is saved with, unless you change
+them. Nothing here talks to a server — there is no backend at all (decision D1).
 `;
 
 export class Workspace {
@@ -68,6 +96,18 @@ export class Workspace {
   readonly #handlers: NppCommandHandlers = {
     newDocument: () => {
       this.newDocument();
+      return true;
+    },
+    openFile: () => {
+      void this.openFile();
+      return true;
+    },
+    saveFile: () => {
+      void this.saveFile();
+      return true;
+    },
+    saveFileAs: () => {
+      void this.saveFile({ forceDialog: true });
       return true;
     },
     closeDocument: () => {
@@ -83,10 +123,6 @@ export class Workspace {
       return true;
     },
     toggleWordWrap: () => this.toggleWordWrap(),
-    toggleSplitView: () => {
-      this.toggleSplit();
-      return true;
-    },
     cloneToOtherView: () => {
       this.toggleSplit();
       return true;
@@ -95,6 +131,7 @@ export class Workspace {
 
   readonly #chrome: Chrome;
   readonly #primary: PaneElements;
+  readonly #capabilities = detectCapabilities();
   #secondary: PaneElements | null = null;
   #disposeSplitterDrag: (() => void) | null = null;
 
@@ -107,6 +144,7 @@ export class Workspace {
   constructor(host: HTMLElement) {
     this.#chrome = new Chrome(host);
     this.#primary = this.#chrome.addPane("primary", "before-splitter");
+    this.#addMenus();
 
     this.#chrome.addButton({
       id: "new",
@@ -114,6 +152,24 @@ export class Workspace {
       title: `New document (${WEB_PORT_KEYS.newDocument})`,
       onClick: () => {
         this.newDocument();
+        return false;
+      },
+    });
+    this.#chrome.addButton({
+      id: "open",
+      label: "Open",
+      title: `Open a file (${WEB_PORT_KEYS.openFile})`,
+      onClick: () => {
+        void this.openFile();
+        return false;
+      },
+    });
+    this.#chrome.addButton({
+      id: "save",
+      label: "Save",
+      title: `Save this document (${WEB_PORT_KEYS.saveFile})`,
+      onClick: () => {
+        void this.saveFile();
         return false;
       },
     });
@@ -135,7 +191,7 @@ export class Workspace {
     this.#chrome.addButton({
       id: "split",
       label: "Split",
-      title: `Split view — show this document in a second pane (${WEB_PORT_KEYS.toggleSplitView})`,
+      title: `Clone this document to a second pane (${WEB_PORT_KEYS.cloneToOtherView})`,
       onClick: () => {
         this.toggleSplit();
         return this.#split;
@@ -143,9 +199,48 @@ export class Workspace {
     });
   }
 
-  /** Create the first document. Call once, after construction. */
+  /** Create the first document, and say so if this browser cannot do file I/O. */
   start(): void {
     this.newDocument(WELCOME);
+    const notice = unsupportedNotice(this.#capabilities);
+    if (notice) this.#chrome.showNotice(notice.title, notice.body);
+  }
+
+  #addMenus(): void {
+    this.#chrome.addMenus([
+      {
+        label: "File",
+        items: [
+          { id: "new", label: "New", shortcut: WEB_PORT_KEYS.newDocument, onClick: () => this.newDocument() },
+          { id: "open", label: "Open…", shortcut: WEB_PORT_KEYS.openFile, onClick: () => void this.openFile() },
+          { id: "save", label: "Save", shortcut: WEB_PORT_KEYS.saveFile, onClick: () => void this.saveFile() },
+          {
+            id: "save-as",
+            label: "Save As…",
+            shortcut: WEB_PORT_KEYS.saveFileAs,
+            onClick: () => void this.saveFile({ forceDialog: true }),
+          },
+          { id: "close", label: "Close", shortcut: WEB_PORT_KEYS.closeDocument, onClick: () => this.#closeActive() },
+        ],
+      },
+      {
+        label: "View",
+        items: [
+          {
+            id: "word-wrap",
+            label: "Word Wrap",
+            shortcut: WEB_PORT_KEYS.toggleWordWrap,
+            onClick: () => this.toggleWordWrap(),
+          },
+          {
+            id: "clone",
+            label: "Clone to Other View",
+            shortcut: WEB_PORT_KEYS.cloneToOtherView,
+            onClick: () => this.toggleSplit(),
+          },
+        ],
+      },
+    ]);
   }
 
   /* ------------------------------------------------------------ documents */
@@ -184,13 +279,14 @@ export class Workspace {
   }
 
   /**
-   * Dev/verification handle — the numbers `scripts/verify-task3.py` asserts on.
+   * Dev/verification handle — the numbers `scripts/verify-task*.py` assert on.
    * Read-only; exposed on `window.__workspace` in dev builds.
    */
   inspect(): {
     documents: number;
     tabs: string[];
     activeName: string | null;
+    activeFileName: string | null;
     dirty: boolean;
     wordWrap: boolean;
     split: boolean;
@@ -202,6 +298,12 @@ export class Workspace {
     viewTexts: string[];
     fontSize: string | null;
     fontFamily: string | null;
+    encoding: string | null;
+    eol: string | null;
+    assumedEncoding: boolean;
+    canEncode: boolean | null;
+    fileSystemAccess: boolean;
+    menuTitles: string[];
   } {
     const document = this.#active();
     const owner = document ? ownerView(document.runtime) : undefined;
@@ -209,6 +311,7 @@ export class Workspace {
       documents: this.#documents.length,
       tabs: this.#documents.map(tabLabel),
       activeName: document?.name ?? null,
+      activeFileName: document?.handle?.name ?? null,
       dirty: document?.dirty ?? false,
       wordWrap: document?.wordWrap ?? false,
       split: this.#split,
@@ -221,10 +324,22 @@ export class Workspace {
       // .cm-scroller/.cm-content, so the two must be read from different nodes.
       fontSize: owner ? getComputedStyle(owner.dom).fontSize : null,
       fontFamily: owner ? getComputedStyle(owner.contentDOM).fontFamily : null,
+      encoding: document ? document.format.encoding : null,
+      eol: document ? document.format.eol : null,
+      assumedEncoding: document?.assumedEncoding ?? false,
+      canEncode: document ? canEncode(document.format.encoding) : null,
+      fileSystemAccess: this.#capabilities.fileSystemAccess,
+      menuTitles: [...this.#chrome.menuBar.querySelectorAll(".npp-menu-title")].map(
+        (node) => node.textContent ?? "",
+      ),
     };
   }
 
-  #createDocument(name: string, content: string): OpenDocument {
+  #createDocument(
+    name: string,
+    content: string,
+    file?: { handle: FileSystemFileHandle; format: DocumentFormat; assumedEncoding: boolean },
+  ): OpenDocument {
     const runtime = createDocumentRuntime();
     const state = createDocumentState(content, {
       handlers: this.#handlers,
@@ -238,7 +353,12 @@ export class Workspace {
       wordWrap: NPP_WORD_WRAP,
       runtime,
       state,
+      format: file?.format ?? { ...DEFAULT_FORMAT },
     };
+    if (file) {
+      document.handle = file.handle;
+      document.assumedEncoding = file.assumedEncoding;
+    }
     // Fired by split-view's dispatcher, once per transaction, for every view.
     runtime.onUpdate = (view) => this.#onUpdate(document, view);
     return document;
@@ -257,6 +377,127 @@ export class Workspace {
     if (dirty !== document.dirty) document.dirty = dirty;
 
     this.#render();
+  }
+
+  /* ----------------------------------------------------------------- files */
+
+  /**
+   * File ▸ Open. Called straight from a click so the picker still has the user
+   * activation it requires — nothing may be awaited before it.
+   */
+  async openFile(): Promise<void> {
+    if (!this.#capabilities.fileSystemAccess) {
+      await this.#showUnsupported();
+      return;
+    }
+
+    let handle: FileSystemFileHandle | null = null;
+    try {
+      handle = await pickFileToOpen();
+    } catch (error) {
+      await this.#chrome.alert({ title: "Could not open the file", body: describe(error) });
+      return;
+    }
+    if (!handle) return; // dismissed — a cancel, not a failure
+
+    let decoded;
+    try {
+      decoded = await readHandle(handle);
+    } catch (error) {
+      await this.#chrome.alert({ title: `Could not read ${handle.name}`, body: describe(error) });
+      return;
+    }
+
+    // UTF-32 and friends: refused with the reason rather than opened as mojibake.
+    if (decoded.unsupported) {
+      await this.#chrome.alert({ title: `${handle.name} was not opened`, body: decoded.unsupported });
+      return;
+    }
+
+    const document = this.#createDocument(handle.name, toEditorLineEndings(decoded.text), {
+      handle,
+      format: { encoding: decoded.encoding, bom: decoded.bom, eol: decoded.eol },
+      assumedEncoding: decoded.assumed,
+    });
+    this.#documents.push(document);
+    this.#show(document.id);
+
+    // D4: never let an uncertain decode pass silently.
+    if (decoded.assumed) {
+      await this.#chrome.alert({
+        title: `${handle.name} was opened as windows-1252`,
+        body:
+          "Nothing in the file identifies its encoding: it has no byte-order mark and its bytes " +
+          "are not valid UTF-8. Rather than guess silently, it has been opened as windows-1252, " +
+          "which cannot fail to decode — check that accented and punctuation characters look " +
+          "right before you save, because saving will write windows-1252 back.",
+      });
+    } else if (decoded.hadErrors) {
+      await this.#chrome.alert({
+        title: `${handle.name} did not decode cleanly`,
+        body:
+          `Some bytes are not valid ${decoded.encoding} and were replaced with “\uFFFD”. Saving now ` +
+          "would write those replacements to disk, so check the document before saving.",
+      });
+    }
+  }
+
+  /**
+   * File ▸ Save, or Save As when `forceDialog` is set. Needs no user gesture once
+   * the document has a handle — only choosing a *new* destination does.
+   */
+  async saveFile(options: { forceDialog?: boolean } = {}): Promise<boolean> {
+    const document = this.#active();
+    if (!document) return false;
+    if (!this.#capabilities.fileSystemAccess) {
+      await this.#showUnsupported();
+      return false;
+    }
+
+    let handle = options.forceDialog ? null : (document.handle ?? null);
+    if (!handle) {
+      try {
+        handle = await pickFileToSave(document.name);
+      } catch (error) {
+        await this.#chrome.alert({ title: "Could not save the file", body: describe(error) });
+        return false;
+      }
+      if (!handle) return false; // dismissed
+    }
+
+    // The round-trip contract: the file's own line endings go back with it (R3).
+    const forFile = toFileLineEndings(document.state.doc.toString(), document.format.eol);
+    const encoded = encodeFile(forFile, document.format);
+    if ("problem" in encoded) {
+      await this.#chrome.alert({
+        title: `Cannot save as ${document.format.encoding}`,
+        body: encoded.problem,
+      });
+      return false;
+    }
+
+    try {
+      await writeHandle(handle, encoded.bytes);
+    } catch (error) {
+      await this.#chrome.alert({
+        title: `Could not write ${handle.name}`,
+        body: `${describe(error)}\n\nThe original file has been left untouched.`,
+      });
+      return false;
+    }
+
+    document.handle = handle;
+    document.name = handle.name;
+    document.savedText = document.state.doc;
+    document.dirty = false;
+    document.assumedEncoding = false;
+    this.#render();
+    return true;
+  }
+
+  async #showUnsupported(): Promise<void> {
+    const notice = unsupportedNotice(this.#capabilities);
+    if (notice) await this.#chrome.alert({ title: notice.title, body: notice.body });
   }
 
   /* ----------------------------------------------------------- tab switches */
@@ -388,15 +629,19 @@ export class Workspace {
 
   async #close(document: OpenDocument): Promise<void> {
     if (document.dirty) {
-      // N++ offers Save / Don't Save / Cancel. Saving is Task 4, so offering it
-      // now would be a button that lies — only discard and cancel exist yet.
-      const discard = await this.#chrome.confirm({
-        title: `Close ${document.name}?`,
-        body: `${document.name} has unsaved changes. Closing it now discards them. Saving a file arrives with Task 4 (open / save).`,
-        confirmLabel: "Discard",
-        cancelLabel: "Cancel",
+      // N++'s three-way prompt. Task 4 made Save real, so offering only
+      // Discard/Cancel here would hide the safe option.
+      const choice = await this.#chrome.confirmSave({
+        title: `Save changes to ${document.name}?`,
+        body: `${document.name} has unsaved changes.`,
+        canSave: this.#capabilities.fileSystemAccess,
       });
-      if (!discard) return;
+      if (choice === "cancel") return;
+      if (choice === "save") {
+        // A failed or dismissed save must keep the document open, not lose it.
+        const saved = await this.saveFile();
+        if (!saved) return;
+      }
     }
 
     const index = this.#documents.indexOf(document);
@@ -454,21 +699,39 @@ export class Workspace {
   }
 
   /**
-   * N++'s status bar fields. Line ending and encoding belong to the document's
-   * file, which does not exist until Task 4, so they are deliberately absent
-   * rather than guessed.
+   * N++'s status bar fields. The encoding and line-ending columns only appear for
+   * a document that has a file: a scratch buffer has no encoding on disk, and
+   * stating one would be a guess (which is exactly what D4 forbids).
    */
   #status(document: OpenDocument | null): string[] {
-    if (!document) return ["No document", "Tab 4", "Wrap off"];
+    if (!document) return ["No document"];
+
     const { selection, tabSize } = document.state;
     const range = selection.main;
     const line = document.state.doc.lineAt(range.head);
-    return [
+    const parts = [
       `Ln ${line.number}, Col ${range.head - line.from + 1}`,
       `Sel: ${range.empty ? 0 : range.to - range.from}`,
       "Text",
       `Tab ${tabSize}`,
-      document.wordWrap ? "Wrap on" : "Wrap off",
     ];
+
+    if (document.handle) {
+      const label = document.assumedEncoding
+        ? `${document.format.encoding} (assumed)`
+        : document.format.encoding;
+      // A decode-only encoding is worth flagging in the status bar: the user finds
+      // out here rather than when a save is refused.
+      parts.push(canEncode(document.format.encoding) ? label : `${label} (save as UTF-8)`);
+      parts.push(document.format.eol === "mixed" ? "Mixed EOL" : document.format.eol);
+    }
+
+    parts.push(document.wordWrap ? "Wrap on" : "Wrap off");
+    return parts;
   }
+}
+
+/** Error text for a dialog — never a raw object dump. */
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

@@ -40,7 +40,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 1 | Define scope & compatibility matrix | DONE | `docs/scope.md` — 3 tiers, capability matrix, encoding matrix, R1–R8 risks; all claims sourced | `1b5bcd4` |
 | 2 | Initialize project scaffold | DONE | `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **382.37 kB / 123.08 kB gz**; `python3 scripts/verify-task2.py` → **PASS** (HTTP 200, 1 CM6 instance, 15 lines, typing verified, 0 console errors) | `26aaea6` |
 | 3 | Editor core with N++ defaults | DONE | `python3 scripts/verify-task3.py` → **PASS (56/56)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS** (12/12); `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** (down from 382.37 kB — `basicSetup` carried autocompletion/search that Tasks 5–6 own) | `1c548ae` |
-| 4 | File operations without backend | WIP | encoding core measured: `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)** byte-level round-trips (UTF-8 ±BOM, UTF-16LE/BE incl. surrogate pairs, windows-1252, ISO-8859-2, KOI8-R, the §6 alias trap, UTF-32 refusal, CRLF+BOM through LF normalisation); `npm run typecheck` → exit 0; `npm run build` → exit 0. **Built so far:** `src/file/file-io.ts`, `src/file/types.ts`, `src/platform/capabilities.ts`, `src/platform/fs-access.d.ts`, `scripts/test-file-io.mjs`. **Still to do:** pickers are written but not wired, menu bar, recent-file handles, status-bar EOL/encoding fields, `scripts/verify-task4.py`, manual picker checklist | - |
+| 4 | File operations without backend | WIP | `python3 scripts/verify-task4.py` → **PASS (38/38)** — OPFS-stubbed pickers, byte-identical CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, unsupported-browser notice; `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0. **Built:** menu bar (File/View), open/save/save-as, BOM+encoding round-trip, S4 capability check + notice, status-bar encoding/EOL, three-way close prompt. **Left:** recent files in IndexedDB (plan step 3 — depends on D8, still `Proposed`) and the **manual** picker checklist (a human must click the real OS dialog; no automation may claim it) | - |
 | 5 | Search, replace, navigation | TODO | - | - |
 | 6 | Syntax highlighting & language modes | TODO | - | - |
 | 7 | Session persistence & preferences | TODO | - | - |
@@ -443,6 +443,52 @@ saving one returns a written explanation rather than pretending. That is the hon
 - **Task 4 is WIP, not done.** The pickers are written but unwired; still outstanding: the menu
   bar, recent-file handles, the status-bar EOL/encoding fields, `scripts/verify-task4.py`
   (OPFS-stubbed per the plan) and the manual picker checklist.
+
+#### Session 2, continued — Task 4 wired and verified (still WIP: two items)
+
+**Built**
+- The **menu bar** Task 3 deferred here: File (New / Open… / Save / Save As… / Close) and View
+  (Word Wrap / Clone to Other View), each showing its binding and closing on Escape or an outside
+  click. It is a second path to the same commands the keymap runs, not a separate implementation.
+- **Open / Save / Save As** wired through `file-io.ts`. The **three-way N++ close prompt**
+  (Save / Don't Save / Cancel) replaced Task 3's two-button version — exactly what Task 3's own
+  copy promised: "Saving a file arrives with Task 4".
+- The status bar gained **encoding and line-ending columns**, and only for a document that has a
+  file. A scratch buffer has no encoding on disk, so stating one would be the guess D4 forbids.
+  A decode-only encoding is flagged *before* a save is refused rather than after.
+- The **S4 notice** is shown by `Workspace.start()`, so `main.ts` carries no capability logic.
+
+**Verified**
+- `python3 scripts/verify-task4.py` → **PASS (38/38)** in real Chrome: byte-identical round trip
+  of a CRLF+BOM file with nothing edited, and again after an edit; a byte-identical windows-1252
+  round trip; UTF-32 refused with an explanation and no document opened; a dismissed picker
+  producing neither an error nor a document; Save As retargeting the document; and — on a page
+  whose pickers are deleted *before* the app script runs — the notice shown, the editor still
+  mounting, Open explaining itself, and the close prompt withholding a Save it cannot perform.
+- `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**;
+  `verify-task3.py` → **PASS (58/58)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; typecheck and
+  build exit 0. Screenshot OCR confirms the rendered chrome: `File | View`, a File menu reading
+  `New Alt-n · Open… Alt-o · Save Alt-s · Save As… Alt-Shift-s · Close Alt-w`, and a status bar
+  ending `windows-1252 CRLF Wrap off`.
+
+**A Task 3 check had to change, deliberately — recorded rather than quietly edited.**
+`verify-task3.py` asserted *"prompt offers discard, not a Save button that cannot save"*, which
+Task 4 makes obsolete the moment Save becomes real. Its replacement asserts the **stronger**
+contract: Save, Don't Save and Cancel are all present (checks went 56 → 58). That script's
+welcome-text assertion also stopped pinning the string "Task 3", which would have failed every
+future task for the wrong reason.
+
+**Two more of my own assertions were wrong**, both corrected rather than loosened: one expected a
+file to end with a trailing CRLF after typing at Control+End (it correctly does not — the caret
+sits after the final newline), and one pinned the welcome text to a task number.
+
+**Left before Task 4 can be called DONE**
+1. **Recent files in IndexedDB** — plan step 3. Deliberately **not** started: that step *is*
+   decision **D8** (OPFS for bodies, IndexedDB for metadata and handles), and D8 is still
+   `Proposed`. Building it now would pre-empt a decision the user has not made.
+2. **The manual picker checklist** — no automation can click an OS dialog, so a human must
+   confirm it: open a real file, edit, save, and check the result on disk, including a CRLF+BOM
+   file. Recorded as manual evidence when done, never claimed by the scripts.
 
 ## Blockers / open questions
 

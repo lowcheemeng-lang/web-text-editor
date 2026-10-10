@@ -1,12 +1,16 @@
 /**
  * Application entry point.
  *
- * Task 3 replaces the Task 2 scaffold: `basicSetup` is gone, and the page is now
- * the Notepad++-style application — toolbar, per-pane tab strips, status bar,
- * multi-document editing and split/clone view — assembled by `Workspace`.
+ * The page is the Notepad++-style application assembled by `Workspace`: menu bar,
+ * toolbar, per-pane tab strips, status bar, multi-document editing, split/clone
+ * view, and — since Task 4 — real files through the File System Access API.
  *
- * Editor core is CodeMirror 6 per decision D2 (docs/editor-core-decision.md);
- * there is no backend of any kind (decision D1).
+ * Editor core is CodeMirror 6 per decision D2 (docs/editor-core-decision.md).
+ * There is no backend of any kind (decision D1), which is why every file
+ * operation lives in `src/file/file-io.ts` and nothing here fetches anything.
+ *
+ * `Workspace.start()` also reports an unsupported browser, so this file needs no
+ * capability logic of its own.
  */
 import { Workspace } from "./editor/workspace";
 

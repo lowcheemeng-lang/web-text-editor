@@ -118,7 +118,10 @@ with sync_playwright() as p:
 
     # Switch away and back: each tab must keep its own document.
     page.click(".npp-tab", position={"x": 40, "y": 8})
-    check("switching tabs keeps the welcome document", "Task 3" in (page.evaluate("() => window.__workspace.inspect().text") or ""))
+    # Match the product name, not a task number: the welcome text is rewritten each
+    # task and a check that pins "Task 3" would fail for the wrong reason.
+    check("switching tabs keeps the welcome document",
+          "Notepad++ Web" in (page.evaluate("() => window.__workspace.inspect().text") or ""))
     page.locator(".npp-tab").nth(1).click()
     check("switching back preserves edits", page.evaluate("() => window.__workspace.inspect().text") == "hello")
 
@@ -199,18 +202,23 @@ with sync_playwright() as p:
           page.evaluate("() => window.__workspace.inspect().dirty") is True)
 
     page.locator(".npp-tab.is-active .npp-tab-close").click()
-    page.wait_for_selector("[data-dialog='confirm']", timeout=3000)
-    check("closing a modified document prompts", page.locator("[data-dialog='confirm']").count() == 1)
-    check("prompt offers discard, not a Save button that cannot save", page.locator("[data-dialog-action='confirm']").text_content() == "Discard")
+    page.wait_for_selector("[data-dialog='save-changes']", timeout=3000)
+    check("closing a modified document prompts", page.locator("[data-dialog='save-changes']").count() == 1)
+    # Task 3 asserted the opposite of this ("discard, not a Save button that cannot
+    # save") because saving did not exist yet. Task 4 made it real, so the prompt
+    # must now offer N++'s full three-way choice — the stronger contract.
+    check("prompt offers Save", page.locator("[data-dialog-action='save']").count() == 1)
+    check("prompt offers Don't Save", page.locator("[data-dialog-action='discard']").text_content() == "Don't Save")
+    check("prompt offers Cancel", page.locator("[data-dialog-action='cancel']").count() == 1)
     page.click("[data-dialog-action='cancel']")
     page.wait_for_timeout(50)
     check("Cancel keeps the document open", page.locator(".npp-tab").count() == 3)
 
     page.locator(".npp-tab.is-active .npp-tab-close").click()
-    page.wait_for_selector("[data-dialog='confirm']", timeout=3000)
-    page.click("[data-dialog-action='confirm']")
+    page.wait_for_selector("[data-dialog='save-changes']", timeout=3000)
+    page.click("[data-dialog-action='discard']")
     page.wait_for_timeout(50)
-    check("Discard closes the document", page.locator(".npp-tab").count() == 2)
+    check("Don't Save closes the document", page.locator(".npp-tab").count() == 2)
 
     # The converse: an unmodified document must close with no prompt at all.
     page.locator(".npp-tab").first.click()

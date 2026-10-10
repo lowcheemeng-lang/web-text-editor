@@ -137,22 +137,29 @@ export const nppTheme: Extension = EditorView.theme(
  */
 export const WEB_PORT_KEYS = {
   newDocument: "Alt-n", // N++: Ctrl+N
+  openFile: "Alt-o", // N++: Ctrl+O
+  saveFile: "Alt-s", // N++: Ctrl+S
+  saveFileAs: "Alt-Shift-s", // N++: Ctrl+Alt+Shift+S
   closeDocument: "Alt-w", // N++: Ctrl+W
   nextDocument: "Alt-PageDown", // N++: Ctrl+Tab
   previousDocument: "Alt-PageUp", // N++: Ctrl+Shift+Tab
   toggleWordWrap: "Alt-z", // N++: no default binding
-  toggleSplitView: "Alt-s", // N++: View ▸ Split (no default binding)
+  // Task 3 also bound split view to Alt+S; Task 4 gives that key to Save, which is
+  // the more important command, and Alt+C (clone to other view) already ran the
+  // same handler — so no capability is lost by dropping the duplicate.
   cloneToOtherView: "Alt-c", // N++: View ▸ Move/Clone Current Document ▸ Clone to Other View
 } as const;
 
 /** What the app can do from the keyboard. Every handler returns true when it handled the key. */
 export interface NppCommandHandlers {
   newDocument?: () => boolean;
+  openFile?: () => boolean;
+  saveFile?: () => boolean;
+  saveFileAs?: () => boolean;
   closeDocument?: () => boolean;
   nextDocument?: () => boolean;
   previousDocument?: () => boolean;
   toggleWordWrap?: () => boolean;
-  toggleSplitView?: () => boolean;
   cloneToOtherView?: () => boolean;
 }
 
@@ -172,11 +179,13 @@ export function nppKeymap(
     if (run) bindings.push({ key, run, preventDefault: true });
   };
   add(WEB_PORT_KEYS.newDocument, handlers.newDocument);
+  add(WEB_PORT_KEYS.openFile, handlers.openFile);
+  add(WEB_PORT_KEYS.saveFile, handlers.saveFile);
+  add(WEB_PORT_KEYS.saveFileAs, handlers.saveFileAs);
   add(WEB_PORT_KEYS.closeDocument, handlers.closeDocument);
   add(WEB_PORT_KEYS.nextDocument, handlers.nextDocument);
   add(WEB_PORT_KEYS.previousDocument, handlers.previousDocument);
   add(WEB_PORT_KEYS.toggleWordWrap, handlers.toggleWordWrap);
-  add(WEB_PORT_KEYS.toggleSplitView, handlers.toggleSplitView);
   add(WEB_PORT_KEYS.cloneToOtherView, handlers.cloneToOtherView);
 
   // N++ inserts a real tab character (Parameters.h: _tabReplacedBySpace = false).

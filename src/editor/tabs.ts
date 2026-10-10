@@ -22,6 +22,7 @@
  */
 import type { EditorState, Text } from "@codemirror/state";
 
+import type { DocumentFormat } from "../file/types";
 import type { DocumentRuntime } from "./split-view";
 
 export interface OpenDocument {
@@ -35,6 +36,22 @@ export interface OpenDocument {
   state: EditorState;
   /** Document text at the last save point — the baseline for the dirty flag. */
   savedText: Text;
+  /**
+   * The file on disk, once this document has one. Absent for a scratch buffer, and
+   * what tells Save to write in place versus Save As to ask for a destination.
+   */
+  handle?: FileSystemFileHandle;
+  /**
+   * Encoding, BOM and line ending the file was read with — the three things a save
+   * must reproduce (`docs/scope.md` §6 round-trip rule). A scratch buffer carries
+   * the defaults until it is given a file.
+   */
+  format: DocumentFormat;
+  /**
+   * True when nothing identified the encoding (no BOM, not valid UTF-8) so D4's
+   * no-autodetection rule means we must say the encoding was assumed.
+   */
+  assumedEncoding?: boolean;
   /** True when the text differs from `savedText`. */
   dirty: boolean;
   /**
