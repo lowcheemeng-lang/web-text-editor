@@ -40,7 +40,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 1 | Define scope & compatibility matrix | DONE | `docs/scope.md` — 3 tiers, capability matrix, encoding matrix, R1–R8 risks; all claims sourced | `1b5bcd4` |
 | 2 | Initialize project scaffold | DONE | `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **382.37 kB / 123.08 kB gz**; `python3 scripts/verify-task2.py` → **PASS** (HTTP 200, 1 CM6 instance, 15 lines, typing verified, 0 console errors) | `26aaea6` |
 | 3 | Editor core with N++ defaults | DONE | `python3 scripts/verify-task3.py` → **PASS (56/56)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS** (12/12); `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** (down from 382.37 kB — `basicSetup` carried autocompletion/search that Tasks 5–6 own) | `1c548ae` |
-| 4 | File operations without backend | TODO | - | - |
+| 4 | File operations without backend | **WIP** | encoding core measured: `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)** byte-level round-trips (UTF-8 ±BOM, UTF-16LE/BE incl. surrogate pairs, windows-1252, ISO-8859-2, KOI8-R, the §6 alias trap, UTF-32 refusal, CRLF+BOM through LF normalisation); `npm run typecheck` → exit 0; `npm run build` → exit 0. **Built so far:** `src/file/file-io.ts`, `src/file/types.ts`, `src/platform/capabilities.ts`, `src/platform/fs-access.d.ts`, `scripts/test-file-io.mjs`. **Still to do:** pickers are written but not wired, menu bar, recent-file handles, status-bar EOL/encoding fields, `scripts/verify-task4.py`, manual picker checklist | - |
 | 5 | Search, replace, navigation | TODO | - | - |
 | 6 | Syntax highlighting & language modes | TODO | - | - |
 | 7 | Session persistence & preferences | TODO | - | - |
@@ -55,18 +55,22 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**Start Task 4 — file operations without backend** (`src/file/`, per the plan's Task 4 spec):
-the thin capability check required by **S4**, Tier-A `showOpenFilePicker` / `showSaveFilePicker`
-(D11: Chromium only), BOM-aware reads and writes, encoding selection, and the line-ending +
-encoding fields in the status bar (they are deliberately absent from Task 3 — a document has no
-file yet, so stating an encoding there would be a guess).
+**Task 4 — file operations without backend** (`src/file/`, per the plan's Task 4 spec). Both gates
+are now answered (**D3** = tier A only; **D4** = WHATWG set, explicit warning for the rest), so
+this is unblocked: the S4 capability check, Tier-A `showOpenFilePicker` / `showSaveFilePicker`,
+BOM-aware reads and writes, the encoding policy, recent-file handles, the **menu bar** that
+`chrome.ts` and `index.html` already promise to this task, and the line-ending + encoding fields
+in the status bar.
 
-**Gates first: D3 and D4 must be answered before any code.** Both are still `Proposed`, and
-Task 4 cannot choose a picker design or an encoding policy without them. Ask for both before
-starting: D3 (two-tier file I/O, feature-detected) and D4 (WHATWG label set in the MVP, WASM
-for the rest — the WASM half is now scheduled phase-3 work per D10).
+Two facts from the 2026-10-06 re-verification that shape the code:
+- `showOpenFilePicker` needs **transient user activation** — open/save must run inside a user
+  gesture (no picker on load or from a timer), and it rejects with **`AbortError`** when the user
+  dismisses the dialog. A cancel is not a failure and must not be reported as one.
+- The pickers are **Chromium-desktop only**: caniuse shows Firefox unsupported at every version,
+  Safari unsupported, and **Chrome for Android unsupported too** — which is exactly who the S4
+  message is for.
 
-Nothing else gates Task 4. Task 6 needs **D9** (proposed). Task 5 is ungated.
+Nothing gates Task 6 any more (D9 accepted). Task 5 is ungated and unblocked.
 
 ### Scope settled at sign-off (2026-09-25)
 
@@ -102,8 +106,8 @@ Nothing else gates Task 4. Task 6 needs **D9** (proposed). Task 5 is ungated.
 |----|------|----------|-----------|--------|
 | D1 | 2026-09-25 | Browser-first SPA/PWA; desktop wrapper deferred | Reuses same bundle later; not a one-way door | Proposed |
 | D2 | 2026-09-25 | CodeMirror 6 as the editor core | Analysis in `docs/editor-core-decision.md`: 1.26 MB gz vs 5.01 MB; mobile supported vs officially unsupported; CSS theming for an N++ look; independent per-tab configs; native plugin-composition; viewport rendering for big files. Monaco's only wins here are built-in minimap + diff editor (both Tier 3, both substitutable) | **Accepted — user-confirmed 2026-09-25** |
-| D3 | 2026-09-25 | Two-tier file I/O, feature-detected | Pickers are Chromium-only; Mozilla position on them is *harmful* | Proposed — **narrowed by D11:** MVP ships Tier A only; tier B/C I/O is phase 2. Gates Task 4 |
-| D4 | 2026-09-25 | Encoding: WHATWG label set only in MVP; UTF-32/DOS codepages via WASM | Encoding API's label list is fixed | Proposed — **split by D10:** MVP = WHATWG set; the WASM half is the scheduled phase-3 priority. Gates Task 4 |
+| D3 | 2026-09-25 | Two-tier file I/O, feature-detected | Pickers are Chromium-only; Mozilla position on them is *harmful* | **Accepted — user-confirmed 2026-10-06:** MVP ships **Tier A only** (FS Access pickers, real in-place save); non-Chromium gets the explicit "not supported yet" message (S4); tier B/C I/O stays phase 2 |
+| D4 | 2026-09-25 | Encoding: WHATWG label set only in MVP; UTF-32/DOS codepages via WASM | Encoding API's label list is fixed | **Accepted — user-confirmed 2026-10-06:** what the browser gives natively is enough for the MVP; UTF-32, DOS codepages and autodetect are **refused with an explicit warning** until the phase-3 WASM work (D10). Round-trip fidelity is the standing rule |
 | D5 | 2026-09-25 | Plugins = runtime-loaded ES modules + WASM, no native ABI | Only backend-free option | Proposed |
 | D6 | 2026-09-25 | Macros = editor transaction record/replay, not OS input replay | CM6 exposes every change as a transaction, so record/replay/run-N-times works without native hooks (N++'s macro playback is OS-input based and cannot be emulated literally) | **Accepted — user-confirmed 2026-10-06** |
 | D7 | 2026-09-25 | Run/exec + native plugins permanently out of scope | Impossible without a process/shell | **Accepted — user-confirmed 2026-09-25** |
@@ -395,6 +399,50 @@ Nothing else gates Task 4. Task 6 needs **D9** (proposed). Task 5 is ungated.
 - Reproducing Task 2's evidence now requires `git checkout 26aaea6`. That is stated in both the
   script's docstring and the plan's Task 2 outcome, so nobody re-derives it as a failure.
 - Nothing about Task 4 changed: it is still gated on **D3 + D4**.
+
+#### Session 2, continued — D3 and D4 answered; Task 4 started (WIP)
+
+**User input received**
+- **D3 accepted** — the MVP ships Tier A only.
+- **D4 accepted** — the WHATWG set is enough for the MVP; everything else gets an explicit warning.
+- "proceed to next task" → Task 4.
+
+**Scope re-verification (the residual risk this audit left open), 2026-10-06**
+- caniuse `native-filesystem-api`: Chrome/Edge/Opera **desktop** support the pickers; Firefox is
+  unsupported at every version (standards position still *harmful*); Safari is unsupported; and
+  **Chrome for Android is unsupported too** — so the S4 notice is not hypothetical, and it is why
+  the check tests for the API rather than sniffing for Chromium.
+- MDN `showOpenFilePicker`: requires **transient user activation** (so no picker on load or from
+  a timer) and rejects with **`AbortError`** when the user dismisses the dialog. Both are now
+  handled in `src/file/file-io.ts` — a cancel is not a failure.
+
+**Built — deliberately unwired, so the running app is unchanged**
+- `src/platform/capabilities.ts` + `src/platform/fs-access.d.ts`. The ambient file records a real
+  gap: TypeScript 7's `lib.dom.d.ts` ships `FileSystemFileHandle` and `createWritable()` but
+  declares **none** of the three pickers (`showOpenFilePicker` appears only in a doc comment).
+- `src/file/file-io.ts` — the single I/O boundary required by risk R8: BOM-first decoding,
+  strict-UTF-8-then-"assumed windows-1252" (D4 forbids magic autodetection), saves through
+  `createWritable()` that abort rather than half-commit, and the encoders described below.
+- `scripts/test-file-io.mjs` — 45 byte-level checks, `node --experimental-strip-types`.
+
+**The finding that shaped the design:** `TextDecoder` decodes the entire WHATWG mandate, but
+**`TextEncoder` only encodes UTF-8** — no browser API encodes windows-1252 or UTF-16. So the
+module builds the missing encoders itself: UTF-16 by hand, and every single-byte encoding from a
+table **derived from its own decoder** (decode bytes 0x00–0xFF with that label, invert the result).
+Multi-byte legacy encodings (GBK, Big5, Shift_JIS, EUC-*) therefore stay **decode-only**, and
+saving one returns a written explanation rather than pretending. That is the honest edge of D4.
+
+**Two of my own defects, caught by the tests rather than by review**
+1. A "can Shift_JIS be encoded?" check passed when it should have failed: single-byte-ness was
+   inferred from a table-size heuristic, and Shift_JIS decodes its ASCII and half-width-katakana
+   bytes perfectly well one at a time. Inference replaced with the mandate's own list.
+2. `TextEncoder.encode` is typed as possibly `SharedArrayBuffer`-backed, which the write API
+   rejects; narrowed at the boundary behind a runtime check rather than a bare cast.
+
+**Carried forward**
+- **Task 4 is WIP, not done.** The pickers are written but unwired; still outstanding: the menu
+  bar, recent-file handles, the status-bar EOL/encoding fields, `scripts/verify-task4.py`
+  (OPFS-stubbed per the plan) and the manual picker checklist.
 
 ## Blockers / open questions
 

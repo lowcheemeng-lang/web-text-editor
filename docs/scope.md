@@ -2,9 +2,10 @@
 
 **Deliverable:** Task 1 of the Notepad++ Web Edition plan.
 **Status:** Accepted — D2 (CodeMirror 6), D7 (no Run/exec), D10 (phase-3 priority), D11 (Chromium-only
-MVP), all user-confirmed 2026-09-25, plus **D6 (transaction record/replay macros)** and
-**D9 (22 official packages + 103 legacy-modes)** confirmed 2026-10-06.
-D1, D3, D4, D5, D8 remain proposed.
+MVP), all user-confirmed 2026-09-25; **D6 (transaction record/replay macros)** and **D9 (22 official
+packages + 103 legacy-modes)** confirmed 2026-10-06; **D3 (Tier A file I/O only)** and **D4 (WHATWG
+encoding set, explicit warning for the rest)** also confirmed 2026-10-06.
+D1, D5, D8 remain proposed.
 **Reference target:** Notepad++ 8.9.8 (Scintilla-based, C++/Win32, GPL).
 **Verified on:** 2026-09-25. Source links in [Sources](#sources).
 
