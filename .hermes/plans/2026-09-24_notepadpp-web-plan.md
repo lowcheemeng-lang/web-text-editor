@@ -369,5 +369,5 @@ All of the original three are closed; kept for the audit trail.
 
 ---
 
-Plan complete and saved. Tasks 1–4 are done; Task 5 is the next unit of work and is ungated —
+Plan complete and saved. Tasks 1–5 are done; Task 6 is the next unit of work and is ungated —
 see `PROGRESS.md` for the live next action.
