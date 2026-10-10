@@ -104,7 +104,11 @@ with sync_playwright() as p:
 
     # ── the menu bar Task 3 deferred to this task ───────────────────────────
     check("menu bar exists", page.locator(".npp-menubar").count() == 1)
-    check("File and View menus", info(page)["menuTitles"] == ["File", "View"], str(info(page)["menuTitles"]))
+    # Membership, not an exact list: this check is about *file* I/O needing a File menu, and a
+    # later task adding a menu is not a Task 4 regression. Task 5 added "Search" (which is
+    # where the old equality assertion broke), and `verify-task5.py` owns the current shape.
+    check("File and View menus are present",
+          {"File", "View"} <= set(info(page)["menuTitles"]), str(info(page)["menuTitles"]))
     page.click(".npp-menu-title >> nth=0")
     check("File menu opens", page.locator("[data-menu-item='save-as']").is_visible())
     check("File menu offers Open", page.locator("[data-menu-item='open']").count() == 1)

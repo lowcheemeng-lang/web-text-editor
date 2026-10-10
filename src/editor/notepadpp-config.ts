@@ -42,6 +42,9 @@ import {
   indentUnit,
 } from "@codemirror/language";
 
+import { bookmarkField, bookmarkMarginCompartment, bookmarkMarginExtension } from "../search/bookmarks";
+import { markField } from "../search/find-replace";
+
 /* ------------------------------------------------------------------ defaults */
 
 /** stylers.model.xml → GlobalStyles/"Default Style": fontName="Courier New" fontSize="10". */
@@ -52,6 +55,9 @@ export const NPP_FONT_SIZE = "10pt";
 /** Parameters.h: `int _tabSize = 4;` and `bool _tabReplacedBySpace = false;` (NppGUI). */
 export const NPP_TAB_SIZE = 4;
 export const NPP_INDENT_UNIT = "\t";
+
+/** Parameters.h:902 `bool _bookMarkMarginShow = true;` — N++ shows the bookmark margin by default. */
+export const NPP_BOOKMARK_MARGIN = true;
 
 /** Parameters.h (ScintillaViewParams): line margin on, indent guides on, wrap off, caret 1px. */
 export const NPP_LINE_NUMBERS = true;
@@ -76,6 +82,8 @@ export const NPP_COLORS = {
   whitespaceSymbol: "#ffb56a", // White space symbol
   smartHighlight: "#00ff00", // Smart Highlighting
   edge: "#80ffff", // Edge colour
+  markStyle1: "#00ffff", // Mark Style 1 — the colour of the "Find Mark style" (stylers.model.xml)
+  bookmark: "#5f7bd7", // bookmark14, the marker bitmap: centre pixel (rgba_icons.h)
 } as const;
 
 /* -------------------------------------------------------------------- theme */
@@ -123,6 +131,19 @@ export const nppTheme: Extension = EditorView.theme(
       color: NPP_COLORS.badBrace,
       backgroundColor: "transparent",
     },
+    // Search marks — N++'s "Find Mark style", i.e. Mark Style 1 (bgColor 00FFFF).
+    ".cm-searchMark": { backgroundColor: NPP_COLORS.markStyle1 },
+    // The bookmark margin: N++'s own margins are the gutter grey, and the dot is its
+    // bitmap drawn with SCI_MARKERSETALPHA 70 (ScintillaEditView.cpp:412) — ≈27% opacity,
+    // which is why the marker looks pale on a real N++ bookmark margin.
+    ".cm-bookmarkGutter": { backgroundColor: NPP_COLORS.gutterBackground },
+    ".npp-bookmark-dot": {
+      width: "8px",
+      height: "8px",
+      marginTop: "2px",
+      borderRadius: "50%",
+      background: "rgba(95 123 215 / 27%)",
+    },
   },
   { dark: false },
 );
@@ -136,6 +157,14 @@ export const nppTheme: Extension = EditorView.theme(
  * DEVIATIONS_FROM_NPP below.
  */
 export const WEB_PORT_KEYS = {
+  // Task 5. N++ binds Find to Ctrl+F, and Chrome does not merely "also" handle it: the page
+  // never receives the keydown at all, and the find bar takes the focus (measured twice, in
+  // scripts/probe-reserved-keys.py — the same instrument that cleared Alt+N/O/S/W in Task 4).
+  // Every other key in this task's family *is* deliverable, because the page receives the
+  // keydown and `preventDefault` suppresses Chrome's action — also measured:
+  //   Ctrl+H (Replace) · Ctrl+G (Go to) · F3 / Shift+F3 (find next/previous) · Ctrl+M (Mark)
+  //   Ctrl+F2 / F2 / Shift+F2 (bookmarks)
+  find: "Alt-f", // N++: Ctrl+F
   newDocument: "Alt-n", // N++: Ctrl+N
   openFile: "Alt-o", // N++: Ctrl+O
   saveFile: "Alt-s", // N++: Ctrl+S
@@ -150,6 +179,22 @@ export const WEB_PORT_KEYS = {
   cloneToOtherView: "Alt-c", // N++: View ▸ Move/Clone Current Document ▸ Clone to Other View
 } as const;
 
+/**
+ * Task 5's keys. N++'s own defaults wherever a page can hold them (see `WEB_PORT_KEYS.find`
+ * for the one exception); the defaults are N++'s `winKeyDefs[]` table in Parameters.cpp.
+ */
+export const SEARCH_KEYS = {
+  find: WEB_PORT_KEYS.find, // Alt+F   (N++ Ctrl+F)
+  findNext: "F3", // N++
+  findPrevious: "Shift-F3", // N++
+  replace: "Ctrl-h", // N++
+  mark: "Ctrl-m", // N++
+  gotoLine: "Ctrl-g", // N++
+  toggleBookmark: "Ctrl-F2", // N++
+  nextBookmark: "F2", // N++
+  previousBookmark: "Shift-F2", // N++
+} as const;
+
 /** What the app can do from the keyboard. Every handler returns true when it handled the key. */
 export interface NppCommandHandlers {
   newDocument?: () => boolean;
@@ -161,6 +206,16 @@ export interface NppCommandHandlers {
   previousDocument?: () => boolean;
   toggleWordWrap?: () => boolean;
   cloneToOtherView?: () => boolean;
+  // Task 5 — search, replace and navigation.
+  find?: () => boolean;
+  replace?: () => boolean;
+  mark?: () => boolean;
+  findNext?: () => boolean;
+  findPrevious?: () => boolean;
+  gotoLine?: () => boolean;
+  toggleBookmark?: () => boolean;
+  nextBookmark?: () => boolean;
+  previousBookmark?: () => boolean;
 }
 
 export interface NppKeymapOptions {
@@ -187,6 +242,15 @@ export function nppKeymap(
   add(WEB_PORT_KEYS.previousDocument, handlers.previousDocument);
   add(WEB_PORT_KEYS.toggleWordWrap, handlers.toggleWordWrap);
   add(WEB_PORT_KEYS.cloneToOtherView, handlers.cloneToOtherView);
+  add(SEARCH_KEYS.find, handlers.find);
+  add(SEARCH_KEYS.replace, handlers.replace);
+  add(SEARCH_KEYS.mark, handlers.mark);
+  add(SEARCH_KEYS.findNext, handlers.findNext);
+  add(SEARCH_KEYS.findPrevious, handlers.findPrevious);
+  add(SEARCH_KEYS.gotoLine, handlers.gotoLine);
+  add(SEARCH_KEYS.toggleBookmark, handlers.toggleBookmark);
+  add(SEARCH_KEYS.nextBookmark, handlers.nextBookmark);
+  add(SEARCH_KEYS.previousBookmark, handlers.previousBookmark);
 
   // N++ inserts a real tab character (Parameters.h: _tabReplacedBySpace = false).
   bindings.push(indentWithTab);
@@ -241,6 +305,8 @@ export function wordWrapExtension(on: boolean): Extension {
 
 export interface EditorCoreOptions {
   wordWrap?: boolean;
+  /** N++ shows the bookmark margin by default (Parameters.h:902 `_bookMarkMarginShow = true`). */
+  bookmarkMargin?: boolean;
 }
 
 /**
@@ -251,7 +317,9 @@ export interface EditorCoreOptions {
  *   - `syntaxHighlighting` — Task 6 owns highlighting and language modes;
  *   - `autocompletion` / `closeBrackets` — N++ opens word completion on demand
  *     (Ctrl+Space), it is not automatic; unassigned task, see docs/scope.md tiers;
- *   - the search keymap — Task 5 owns find/replace.
+ *   - `@codemirror/search`'s panel and keymap — Task 5 brings the N++-style dialog and its
+ *     own keys instead (`src/search/find-replace.ts` explains why the panel is unusable here);
+ *   - `highlightSelectionMatches` (N++'s Smart Highlighter) — tier 2 in docs/scope.md.
  */
 export function editorCoreExtensions(options: EditorCoreOptions = {}): Extension[] {
   const wordWrap = options.wordWrap ?? NPP_WORD_WRAP;
@@ -278,6 +346,14 @@ export function editorCoreExtensions(options: EditorCoreOptions = {}): Extension
     indentUnit.of(NPP_INDENT_UNIT),
     nppTheme,
     wordWrapCompartment.of(wordWrapExtension(wordWrap)),
+    // Task 5: search marks and the bookmark margin. Both are per-view state — the split
+    // dispatcher forwards document changes only — so `workspace.ts` keeps the views of one
+    // document in step, and `EditorCoreOptions` carries the margin's initial visibility.
+    markField,
+    bookmarkField,
+    bookmarkMarginCompartment.of(
+      bookmarkMarginExtension(options.bookmarkMargin ?? NPP_BOOKMARK_MARGIN),
+    ),
   ];
 }
 
@@ -320,6 +396,10 @@ export function createCloneState(
 
 /** Honest list of N++ defaults this port does not reproduce, with the reason. */
 export const DEVIATIONS_FROM_NPP: readonly string[] = [
+  "Find is Alt+F, not N++'s Ctrl+F: Chrome delivers no keydown to the page for Ctrl+F and opens its own find bar, which then holds the focus. Measured, and re-measurable with `python3 scripts/probe-reserved-keys.py`. Ctrl+H (Replace), Ctrl+G (Go to), F3/Shift+F3, Ctrl+M (Mark) and the bookmark keys F2/Shift+F2/Ctrl+F2 *are* deliverable — the page receives them and `preventDefault` suppresses Chrome's action.",
+  "Find in Files and Find in Projects are not built: they search a filesystem, and a page has none (the pickers open one file at a time by design). \"Find All in Current Document\" and the Search Results window are tier 2/3 in docs/scope.md.",
+  "Regular-expression mode uses JavaScript's engine, not N++'s Boost.Regex: `\\K`, `\\G`, POSIX classes and Boost's `(?<name>...)`/conditional syntax differ. The dialog says so where it matters and the ECMAScript subset covers what the MVP promises.",
+  "Incremental search (Ctrl+Alt+I) and the Smart Highlighter are not built — both are tier-2 rows in docs/scope.md. NPP_COLORS.smartHighlight and .markStyle1 are reserved for them; Task 5 uses markStyle1 for the Mark tab's marks.",
   "Indent guides: N++ shows them (`_indentGuideLineShow = true`, colour c0c0c0). CM6 core has no indent-guide extension — it needs a third-party package or a custom line-decoration plugin. Colour is reserved in NPP_COLORS.indentGuide.",
   "Vertical edge: N++'s `Edge colour` (80ffff) marker at the wrap column is not drawn; it needs a custom decoration plugin.",
   "Keyboard: N++'s New / Close / next-tab keys are Ctrl+N, Ctrl+W, Ctrl+Tab — all owned by the browser and not interceptable by a page. Mapped to Alt+N, Alt+W, Alt+PageDown/Alt+PageUp (WEB_PORT_KEYS).",

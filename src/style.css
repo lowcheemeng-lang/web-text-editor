@@ -1,5 +1,5 @@
 /*
- * Notepad++-style application shell (Task 3).
+ * Notepad++-style application shell (Tasks 3-5).
  *
  * Three bands stacked vertically — toolbar, workspace, status bar — with the
  * workspace splitting horizontally into one or two panes. The editor itself is
@@ -400,4 +400,202 @@ body {
 .npp-dialog-confirm {
   border-color: #7f9dc0 !important;
   background: var(--chrome-active) !important;
+}
+
+/* --------------------------------------------- find / replace / mark (Task 5) */
+
+/* The dialog floats over the editor, like N++'s modeless Find window, so the app
+   becomes its positioning context. It sits above the status bar and never takes
+   the editor's space. */
+.npp-app {
+  position: relative;
+}
+
+.npp-find {
+  position: absolute;
+  z-index: 30;
+  right: 20px;
+  bottom: 44px;
+  width: 360px;
+  background: #f6f6f6;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+  font-size: 12px;
+}
+
+/* `display` on a class beats the UA's `[hidden]` rule, so the tab-group switching
+   has to say so explicitly. */
+.npp-find [hidden] {
+  display: none !important;
+}
+
+.npp-find-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 4px 0;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.npp-find-tab {
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  background: transparent;
+  font: 12px/1 var(--shell-font);
+  color: inherit;
+  cursor: pointer;
+}
+
+.npp-find-tab:hover {
+  background: var(--chrome-hover);
+}
+
+.npp-find-tab.is-active {
+  background: #ffffff;
+  border-color: var(--chrome-border);
+}
+
+.npp-find-x {
+  margin-left: auto;
+  margin-right: 2px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: #555;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.npp-find-x:hover {
+  background: #e0b0b0;
+  color: #400;
+}
+
+.npp-find-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+}
+
+.npp-find-field {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.npp-find-field input {
+  padding: 4px 5px;
+  border: 1px solid #b9b9b9;
+  border-radius: 2px;
+  font: 12px/1.2 var(--shell-font);
+}
+
+.npp-find-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.npp-find-check,
+.npp-find-radio {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.npp-find-check.is-disabled {
+  color: #9a9a9a;
+}
+
+.npp-find-modes {
+  margin: 0;
+  padding: 4px 8px 7px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+
+.npp-find-modes legend {
+  padding: 0 4px;
+  font-size: 11px;
+  color: #555;
+}
+
+.npp-find-modes .npp-find-check {
+  margin-top: 3px;
+  padding-left: 16px;
+}
+
+.npp-find-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.npp-find-button {
+  padding: 5px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  background: #fbfbfb;
+  font: 12px/1 var(--shell-font);
+  cursor: pointer;
+}
+
+.npp-find-button:hover {
+  background: var(--chrome-hover);
+}
+
+.npp-find-button:disabled {
+  color: #9a9a9a;
+  background: #f2f2f2;
+}
+
+/* The tab's own primary action, the way N++ draws its default button. */
+.npp-find-button[data-find-action="find-next"],
+.npp-find-button[data-find-action="replace"],
+.npp-find-button[data-find-action="mark-all"] {
+  border-color: #7f9dc0;
+  background: #e8eef7;
+}
+
+.npp-find-status {
+  min-height: 26px;
+  padding: 0 1px;
+  color: #444;
+  line-height: 1.35;
+  white-space: pre-line;
+}
+
+/* The Go To dialog's "You are here / You want to go to / You can't go further than". */
+.npp-goto-modes {
+  display: flex;
+  gap: 18px;
+  font-size: 13px;
+}
+
+.npp-goto-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 7px 10px;
+  margin: 10px 0 18px;
+  font-size: 13px;
+}
+
+.npp-goto-grid input {
+  padding: 4px 6px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  font: 13px/1 var(--shell-font);
+}
+
+.npp-goto-limit {
+  color: #555;
 }

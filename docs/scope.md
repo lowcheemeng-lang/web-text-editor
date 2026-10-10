@@ -83,8 +83,8 @@ decision log in `PROGRESS.md`, which is the authority on status).
 |---|---|---|
 | Split view (two panes) | Two `EditorView`s over **two** `EditorState`s, with each document change forwarded to the peer views under a `syncAnnotation` | **R2 closed** — the spike proved the original "one shared `EditorState`" design wrong: the views diverge *silently*. See `docs/r2-shared-state-spike.md`. A clone of the active document shipped early in Task 3 (S5); what stays phase 2 is **per-pane independent tab sets** |
 | Clone document to other view | As above | Shipped in Task 3 under S5: one undo history, per-view caret and scroll |
-| Bookmarks (toggle/goto/clear) | Custom `StateField` + gutter markers | High |
-| Mark all / highlight matches / incremental highlight | Decoration plugin | High |
+| Bookmarks (toggle/goto/clear) | Custom `StateField` + gutter markers | High — **shipped early in Task 5** (2026-10-10): the row stays listed here because the tier is about priority, and Task 5's own acceptance line names bookmarks. Nothing about it is deferred. |
+| Mark all / highlight matches / incremental highlight | Decoration plugin | High — **Mark All shipped in Task 5**; highlighting the selected word (N++'s Smart Highlighter) and incremental search are still unbuilt and remain phase 2. |
 | Function List panel | Walk the CM6 syntax tree | High |
 | Column/block edit mode UI (Alt-drag, Alt+Shift+arrows) | `rectangularSelection` + keymap | High |
 | Document map (minimap) | Canvas render of doc + viewport box | Medium — hand-rolled |

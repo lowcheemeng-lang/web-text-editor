@@ -53,6 +53,13 @@ Environment traps solved here, all three worth knowing
    This is why every save here checks the file's **mtime as well as its bytes**: a
    cancelled write leaves the bytes untouched, so a byte comparison alone passes
    vacuously — which it did, twice, before this prompt was understood.
+5. **There is a second prompt, and it belongs to the origin rather than to a file.** On the
+   first write a browser profile ever makes, Chrome asks "<origin> wants to view and edit
+   files from the last time you visited this site." — Allow this time / **Allow on every
+   visit** / Don't allow. It blocks the write just as completely, and because it says nothing
+   about "Save changes to", a check that only knew trap 4 read it as "no prompt appeared"
+   while the save silently never reached disk (measured 2026-10-10: 36/42, every write check
+   failing). `grant_write()` now answers both kinds and stops when the file's inode moves.
 """
 from __future__ import annotations
 
@@ -252,35 +259,81 @@ def blue_button(shot_path: Path) -> tuple[int, int] | None:
     return blob_centre(every)
 
 
-def answer_write_prompt(page, timeout: float = 15.0) -> bool:
-    """Grant Chrome's write permission, if it is asking.
+def allow_button(shot_path: Path) -> tuple[int, int] | None:
+    """Centre of *Allow on every visit* in Chrome's per-origin file-edit bubble.
 
-    Returns True when the prompt was found and its affirmative button clicked. The
-    click is a real X click (the prompt is browser UI, not DOM); `page` is only used
-    to pace the polling.
+    Unlike the per-file prompt's affirmative button (white on blue, unreadable to tesseract),
+    this bubble's buttons are plain text on light pills, so the label is the reliable handle:
+    find the OCR line that contains "every", and click the middle of that line's box.
+    """
+    tsv = sh(["tesseract", str(shot_path), "-", "tsv"], timeout=60)
+    grouped: dict[tuple[str, str, str], list[list[str]]] = {}
+    for line in tsv.splitlines()[1:]:
+        fields = line.split("\t")
+        if len(fields) >= 12 and fields[11].strip():
+            grouped.setdefault((fields[1], fields[2], fields[3]), []).append(fields)
+    for group in grouped.values():
+        text = " ".join(fields[11] for fields in group).lower()
+        if "every" in text and "visit" in text:
+            left = min(int(f[6]) for f in group)
+            top = min(int(f[7]) for f in group)
+            right = max(int(f[6]) + int(f[8]) for f in group)
+            bottom = max(int(f[7]) + int(f[9]) for f in group)
+            return ((left + right) // 2, (top + bottom) // 2)
+    return None
+
+
+def grant_write(page, path: Path, before: tuple[int, int, int], timeout: float = 20.0) -> dict:
+    """Answer whichever of Chrome's two write prompts appears, until the file is written.
+
+    **Two** different prompts guard a write, and either one blocks it:
+
+    1. *per file* — "Save changes to <name>?" (Cancel, and a filled blue affirmative button
+       whose label tesseract cannot read, hence `blue_button`);
+    2. *per origin* — "<origin> wants to view and edit files from the last time you visited this
+       site." with **Allow this time / Allow on every visit / Don't allow**. Measured
+       2026-10-10: this one appears on the first write of a browser profile and, left
+       unanswered, the save silently never reaches disk — every later check then reads a stale
+       file. It is answered with *Allow on every visit* so the grant is persisted in the
+       profile and later runs do not meet it again.
+
+    Returns what was answered and whether the write landed; the caller asserts on the *write*,
+    not on which prompt the browser chose to show.
     """
     deadline = time.time() + timeout
+    answered: list[str] = []
     while time.time() < deadline:
+        if snapshot(path) != before:
+            return {"answered": answered, "wrote": True}
         shot = screenshot("task4-pickers-write-prompt.png")
-        if "save changes to" in " ".join(ocr(shot).split()).lower():
+        text = " ".join(ocr(shot).split()).lower()
+        if "save changes to" in text:
             spot = blue_button(shot)
             if spot:
                 x(["mousemove", "--sync", str(spot[0]), str(spot[1])])
                 x(["click", "1"])
+                answered.append("per-file")
                 page.wait_for_timeout(600)
-                return True
+                continue
+        if "every visit" in text or "edit files" in text:
+            spot = allow_button(shot)
+            if spot:
+                x(["mousemove", "--sync", str(spot[0]), str(spot[1])])
+                x(["click", "1"])
+                answered.append("per-origin")
+                page.wait_for_timeout(800)
+                continue
         time.sleep(0.4)
-    return False
+    return {"answered": answered, "wrote": snapshot(path) != before}
 
 
-def save_active(page, prompt_expected: bool) -> dict:
-    """Click Save, answer the permission prompt, and report what happened."""
+def save_active(page, path: Path, before: tuple[int, int, int]) -> dict:
+    """Click Save, answer whatever Chrome asks, and report what happened."""
     click_or_alert(page, "button[data-tool='save']")
-    granted = answer_write_prompt(page)
+    outcome = grant_write(page, path, before)
     page.wait_for_timeout(900)
     return {
-        "granted": granted,
-        "expected_prompt": prompt_expected,
+        **outcome,
         "failed": page.locator("[data-dialog='alert']").count() > 0,
         "alert": (page.locator(".npp-dialog-body").all_text_contents() or [""])[0][:90],
         "dirty": info(page)["dirty"],
@@ -530,10 +583,15 @@ def main() -> int:
             # ══ 3. save with no edit: the bytes must not move, but the write ══
             # must really happen — a cancelled write also leaves the bytes alone.
             before_stat = snapshot(CRLF_BOM)
-            first = save_active(page, prompt_expected=True)
-            check("the first write asks Chrome's permission, and the check grants it",
-                  first["granted"] is True,
-                  "prompt answered" if first["granted"] else "no prompt appeared")
+            first = save_active(page, CRLF_BOM, before_stat)
+            # Was: "the first write asks Chrome's permission, and the check grants it" —
+            # which asserted that a prompt *appears*. Answering the per-origin bubble with
+            # "Allow on every visit" persists the grant in the profile, so that assertion
+            # could never hold again (2026-10-10). What matters is that the permission step
+            # is satisfied and the write lands; the inode check below is the hard evidence.
+            check("the write is permitted (both Chrome prompts are answered if they appear)",
+                  first["wrote"] is True and first["failed"] is False,
+                  f"prompts answered: {first['answered'] or 'none were needed'}")
             check("the write really happened (Chrome replaced the file on disk)",
                   wait_for_write(CRLF_BOM, before_stat),
                   f"{before_stat[2]} -> {snapshot(CRLF_BOM)[2]} (inode)")
@@ -559,7 +617,7 @@ def main() -> int:
                 page.wait_for_timeout(200)
                 check("typing marks the document dirty", info(page)["dirty"] is True)
                 copied_stat = snapshot(EDIT_COPY)
-                edited_save = save_active(page, prompt_expected=True)
+                edited_save = save_active(page, EDIT_COPY, copied_stat)
                 check("the edit's write was permitted (Chrome's prompt, if any)",
                       edited_save["failed"] is False, edited_save["alert"])
                 check("the edit's write really happened (Chrome replaced the file)",
@@ -586,7 +644,7 @@ def main() -> int:
                 check("windows-1252: flagged as assumed, not silently guessed (D4)",
                       latin["assumedEncoding"] is True)
                 latin_stat = snapshot(WIN1252)
-                latin_save = save_active(page, prompt_expected=True)
+                latin_save = save_active(page, WIN1252, latin_stat)
                 check("windows-1252: the write was permitted", latin_save["failed"] is False,
                       latin_save["alert"])
                 check("windows-1252: the write really happened (Chrome replaced the file)",

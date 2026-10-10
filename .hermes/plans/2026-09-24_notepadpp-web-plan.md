@@ -6,9 +6,9 @@
 > spec (what to build, which files, how to verify). Start any new session by reading
 > `PROGRESS.md` → `docs/scope.md` → this plan, in that order.
 
-**Status:** Tasks 1–4 ✅ done · Task 5 ⬜ next · see `PROGRESS.md` for live state
-(`npm run status`). Task 4 was accepted 2026-10-10: its picker round trip is automated in
-`scripts/verify-task4-pickers.py` (42/42), so nothing waits on a human any more.
+**Status:** Tasks 1–5 ✅ done · Task 6 ⬜ next · see `PROGRESS.md` for live state
+(`npm run status`). Task 5 was accepted 2026-10-10: `scripts/verify-task5.py` → **PASS
+(105/105)**, twice in a row, over a 10k-line file as the task asked.
 
 **Scope settled 2026-09-25:** CodeMirror 6 (D2) · no Run/exec or native plugins (D7) ·
 phase-3 priority = encoding fidelity + large-file mode (D10) · **MVP is Chromium-only (D11)**.
@@ -44,7 +44,7 @@ Task 4 below already reflects D11.
 2. Scaffold a Vite + TS app. ✅ Task 2
 3. Integrate an existing web editor core and layer Notepad++-style UI/UX on top. ✅ Task 3
 4. Implement file I/O using browser APIs with graceful fallbacks. ✅ Task 4
-5. Add high-value features from Notepad++ that map cleanly to web capabilities. ← Task 5 (next)
+5. Add high-value features from Notepad++ that map cleanly to web capabilities. ✅ Task 5
 6. Package as a standalone HTML/JS bundle or PWA.
 
 ## Step-by-Step Plan
@@ -207,20 +207,48 @@ effect — see `PROGRESS.md`, Session 3.
 
 ---
 
-### Task 5: Add search, replace, and navigation
+### Task 5: Add search, replace, and navigation — ✅ DONE (2026-10-10)
 
 **Objective:** Replicate Notepad++ find/replace and navigation features.
 
 **Files:**
-- Create: `src/search/find-replace.ts`
-- Modify: `src/editor/notepadpp-config.ts`
+- Create: `src/search/find-replace.ts` ✅ (the Find/Replace/Mark dialog, the commands over
+  `SearchQuery`, the marks, and the Go To dialog)
+- Create: `src/search/bookmarks.ts` ✅ (*added to this list while building it*: the bookmark
+  state field, its gutter and its commands are a mechanism of their own, and `find-replace.ts`
+  was already the largest file in `src/`)
+- Modify: `src/editor/notepadpp-config.ts` ✅ (keys, the new extensions, N++'s mark/bookmark
+  colours, four more `DEVIATIONS_FROM_NPP` entries)
+- Create: `scripts/verify-task5.py` ✅ (executable acceptance check — S2)
+- Create: `scripts/probe-reserved-keys.py` ✅ (*added*: the measurement that decides which of
+  N++'s search keys a page can hold — decision S6)
 
 **Steps:**
-1. Implement find/replace dialogs with regex, match case, whole word, wrap around.
-2. Add mark-all, find-next/prev, replace/replace-all.
-3. Add GoTo line and bookmark margin toggles.
+1. Implement find/replace dialogs with regex, match case, whole word, wrap around. ✅ Normal /
+   Extended / Regular-expression modes, Match case, Match whole word only, Wrap around,
+   Backward direction, In selection, and N++'s own gating of those controls per mode
+   (`FindReplaceDlg.cpp:2695-2740`).
+2. Add mark-all, find-next/prev, replace/replace-all. ✅ Plus Count and Clear all marks (both
+   N++ buttons), the Mark tab's "Bookmark line", and N++'s status wording for each outcome.
+3. Add GoTo line and bookmark margin toggles. ✅ The Go To dialog is `IDD_GOLINE` (Line /
+   Offset, "You are here:", "You want to go to:", "You can't go further than:", "Go" / "I'm
+   going nowhere"); bookmarks are the full N++ family (toggle / next / previous / clear all)
+   and the margin toggle sits in the View menu — N++ keeps it under Settings ▸ Preferences ▸
+   Margins, and this app has no Settings menu yet.
 
-**Verification:** Search/replace across a 10k-line file; confirm regex, wrap, and bookmarks work without backend.
+**Verification:** Search/replace across a 10k-line file; confirm regex, wrap, and bookmarks work
+without backend. ✅ `python3 scripts/verify-task5.py` → **PASS (105/105)**, twice in a row, with
+regex Count **2.4 ms**, Mark All **4.8 ms** and Replace All **46.5 ms** over 10 000 lines, and
+`no request left the machine (D1)` green.
+
+**Outcome:** Complete. **Find is Alt+F, not Ctrl+F** — measured, not assumed: Chrome delivers no
+keydown to the page for Ctrl+F and opens its find bar regardless of `preventDefault`
+(`scripts/probe-reserved-keys.py`, decision S6). Every other key in the family keeps N++'s
+binding, because the page does receive those keydowns and `preventDefault` suppresses Chrome's
+action: Ctrl+H, Ctrl+G, Ctrl+M, F3 / Shift+F3 and F2 / Shift+F2 / Ctrl+F2.
+`Find in Files`, the Search Results window, incremental search and the Smart Highlighter are not
+built (a page has no filesystem, and the other two are tier-2 rows); `DEVIATIONS_FROM_NPP` says
+so in the app's own source. The regex engine is JavaScript's, not Boost's — also recorded there.
 
 ---
 

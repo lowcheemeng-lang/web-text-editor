@@ -50,7 +50,29 @@ import { detectCapabilities, unsupportedNotice } from "../platform/capabilities"
 
 import { Chrome, type MenuEntry, type PaneElements, type TabDescriptor } from "./chrome";
 import {
+  bookmarkLines,
+  clearBookmarks as clearAllBookmarks,
+  bookmarkMarginCompartment,
+  bookmarkMarginExtension,
+  bookmarkPositions,
+  bookmarkedLines,
+  copyBookmarks,
+  gotoBookmark,
+  setBookmarksEffect,
+  toggleBookmark,
+} from "../search/bookmarks";
+import {
+  FindReplaceDialog,
+  copyMarks,
+  markCount,
+  openGoToDialog,
+  type SearchHost,
+  type SearchTab,
+} from "../search/find-replace";
+import {
+  NPP_BOOKMARK_MARGIN,
   NPP_WORD_WRAP,
+  SEARCH_KEYS,
   WEB_PORT_KEYS,
   createCloneState,
   createDocumentState,
@@ -71,9 +93,10 @@ import { backAtSavePoint, newDocumentName, tabLabel, type OpenDocument } from ".
 const DEFAULT_FORMAT: DocumentFormat = { encoding: "utf-8", bom: "none", eol: "LF" };
 
 /** Shown in the first document so a fresh clone explains what it can do. */
-const WELCOME = `Notepad++ Web — Task 4
+const WELCOME = `Notepad++ Web — Task 5
 
-Multi-document tabs, Notepad++'s editor defaults, split view, and real files.
+Multi-document tabs, Notepad++'s editor defaults, split view, real files, and
+search: find / replace / mark, Go to line, bookmarks.
 
 Keys (the N++ ones are deliberately different — see below):
   Alt+N          new document          Alt+O   open a file
@@ -83,9 +106,14 @@ Keys (the N++ ones are deliberately different — see below):
   Alt+Z          toggle word wrap      Ctrl+Z / Ctrl+Y  undo / redo
   Tab            indent by a real tab character
 
-Why not Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+W? Chrome owns all four (new window,
-open, save page, close tab) and no web page can intercept them, so the
-substitutes move to Alt. The originals are listed in DEVIATIONS_FROM_NPP.
+  Alt+F          Find...               Ctrl+H  Replace...   Ctrl+M  Mark...
+  F3 / Shift+F3  find next / previous  Ctrl+G  Go to line...
+  Ctrl+F2        toggle bookmark       F2 / Shift+F2  next / previous bookmark
+
+Why not Ctrl+N/O/S/W, and not Ctrl+F either? Chrome owns them (new window, open,
+save page, close tab, find bar) and no web page may intercept them, so the
+substitutes move to Alt. Which keys a page *can* claim here was measured rather
+than assumed — see scripts/probe-reserved-keys.py and DEVIATIONS_FROM_NPP.
 
 Files are read and written with the File System Access API, which is what makes
 a byte-identical round-trip possible: the encoding, byte-order mark and line
@@ -129,10 +157,38 @@ export class Workspace {
       this.toggleSplit();
       return true;
     },
+    find: () => {
+      this.openSearch("find");
+      return true;
+    },
+    replace: () => {
+      this.openSearch("replace");
+      return true;
+    },
+    mark: () => {
+      this.openSearch("mark");
+      return true;
+    },
+    findNext: () => this.#find.findNext(),
+    findPrevious: () => this.#find.findPrevious(),
+    gotoLine: () => {
+      openGoToDialog({ target: () => this.#focusView() });
+      return true;
+    },
+    toggleBookmark: () => this.#toggleBookmark(),
+    nextBookmark: () => this.#gotoBookmark(true),
+    previousBookmark: () => this.#gotoBookmark(false),
   };
+
+  /**
+   * Task 5's dialog — one instance for the whole app, like N++'s single Find window. It stays
+   * alive when closed so F3 keeps working from the last search, which is what N++ does.
+   */
+  readonly #find: FindReplaceDialog;
 
   readonly #chrome: Chrome;
   readonly #primary: PaneElements;
+  #bookmarkMargin = NPP_BOOKMARK_MARGIN;
   readonly #capabilities = detectCapabilities();
   #secondary: PaneElements | null = null;
   #disposeSplitterDrag: (() => void) | null = null;
@@ -153,6 +209,7 @@ export class Workspace {
   constructor(host: HTMLElement) {
     this.#chrome = new Chrome(host);
     this.#primary = this.#chrome.addPane("primary", "before-splitter");
+    this.#find = new FindReplaceDialog(this.#searchHost(), host);
     this.#addMenus();
 
     this.#chrome.addButton({
@@ -225,6 +282,65 @@ export class Workspace {
         items: () => this.#fileMenu(),
       },
       {
+        // N++'s Search menu (Notepad_plus.rc). "Find in Files", the Search Results window and
+        // the Mark-style families are out of the MVP: see DEVIATIONS_FROM_NPP.
+        label: "Search",
+        items: [
+          {
+            id: "find",
+            label: "Find…",
+            shortcut: SEARCH_KEYS.find,
+            onClick: () => this.openSearch("find"),
+          },
+          { id: "find-next", label: "Find Next", shortcut: SEARCH_KEYS.findNext, onClick: () => this.#find.findNext() },
+          {
+            id: "find-previous",
+            label: "Find Previous",
+            shortcut: SEARCH_KEYS.findPrevious,
+            onClick: () => this.#find.findPrevious(),
+          },
+          {
+            id: "replace",
+            label: "Replace…",
+            shortcut: SEARCH_KEYS.replace,
+            onClick: () => this.openSearch("replace"),
+          },
+          { id: "mark", label: "Mark…", shortcut: SEARCH_KEYS.mark, onClick: () => this.openSearch("mark") },
+          { id: "search-rule", separator: true },
+          {
+            id: "goto-line",
+            label: "Go to…",
+            shortcut: SEARCH_KEYS.gotoLine,
+            onClick: () => openGoToDialog({ target: () => this.#focusView() }),
+          },
+          { id: "bookmark-rule", separator: true },
+          {
+            id: "toggle-bookmark",
+            label: "Toggle Bookmark",
+            shortcut: SEARCH_KEYS.toggleBookmark,
+            onClick: () => void this.#toggleBookmark(),
+          },
+          {
+            id: "next-bookmark",
+            label: "Next Bookmark",
+            shortcut: SEARCH_KEYS.nextBookmark,
+            onClick: () => void this.#gotoBookmark(true),
+          },
+          {
+            id: "previous-bookmark",
+            label: "Previous Bookmark",
+            shortcut: SEARCH_KEYS.previousBookmark,
+            onClick: () => void this.#gotoBookmark(false),
+          },
+          {
+            id: "clear-bookmarks",
+            label: "Clear All Bookmarks",
+            // N++ leaves this one unbound too (`winKeyDefs[]`: VK_NULL for IDM_SEARCH_CLEAR_BOOKMARKS).
+            onClick: () => this.clearBookmarks(),
+          },
+        ],
+      },
+      {
         label: "View",
         items: [
           {
@@ -238,6 +354,13 @@ export class Workspace {
             label: "Clone to Other View",
             shortcut: WEB_PORT_KEYS.cloneToOtherView,
             onClick: () => this.toggleSplit(),
+          },
+          {
+            // N++ keeps this in Settings ▸ Preferences ▸ Margins ("Display bookmark margin");
+            // this app has no Settings menu yet, so it sits with the other display toggles.
+            id: "bookmark-margin",
+            label: "Bookmark Margin",
+            onClick: () => this.toggleBookmarkMargin(),
           },
         ],
       },
@@ -339,9 +462,31 @@ export class Workspace {
     fileSystemAccess: boolean;
     menuTitles: string[];
     recentFiles: string[];
+    /** Task 5's search state — what `scripts/verify-task5.py` asserts on. */
+    search: {
+      open: boolean;
+      tab: SearchTab;
+      status: string;
+      query: string;
+      replace: string;
+      mode: string;
+      matchCase: boolean;
+      wholeWord: boolean;
+      wrapAround: boolean;
+      backwards: boolean;
+      dotMatchesNewline: boolean;
+      inSelection: boolean;
+      marks: number;
+    };
+    /** Bookmarked line numbers, 1-based (N++'s margin marks lines, not positions). */
+    bookmarks: number[];
+    bookmarkMargin: boolean;
   } {
     const document = this.#active();
     const owner = document ? ownerView(document.runtime) : undefined;
+    // Marks and bookmarks live in a view's state; with nothing mounted the document still
+    // carries the state it was last left in, so the numbers stay truthful either way.
+    const state = owner?.state ?? document?.state;
     return {
       documents: this.#documents.length,
       tabs: this.#documents.map(tabLabel),
@@ -368,6 +513,15 @@ export class Workspace {
         (node) => node.textContent ?? "",
       ),
       recentFiles: this.#recent.map((entry) => entry.name),
+      search: {
+        open: this.#find.open,
+        tab: this.#find.tab,
+        status: this.#find.status,
+        ...this.#find.options,
+        marks: state ? markCount(state) : 0,
+      },
+      bookmarks: state ? bookmarkedLines(state) : [],
+      bookmarkMargin: this.#bookmarkMargin,
     };
   }
 
@@ -380,6 +534,7 @@ export class Workspace {
     const state = createDocumentState(content, {
       handlers: this.#handlers,
       wordWrap: NPP_WORD_WRAP,
+      bookmarkMargin: this.#bookmarkMargin,
     });
     const document: OpenDocument = {
       id: `d${this.#documents.length + 1}-${this.#nextDocumentNumber}`,
@@ -412,6 +567,7 @@ export class Workspace {
     const dirty = !backAtSavePoint(view.state.doc, document.savedText);
     if (dirty !== document.dirty) document.dirty = dirty;
 
+    this.#mirrorBookmarks(document, view);
     this.#render();
   }
 
@@ -634,11 +790,16 @@ export class Workspace {
       state: createCloneState(document.state.doc, () => ownerView(document.runtime), {
         handlers: this.#handlers,
         wordWrap: document.wordWrap,
+        bookmarkMargin: this.#bookmarkMargin,
       }),
       parent: this.#secondary.editorHost,
       dispatch: makeSyncDispatcher(document.runtime),
     });
     registerView(document.runtime, view);
+    // A clone's state is built from the owner's *text*, so state-held annotations — search
+    // marks and bookmarks — have to be handed over explicitly.
+    copyBookmarks(document.state, view);
+    copyMarks(document.state, view);
   }
 
   #activateRelative(delta: number): void {
@@ -699,6 +860,124 @@ export class Workspace {
     for (const view of [...document.runtime.views]) view.dispatch({ effects: effect });
     this.#render();
     return document.wordWrap;
+  }
+
+  /* ----------------------------------------------------- search & bookmarks */
+
+  /**
+   * Task 5. The dialog's view of the world: the view a command acts on, and every view of the
+   * active document (marks and bookmarks are per-view state, so all of them must be told).
+   */
+  #searchHost(): SearchHost {
+    return {
+      target: () => this.#focusView(),
+      views: () => this.#active()?.runtime.views ?? [],
+      markLines: (lines) => this.#bookmarkLines(lines),
+    };
+  }
+
+  /**
+   * The view a command acts on. N++'s Find works on the pane that has the focus; with the split
+   * open that is not always the primary pane, and with none focused (a menu click is not a
+   * focus event) it is the owner view — the one holding the document's history.
+   */
+  #focusView(): EditorView | null {
+    const document = this.#active();
+    if (!document) return null;
+    for (const view of document.runtime.views) {
+      if (view.hasFocus) return view;
+    }
+    return ownerView(document.runtime) ?? null;
+  }
+
+  /** Open the Find / Replace / Mark dialog on one of its tabs (N++: Ctrl+F, Ctrl+H, Ctrl+M). */
+  openSearch(tab: SearchTab = "find"): void {
+    this.#find.show(tab);
+  }
+
+  /** The search dialog, for the verification handle and for callers that need its state. */
+  get search(): FindReplaceDialog {
+    return this.#find;
+  }
+
+  /** Apply a transaction to every view of the active document. */
+  #eachView(document: OpenDocument, apply: (view: EditorView) => void): void {
+    for (const view of [...document.runtime.views]) apply(view);
+  }
+
+  /** The Mark tab's "Bookmark line": add bookmarks for the given line numbers. */
+  #bookmarkLines(lines: readonly number[]): void {
+    const document = this.#active();
+    const view = this.#focusView();
+    if (!document || !view) return;
+    const wanted = bookmarkLines(view.state, lines);
+    // N++'s "Bookmark line" *adds* to what is bookmarked; it does not clear first.
+    const union = [...new Set([...bookmarkPositions(view.state), ...wanted])].sort((a, b) => a - b);
+    this.#eachView(document, (target) =>
+      target.dispatch({ effects: setBookmarksEffect.of(union) }),
+    );
+    this.#render();
+  }
+
+  #toggleBookmark(): boolean {
+    const document = this.#active();
+    const view = this.#focusView();
+    if (!document || !view) return false;
+    toggleBookmark(view, document.runtime.views);
+    this.#render();
+    return true;
+  }
+
+  #gotoBookmark(forward: boolean): boolean {
+    const document = this.#active();
+    const view = this.#focusView();
+    if (!document || !view) return false;
+    // N++ returns early when a document has no bookmarks at all (`bookmarkNext`) — no
+    // "not found" message, nothing moves.
+    if (gotoBookmark(view, forward) === null) return false;
+    this.#render();
+    return true;
+  }
+
+  clearBookmarks(): void {
+    const document = this.#active();
+    const view = this.#focusView();
+    if (!document || !view) return;
+    clearAllBookmarks(view, document.runtime.views);
+    this.#render();
+  }
+
+  /** View ▸ Bookmark Margin — N++'s `_bookMarkMarginShow` preference (`Parameters.h:902`). */
+  toggleBookmarkMargin(): boolean {
+    const document = this.#active();
+    if (!document) return false;
+    this.#bookmarkMargin = !this.#bookmarkMargin;
+    const effect = bookmarkMarginCompartment.reconfigure(
+      bookmarkMarginExtension(this.#bookmarkMargin),
+    );
+    this.#eachView(document, (view) => view.dispatch({ effects: effect }));
+    return this.#bookmarkMargin;
+  }
+
+  /**
+   * Keep every pane showing the same bookmarks.
+   *
+   * The split dispatcher forwards **document changes** only, and a bookmark is state, not text —
+   * so a bookmark toggled by a click in the clone's margin would be invisible in the primary
+   * pane and would vanish when the split closed (the clone's state is built fresh each time).
+   * Reconciling here means every path — keymap, menu, dialog, margin click — agrees, without
+   * `split-view.ts` having to know that bookmarks exist.
+   */
+  #mirrorBookmarks(document: OpenDocument, view: EditorView): void {
+    const mine = bookmarkPositions(view.state);
+    for (const peer of [...document.runtime.views]) {
+      if (peer === view) continue;
+      const theirs = bookmarkPositions(peer.state);
+      if (theirs.length === mine.length && theirs.every((position, index) => position === mine[index])) {
+        continue;
+      }
+      peer.dispatch({ effects: setBookmarksEffect.of(mine) });
+    }
   }
 
   /* ---------------------------------------------------------------- closing */
