@@ -148,6 +148,7 @@ the tier B/C fallback I/O is deferred to phase 2, not deleted.
 - Create: `src/file/file-io.ts` (the single module boundary — see risk R8)
 - Create: `src/platform/capabilities.ts` (thin feature test — S4)
 - Create: `src/file/fallbacks.ts` — **phase 2 (deferred by D11)**
+- Modify: `src/editor/chrome.ts` + `src/editor/workspace.ts` (menu-bar host — see step 6)
 - Modify: `src/main.ts`
 
 **Steps:**
@@ -159,11 +160,23 @@ the tier B/C fallback I/O is deferred to phase 2, not deleted.
    comment, not discovered later.
 5. Add the capability check from `src/platform/capabilities.ts`: on a browser without the
    pickers, show an explicit "not supported yet" message rather than throwing (S4, mitigates R8).
+6. **Add the menu bar that Task 3 already promised to this task.** `src/editor/chrome.ts` and
+   `index.html` both defer it here — "once File ▸ Open / Save exist to put in it", which is now.
+   It was missing from this spec, so without it Task 4 ships Open/Save reachable only from the
+   toolbar, or leaves two comments lying about a menu.
 
 **Verification:**
 - Open a local text file, edit, and save changes in Chrome — including a byte-identical
   round-trip when nothing was edited (CRLF and CRLF+BOM).
 - Confirm a non-Chromium browser shows the unsupported-browser message instead of a stack trace.
+- **Automation constraint, settled here rather than discovered mid-task:** Playwright cannot drive
+  `showOpenFilePicker` / `showSaveFilePicker` — they are OS-level dialogs outside the page, and
+  there is no CDP hook for them. So `scripts/verify-task4.py` (S2) must **stub the pickers in-page
+  with handles backed by OPFS** (`navigator.storage.getDirectory()`), which returns genuine
+  `FileSystemFileHandle` objects. That exercises the real read/write/BOM/encoding paths against
+  real browser file APIs with only the OS dialog faked. The end-to-end picker round-trip stays a
+  short **manual** checklist (open → edit → save → confirm on disk, including a CRLF+BOM file),
+  recorded in the ledger as manual evidence — no automation may claim it on its behalf.
 
 ---
 
