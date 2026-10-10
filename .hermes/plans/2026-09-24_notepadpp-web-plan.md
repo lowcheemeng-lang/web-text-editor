@@ -8,7 +8,7 @@
 
 **Status:** Tasks 1–4 ✅ done · Task 5 ⬜ next · see `PROGRESS.md` for live state
 (`npm run status`). Task 4 was accepted 2026-10-10: its picker round trip is automated in
-`scripts/verify-task4-pickers.py` (41/41), so nothing waits on a human any more.
+`scripts/verify-task4-pickers.py` (42/42), so nothing waits on a human any more.
 
 **Scope settled 2026-09-25:** CodeMirror 6 (D2) · no Run/exec or native plugins (D7) ·
 phase-3 priority = encoding fidelity + large-file mode (D10) · **MVP is Chromium-only (D11)**.
@@ -188,15 +188,15 @@ the tier B/C fallback I/O is deferred to phase 2, not deleted.
   concluded was impossible: `scripts/verify-task4-pickers.py` runs a *headed* Chrome under `Xvfb`,
   finds the GTK chooser as an X window, types the path with `xdotool`, screenshots it with
   `ffmpeg -f x11grab`, and answers Chrome's "Save changes to …?" write prompt. It opens and writes
-  real files in `/tmp` and compares `md5` on disk → **PASS (41/41)**, so the end-to-end picker round
-  trip is no longer a manual step. Two environment notes it encodes: Chrome must run under
+  real files in `/tmp` and compares `md5` on disk → **PASS (42/42)**, twice in a row, so the
+  end-to-end picker round trip is no longer a manual step. Two environment notes it encodes: Chrome must run under
   `dbus-run-session` (otherwise `xdg-desktop-portal` takes the request and renders the dialog on the
   portal's own display), and a plain Save is not proof of anything unless the file's inode/mtime
   move — a cancelled write leaves the bytes byte-identical too.
 - A human pass on the user's own desktop is still possible and now optional: `Alt+O` each
   `/tmp/t4-*.txt`, `Alt+S`, `md5sum` again, and cancel one picker.
 
-**Outcome:** Complete 2026-10-10. `python3 scripts/verify-task4-pickers.py` → **PASS (41/41)** on
+**Outcome:** Complete 2026-10-10. `python3 scripts/verify-task4-pickers.py` → **PASS (42/42)** on
 the real chooser; `python3 scripts/verify-task4.py` → **PASS (44/44)**; `node
 --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3
 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE:

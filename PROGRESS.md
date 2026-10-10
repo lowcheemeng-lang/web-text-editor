@@ -40,7 +40,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 1 | Define scope & compatibility matrix | DONE | `docs/scope.md` — 3 tiers, capability matrix, encoding matrix, R1–R8 risks; all claims sourced | `1b5bcd4` |
 | 2 | Initialize project scaffold | DONE | `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **382.37 kB / 123.08 kB gz**; `python3 scripts/verify-task2.py` → **PASS** (HTTP 200, 1 CM6 instance, 15 lines, typing verified, 0 console errors) | `26aaea6` |
 | 3 | Editor core with N++ defaults | DONE | `python3 scripts/verify-task3.py` → **PASS (56/56)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS** (12/12); `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** (down from 382.37 kB — `basicSetup` carried autocompletion/search that Tasks 5–6 own) | `1c548ae` |
-| 4 | File operations without backend | DONE | `python3 scripts/verify-task4-pickers.py` → **PASS (41/41)** — the **real** OS file chooser, driven end to end: headed Chrome under Xvfb, the GTK dialog screenshotted and driven by xdotool, real files in `/tmp` opened, edited and saved, md5 compared on disk. Includes the write that the manual checklist existed to prove: Chrome's "Save changes to …?" permission prompt is answered, and the save is confirmed by the file's inode/mtime moving rather than by "no error appeared". `python3 scripts/verify-task4.py` → **PASS (44/44)** — OPFS-stubbed pickers, byte-level (CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, recent files surviving a page reload, unsupported-browser notice); `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** | `f79477c` |
+| 4 | File operations without backend | DONE | `python3 scripts/verify-task4-pickers.py` → **PASS (42/42)**, twice in a row — the **real** OS file chooser, driven end to end: headed Chrome under Xvfb, the GTK dialog screenshotted and driven by xdotool, real files in `/tmp` opened, edited and saved, md5 compared on disk. Includes the write that the manual checklist existed to prove: Chrome's "Save changes to …?" permission prompt is answered, and the save is confirmed by the file's inode/mtime moving rather than by "no error appeared". `python3 scripts/verify-task4.py` → **PASS (44/44)** — OPFS-stubbed pickers, byte-level (CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, recent files surviving a page reload, unsupported-browser notice); `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** | `f79477c` |
 | 5 | Search, replace, navigation | TODO | - | - |
 | 6 | Syntax highlighting & language modes | TODO | - | - |
 | 7 | Session persistence & preferences | TODO | - | - |
@@ -597,10 +597,18 @@ detector (a whole-screen "largest blue blob" search clicked into the page instea
 still reported success); it is now anchored on the prompt's own *Cancel* button.
 
 **Verified**
-- `python3 scripts/verify-task4-pickers.py` → **PASS (41/41)** — including a byte-identical
-  CRLF+BOM round trip through a **real** write, a byte-identical windows-1252 round trip, an edit
-  that reached the real file (`BOM + "line one\r\nline two\r\nthree"`, CRLF preserved), a second
-  Open going through the dialog again, and a dismissal behaving as a cancel.
+- `python3 scripts/verify-task4-pickers.py` → **PASS (42/42)**, and again on a second consecutive
+  run — including a byte-identical CRLF+BOM round trip through a **real** write, a byte-identical
+  windows-1252 round trip, an edit that reached the real file
+  (`BOM + "line one\r\nline two\r\nthree"`, CRLF preserved), a second Open going through the dialog
+  again, and a dismissal behaving as a cancel.
+- **The second run was not green, and that was worth having.** It died waiting to click Save on the
+  windows-1252 document: the app raises the assumed-encoding warning *after* adopting the file, so
+  the check could see the filename before the warning existed — and the warning then blocked every
+  later click for 30 seconds. Fixed at the root: the opener now waits for and dismisses that warning
+  (and asserts it was shown, which is why the count is 42), and every click in the script goes
+  through `click_or_alert`, which names and dismisses a stray alert instead of crashing — a crash
+  hides every check behind it.
 - Re-ran at HEAD after the change: `verify-task4.py` → **PASS (44/44)**; `test-file-io.mjs` →
   **PASS (45/45)**; `verify-task3.py` → **PASS (58/58)**; `spike-r2-split.py` → **R2_SPIKE: PASS**;
   `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz**.
@@ -629,9 +637,10 @@ Nothing blocking. All four original scope questions are closed (see `docs/scope.
 Open items, none of which blocks the next task:
 
 1. **Task 4's manual picker pass is now optional.** It used to be the gate; `scripts/verify-task4-pickers.py`
-   now drives the real dialog, the real files and Chrome's write prompt automatically (41/41), so the
-   evidence rule is satisfied without it. Offered, not required: two minutes on your own desktop —
-   `Alt+O` each `/tmp/t4-*.txt`, `Alt+S`, `md5sum` again, cancel one picker.
+   now drives the real dialog, the real files and Chrome's write prompt automatically (42/42, two
+   consecutive runs), so the evidence rule is satisfied without it. Offered, not required: two
+   minutes on your own desktop — `Alt+O` each `/tmp/t4-*.txt`, `Alt+S`, `md5sum` again, cancel one
+   picker.
 2. **D1, D5, D8** — lower-stakes consolidations of choices already implied by the accepted
    decisions. D8 is *half in use* (Task 4's recent files exercise its IndexedDB half) but is still
    `Proposed`; only the user moves it.

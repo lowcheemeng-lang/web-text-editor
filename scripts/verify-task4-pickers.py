@@ -275,7 +275,7 @@ def answer_write_prompt(page, timeout: float = 15.0) -> bool:
 
 def save_active(page, prompt_expected: bool) -> dict:
     """Click Save, answer the permission prompt, and report what happened."""
-    page.click("button[data-tool='save']")
+    click_or_alert(page, "button[data-tool='save']")
     granted = answer_write_prompt(page)
     page.wait_for_timeout(900)
     return {
@@ -285,6 +285,36 @@ def save_active(page, prompt_expected: bool) -> dict:
         "alert": (page.locator(".npp-dialog-body").all_text_contents() or [""])[0][:90],
         "dirty": info(page)["dirty"],
     }
+
+
+def alert_open(page) -> bool:
+    return page.locator("[data-dialog-action='ok']").count() > 0
+
+
+def dismiss_alert(page) -> str:
+    body = (page.locator(".npp-dialog-body").all_text_contents() or [""])[0][:90]
+    page.click("[data-dialog-action='ok']")
+    page.wait_for_timeout(200)
+    return body
+
+
+def click_or_alert(page, selector: str, timeout: int = 8000) -> bool:
+    """Click, but never let a stray in-app alert turn into a 30-second crash.
+
+    An alert left open blocks every later click, so it is reported as a failed
+    check and dismissed rather than allowed to abort the run — a crash would hide
+    every check after it.
+    """
+    try:
+        page.click(selector, timeout=timeout)
+        return True
+    except Exception:
+        if not alert_open(page):
+            raise
+        check(f"a stray alert had to be dismissed before clicking {selector}", False,
+              dismiss_alert(page))
+        page.click(selector, timeout=timeout)
+        return True
 
 
 def type_path(wid: str, path: Path) -> None:
@@ -349,7 +379,7 @@ def open_via_dialog(page, path: Path, expect: str, warn: bool = False) -> bool:
     assertion can pass vacuously against whatever document happened to be open.
     """
     focus_main()
-    page.click("button[data-tool='open']")
+    click_or_alert(page, "button[data-tool='open']")
     found = wait_for_window("select a file", timeout=20)
     check(f"Open raises the real OS file chooser for {expect}", found is not None,
           found[1] if found else f"no dialog window appeared · pickers: {picker_log(page)}")
@@ -357,12 +387,23 @@ def open_via_dialog(page, path: Path, expect: str, warn: bool = False) -> bool:
         return False
 
     type_path(found[0], path)
+    warned = False
     deadline = time.time() + 25
     while time.time() < deadline:
-        # D4: a non-UTF-8 file arrives with an explicit warning to dismiss.
-        if warn and page.locator("[data-dialog-action='ok']").count():
-            page.click("[data-dialog-action='ok']")
+        # D4: a non-UTF-8 file arrives with an explicit warning to dismiss — and the
+        # warning is raised *after* the document is adopted, so it can still be
+        # arriving when the filename is already there. Wait for it rather than
+        # racing it: a warning left open blocks every later click in the page.
+        if alert_open(page):
+            dismiss_alert(page)
+            warned = True
+            continue
         if info(page)["activeFileName"] == expect:
+            if warn and not warned:
+                page.wait_for_timeout(700)
+                continue
+            if warn:
+                check(f"the assumed-encoding warning was shown for {expect}", True)
             check(f"the real dialog handed back {expect}", True)
             return True
         time.sleep(0.25)
@@ -445,7 +486,7 @@ def main() -> int:
 
             # ══ 1. the dialog itself ════════════════════════════════════════
             focus_main()
-            page.click("button[data-tool='open']")
+            click_or_alert(page, "button[data-tool='open']")
             found = wait_for_window("select a file", timeout=20)
             check("Open raises the real OS file chooser", found is not None,
                   found[1] if found else f"no dialog window appeared · pickers: {picker_log(page)}")
@@ -512,7 +553,7 @@ def main() -> int:
             check("a second open goes through the dialog again", opened_copy)
             if opened_copy:
                 focus_main()
-                page.click(".npp-pane[data-pane='primary'] .cm-content", position={"x": 2, "y": 8})
+                click_or_alert(page, ".npp-pane[data-pane='primary'] .cm-content")
                 page.keyboard.press("Control+End")
                 page.keyboard.type("three")
                 page.wait_for_timeout(200)
@@ -557,7 +598,7 @@ def main() -> int:
             # ══ 6. dismissing the dialog is a cancel, not an error ══════════
             focus_main()
             count = info(page)["documents"]
-            page.click("button[data-tool='open']")
+            click_or_alert(page, "button[data-tool='open']")
             found = wait_for_window("select a file", timeout=20)
             check("Open raises the dialog again for the cancel test", found is not None)
             if found:
