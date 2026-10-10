@@ -41,7 +41,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 2 | Initialize project scaffold | DONE | `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **382.37 kB / 123.08 kB gz**; `python3 scripts/verify-task2.py` → **PASS** (HTTP 200, 1 CM6 instance, 15 lines, typing verified, 0 console errors) | `26aaea6` |
 | 3 | Editor core with N++ defaults | DONE | `python3 scripts/verify-task3.py` → **PASS (56/56)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS** (12/12); `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** (down from 382.37 kB — `basicSetup` carried autocompletion/search that Tasks 5–6 own) | `1c548ae` |
 | 4 | File operations without backend | DONE | `python3 scripts/verify-task4-pickers.py` → **PASS (42/42)**, twice in a row — the **real** OS file chooser, driven end to end: headed Chrome under Xvfb, the GTK dialog screenshotted and driven by xdotool, real files in `/tmp` opened, edited and saved, md5 compared on disk. Includes the write that the manual checklist existed to prove: Chrome's "Save changes to …?" permission prompt is answered, and the save is confirmed by the file's inode/mtime moving rather than by "no error appeared". `python3 scripts/verify-task4.py` → **PASS (44/44)** — OPFS-stubbed pickers, byte-level (CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, recent files surviving a page reload, unsupported-browser notice); `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** | `f79477c` · `e0a74c3` |
-| 5 | Search, replace, navigation | TODO | - | - |
+| 5 | Search, replace, navigation | DONE | `python3 scripts/verify-task5.py` → **PASS (105/105)**, twice in a row — N++'s Search dialog driven through its own controls (Normal / Extended / Regular-expression modes, Match case, Match whole word only, Wrap around, Backward direction, In selection, and N++'s per-mode gating of them), find next/previous with wrap-around and N++'s own status wording, Count, Mark All, Clear all marks, Replace and Replace All (`$1` back-references, `\t` in a replacement), Go To (line and offset) and the bookmark family (Ctrl+F2 / F2 / Shift+F2 / Clear All Bookmarks / the margin toggle). Over a **10 000-line** document: regex Count **2.4 ms**, Mark All **4.8 ms**, Replace All **46.5 ms**; `no request left the machine (D1)` green. `python3 scripts/probe-reserved-keys.py` → the keymap measurement behind decision **S6**. Regressions at HEAD: `verify-task3.py` → **PASS (58/58)**; `verify-task4.py` → **PASS (44/44)**; `verify-task4-pickers.py` → **PASS (42/42)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **305.27 kB / 98.72 kB gz** (was 296.81 / 96.16 — `@codemirror/search` 6.7.2) | `d22f0d8` |
 | 6 | Syntax highlighting & language modes | TODO | - | - |
 | 7 | Session persistence & preferences | TODO | - | - |
 | 8 | PWA / offline packaging | TODO | - | - |
@@ -55,25 +55,25 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**Task 4 is DONE (2026-10-10).** The picker round trip it used to defer to a human is now a
-re-runnable check — `python3 scripts/verify-task4-pickers.py` (needs `npm run dev` running) drives
-the real OS dialog in a headed Chrome, opens `/tmp/t4-crlf-bom.txt` and `/tmp/t4-win1252.txt`,
-edits, saves, answers Chrome's "Save changes to …?" permission prompt, and compares md5 sums on
-disk. The two fixture files are recreated by that script; it never edits them.
+**Task 5 is DONE (2026-10-10).** Its acceptance check is re-runnable and needs nothing but the
+dev server: `python3 scripts/verify-task5.py` → **PASS (105/105)**. The keymap it ships was
+measured, not guessed (`scripts/probe-reserved-keys.py`, decision S6): **Find is Alt+F** because
+Chrome never delivers Ctrl+F to a page, while Ctrl+H, Ctrl+G, Ctrl+M, F3 / Shift+F3 and
+F2 / Shift+F2 / Ctrl+F2 keep N++'s own bindings.
 
-A human pass on your own desktop is still possible and now **optional, not the gate** — the steps
-are kept in the plan's Task 4 section: `Alt+O` each fixture, `Alt+S` without editing, `md5sum`
-again, then cancel a picker once. Record it here if you do it.
-
-**Then: Task 5 — search, replace, navigation** (`src/search/find-replace.ts`, plus
+**Then: Task 6 — syntax highlighting & language modes** (`src/languages/registry.ts`, plus
 `src/editor/notepadpp-config.ts`), which is ungated:
 
-1. Find/replace dialog: regex, match case, whole word, wrap-around.
-2. Mark-all, find-next/prev, replace / replace-all.
-3. GoTo line and bookmark-margin toggles.
+1. Register D9's accepted language set — all 22 official `@codemirror/lang-*` packages plus the
+   103 `@codemirror/legacy-modes` ports — each lazily imported so an unopened language costs
+   nothing.
+2. Detect a language by file extension and, where that cannot decide, by content.
+3. Add the overview ruler as the language-aware navigation aid.
 
-Verified by a search/replace pass over a 10k-line file, plus `scripts/verify-task5.py` (S2).
-Nothing gates Task 6 either (D9 accepted). D1, D5 and D8 remain `Proposed`; none blocks a task.
+Verified by opening `.js`, `.py`, `.html` and `.md` files and watching the highlighting and the
+overview ruler, plus a `scripts/verify-task6.py` (S2). Two things the plan flags as unproven and
+worth measuring rather than assuming: makefile / batch / INI have no CM6 mode anywhere, and
+C#-via-`clike` is unconfirmed.
 
 ### Scope settled at sign-off (2026-09-25)
 
@@ -127,6 +127,8 @@ Nothing gates Task 6 either (D9 accepted). D1, D5 and D8 remain `Proposed`; none
 | S3 | 2026-09-25 | `manualChunks` in `vite.config.ts` must stay in **function** form | Vite 8 bundles with Rolldown, which dropped the Rollup object form; the object form fails to type-check | Accepted |
 | S4 | 2026-09-25 | Task 4 ships a **thin capability check** (`src/platform/capabilities.ts`) that reports an unsupported browser instead of throwing; the full tier B/C implementation stays phase 2 | D11 defers non-Chromium support; a 10-line guard keeps the deferral honest and gives phase 2 a seam to plug into (mitigates R8) | Accepted |
 | S5 | 2026-10-06 | Split view shows the **active document** in two panes — Notepad++'s *clone to other view*. Notepad++'s other flavour, each pane carrying its own independent tab set, stays Tier 2 / phase 2 | R2 proved the plan's wording wrong in a load-bearing way: two views on one `EditorState` do not diverge *loudly*, they diverge silently. Two states plus annotation forwarding gives one document, one undo history, per-view caret and scroll (`docs/r2-shared-state-spike.md`). Per-pane tab membership would add a second tab strip with no document behind it and change nothing Task 3 verifies | Accepted |
+| S6 | 2026-10-10 | **Find is `Alt+F`**; every other search key keeps N++'s binding (Ctrl+H, Ctrl+G, Ctrl+M, F3, Shift+F3, Ctrl+F2, F2, Shift+F2) | Measured, not assumed: `scripts/probe-reserved-keys.py` drives a headed Chrome under Xvfb with real X input and shows the page never receives Ctrl+F while Chrome's find bar opens anyway (`preventDefault` cannot suppress it), whereas the other seven do reach the page and *are* suppressible. Same instrument and same rule as the Ctrl+N/O/S/W substitutions of Task 4 | Accepted |
+| S7 | 2026-10-10 | Search marks and bookmarks live in **per-view state** (`StateField`), and `workspace.ts` reconciles the views of one document — a clone copies them at mount, and bookmark changes are mirrored to the peers | The split dispatcher forwards document *changes* only. Without the reconciliation a bookmark set in the clone's margin would be invisible in the primary pane and silently lost when the split closed, because a clone's state is rebuilt on every mount | Accepted |
 
 ## Session log
 
@@ -641,6 +643,110 @@ still reported success); it is now anchored on the prompt's own *Cancel* button.
 - `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
   recorded in Session 1, still not this project's to commit or revert.
 
+#### Session 4 (2026-10-10) — Task 5: search, replace and navigation; task accepted
+
+**User input received**
+- "read the progress and proceed to execute task 5" — the Next action the ledger carried.
+
+**What "fidelity" meant in practice.** Task 5's plan is four sentences long. What made it concrete
+was reading Notepad++'s own source for every control and rule this session implemented, the same
+standard Task 3 set: `FindReplaceDlg.rc` (control labels, per-tab buttons), `FindReplaceDlg.cpp`
+(`FindHistory` option rules at :2695-2740, the status messages, `Searching::convertExtendedToString`
+at :131), `Parameters.h` (the FindHistory defaults :1164-1186, `_bookMarkMarginShow = true` :902),
+`Parameters.cpp` (`winKeyDefs[]`, the default accelerators), `GoToLineDlg.cpp` (line vs offset),
+`rgba_icons.h` (`bookmark14`, the margin dot), `stylers.model.xml` (Mark Style 1 = `00FFFF`).
+Where a rule was reproduced, the code cites the Notepad++ line it came from.
+
+**Built**
+- `src/search/find-replace.ts` — the floating Find / Replace / Mark dialog (`IDD_FIND_REPLACE_DLG`'s
+  own labels and button sets), the commands over `@codemirror/search`'s `SearchQuery`, the marks,
+  and N++'s Go To dialog (`IDD_GOLINE`: Line / Offset, "You are here:", "You want to go to:",
+  "You can't go further than:", "Go" / "I'm going nowhere"). Options and their gating follow N++:
+  regex mode disables whole-word and backward direction and enables ". matches newline"; wrap
+  around is on by default; direction is down by default.
+- `src/search/bookmarks.ts` — a `StateField<RangeSet<GutterMarker>>` (the shape `RangeSet.map()`
+  gives for free: bookmarks ride through edits like Scintilla markers), the margin with a clickable
+  toggle, and N++'s commands (toggle / next / previous / clear all, navigation wrapping as N++
+  wraps, caret to the line start).
+- `src/editor/notepadpp-config.ts` — `SEARCH_KEYS`, the handler hooks, the new extensions, N++'s
+  mark (`00FFFF`) and bookmark (`#5f7bd7` at ~27% alpha, from the bitmap and
+  `SCI_MARKERSETALPHA 70`) colours, and four more `DEVIATIONS_FROM_NPP` entries.
+- `src/editor/workspace.ts` — the Search menu (N++'s item order), the dialog host, the bookmark
+  commands, and the reconciliation that keeps a document's panes agreeing (S7).
+- `scripts/verify-task5.py` (105 checks) and `scripts/probe-reserved-keys.py` (the keymap
+  measurement).
+
+**The keymap was measured, and measuring it took three attempts (S6)**
+1. The first probe cancelled **every** keydown — including the plain characters typed afterwards to
+   see where the focus went — so "did typing land" was false for every key, free ones included. Only
+   accelerator-shaped keydowns are cancelled now.
+2. The second run was contaminated by the first: after Ctrl+F opened the find bar, the *next*
+   combination's typing went into that leftover bar, which read as "Ctrl+G is Chrome's" when it is
+   not. Each measurement now runs in a fresh tab behind a verified precondition (Escape, re-focus
+   the window — no WM runs under Xvfb — click, type a guard word and *require it to land*).
+3. "Typing did not arrive" is a proxy, and a proxy can lie in both directions; the find bar's own
+   counter is now read by OCR as corroboration, though the verdict rests on page-side facts.
+
+Result: **Ctrl+F is unusable from a page** (no keydown ever reaches it, and Chrome's find bar opens
+whatever the page does), so Find moved to **Alt+F**; Ctrl+H, Ctrl+G, Ctrl+M, F3 / Shift+F3 and
+Ctrl+F2 / F2 / Shift+F2 all reach the page and `preventDefault` suppresses Chrome's action, so they
+keep N++'s bindings. Recorded as S6, with the probe re-runnable.
+
+**Verified at HEAD**
+- `python3 scripts/verify-task5.py` → **PASS (105/105)**, and again on a second consecutive run.
+  Over the 10 000-line file the task's verification asks for: regex Count **2.4 ms**, Mark All
+  **4.8 ms**, Replace All **46.5 ms**, with the matches counted (1428), the marks painted and the
+  replacement checked line by line. Also green: no console errors, no uncaught page errors, and
+  `no request left the machine (D1)`.
+- Regressions: `verify-task3.py` → **PASS (58/58)**; `verify-task4.py` → **PASS (44/44)**;
+  `verify-task4-pickers.py` → **PASS (42/42)** twice, the real OS chooser included;
+  `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**;
+  `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **305.27 kB / 98.72 kB gz**
+  (up from 296.81 / 96.16 — the search package costs ~2.5 kB gzip).
+
+**Checks that had to change — recorded, not quietly fixed**
+1. **`verify-task4.py`'s "File and View menus"** asserted the exact list `["File", "View"]`. Task 5
+   adds Search, so it now asserts that File and View are *present*: the point of that check is that
+   file I/O needs a File menu, and a later task adding a menu is not a Task 4 regression. The Task 4
+   row keeps its evidence, untouched.
+2. **`verify-task4-pickers.py` gained trap 5.** Its first write failed 36/42 with "no prompt
+   appeared" while the file never changed — and the app reported no failure, because nothing had
+   failed *yet*: the save was waiting on a second Chrome prompt the script had never met. Chrome asks
+   **per origin** on a profile's first write ("… wants to view and edit files from the last time you
+   visited this site." — Allow this time / **Allow on every visit** / Don't allow), which is a
+   different bubble from the per-file "Save changes to …?". `grant_write()` now answers both kinds
+   and returns as soon as the file's inode moves. The lesson is the one the ledger already carries,
+   met once more: **"the bytes did not change" passed while no write had happened at all.**
+3. **The same script's first-write check** asserted that a permission prompt *appears*. Answering the
+   origin bubble with "Allow on every visit" persists the grant, so that assertion could never hold
+   again — its own fix made it false forever. It now asserts that the permission step is satisfied
+   and the write landed, and reports which prompts were answered.
+
+**The new check failed 7 of its first 105 — five were the check's fault, and that is worth keeping.**
+The app was right in all seven cases: a fixture where a case-insensitive `HERE` also matched the
+`here` inside `there`; a `first.line` pattern whose dot a space could satisfy, so it proved nothing
+about line breaks; a replace sequence that began wherever the previous click had left the caret; a
+backslash eaten by the shell→Python→JavaScript chain; and a bookmark count that included the
+gutter's hidden width spacer. Two were real instrumentation gaps: the tab-switch check returned to
+whichever tab happened to be first rather than the document it had bookmarked, and the spacer dot.
+Each is now written so its assertion has exactly one possible answer.
+
+**Carried forward**
+- Task 6 (highlighting and language modes) owns `syntaxHighlighting`; the search marks and the
+  overview ruler are separate and the marks' colour is already N++'s "Find Mark style".
+- Named and deliberately not built, all recorded in `DEVIATIONS_FROM_NPP` and in the scope tier
+  rows: Find in Files / Find in Projects (no filesystem in a page), the Search Results window,
+  incremental search, the Smart Highlighter, "Copy Marked Text", and Boost.Regex's dialect.
+- A design note for whoever touches the split next: the panes are reconciled in `#mirrorBookmarks`
+  rather than in `split-view.ts`, precisely so the split mechanism stays ignorant of bookmarks.
+
+**Repo state at session end**
+- `d22f0d8` — `task-5: search, replace and navigation — the N++ dialog, bookmarks, and a measured
+  keymap` (src, scripts, the plan's Task 5 section, the two scope rows), then a docs commit
+  recording that SHA in the board.
+- `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
+  from Session 1, still not this project's to commit or revert.
+
 ## Blockers / open questions
 
 Nothing blocking. All four original scope questions are closed (see `docs/scope.md` §10).
@@ -657,6 +763,10 @@ Open items, none of which blocks the next task:
    `Proposed`; only the user moves it.
 3. One loose end, not a decision: **is mobile/tablet in scope at all?** D11 didn't address it.
    Settle it before Task 7, whose OPFS/eviction work is what it changes.
+4. Re-measuring Chrome's **per-origin** file-edit prompt needs a browser profile that has never
+   granted it: `verify-task4-pickers.py` answers it with "Allow on every visit", which persists, so
+   later runs legitimately see no prompt at all (the check accepts that and says which prompts it
+   answered). Delete `.hermes/cache/scratch/task4-pickers/chrome-profile` to see the bubble again.
 
 Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~~ · ~~D9~~ (2026-10-06).
 
