@@ -261,7 +261,9 @@ Nothing else gates Task 4. Task 6 needs **D9** (proposed). Task 5 is ungated.
 - Mobile/tablet was **not** part of the "Chrome only" answer. Chrome for Android is Chromium, so
   mobile is not precluded, but nothing is promised either. Low stakes; settle it before Task 4
   if it matters, since it affects the OPFS/eviction work in Task 7.
-- D1, D3–D6, D8, D9 remain `Proposed`. D3 and D4 gate Task 4; D9 gates Task 6.
+- D1, D3–D6, D8, D9 remained `Proposed` *at that point*. (Superseded: **D6 and D9 were accepted
+  2026-10-06** — see the decision log. D1, D3, D4, D5 and D8 are still proposed, and of those
+  only **D3 + D4** gate a task.)
 
 #### Session 1, continued (2026-09-25) — R2 spike and Task 3 core modules (landed, never recorded)
 
@@ -351,6 +353,48 @@ Nothing else gates Task 4. Task 6 needs **D9** (proposed). Task 5 is ungated.
   (≈ half a day). The 125 languages ship either way; this is an addition, not a condition.
 - **C# coverage is unconfirmed.** CodeMirror 5's `clike` mode covered it, but we have not proven
   `legacy-modes` does. Verify before ever claiming C# support.
+
+#### Session 2, continued — plan-vs-reality audit (docs + one script fix)
+
+**Trigger:** the user asked for a review of progress "if everything done correctly as planned".
+
+**Verified as correct — re-checked from primary sources, not from the ledger's own prose**
+- All 11 commit SHAs recorded across the ledger and the plan resolve, and each matches its stated
+  subject (`git log -1 --format=%s` on every one).
+- Task 3's evidence reproduces at HEAD: `python3 scripts/verify-task3.py` → **PASS (56/56)**,
+  exit 0; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS (12/12)**.
+- `npm run typecheck` → exit 0; `npm run build` output matches the ledger exactly
+  (`editor-core` **296.81 kB / 96.16 kB gz**).
+- Decision status agrees across `PROGRESS.md`, `docs/scope.md` and the plan: D6 and D9 accepted;
+  D1, D3, D4, D5, D8 proposed. R2 is closed in every file, with no leftover "Needs a spike".
+- The pre-existing `sample.html` deletion is still unstaged, exactly as recorded.
+- No stale `window.__editor` references remain under `src/`.
+
+**Defects found and fixed**
+1. **`scripts/verify-task2.py` could no longer run at all.** It reads `window.__editor`, which
+   Task 3 deliberately removed, so it died with `TypeError: Cannot read properties of undefined
+   (reading 'state')`. Task 2's evidence *row* remains correct — it was true when written — but
+   that evidence is no longer reproducible from HEAD. Per the evidence rule the row was left
+   untouched; instead the script now detects the supersession and exits **2 = SUPERSEDED**,
+   naming the commit that still reproduces it (`26aaea6`) and the live equivalent
+   (`verify-task3.py`), rather than failing obscurely.
+2. **The plan carried six stale claims**: Task 3 had no ✅/Outcome although the header said it was
+   done; the "Proposed Approach" list still marked Task 3 as the current step; Task 1's outcome
+   still said D6/D9 were proposed; the Open Questions section still called D6 proposed; Task 6
+   still said "~20 first-class Lezer grammars"; and the file list omitted the four modules Task 3
+   actually added. All six corrected.
+3. **The ledger contradicted itself.** An earlier session's "carried forward" line still read
+   "D1, D3–D6, D8, D9 remain `Proposed`" while the decision log and blockers section said
+   otherwise. Annotated as superseded rather than rewritten, so the history stays intact.
+4. **The skill contradicted the file.** `project-progress-ledger` prescribes a *newest-first*
+   session log; every entry here is appended chronologically. The skill now documents
+   chronological append (with the reason) instead of the ledger being reordered to satisfy a rule
+   that made it harder to maintain.
+
+**Carried forward**
+- Reproducing Task 2's evidence now requires `git checkout 26aaea6`. That is stated in both the
+  script's docstring and the plan's Task 2 outcome, so nobody re-derives it as a failure.
+- Nothing about Task 4 changed: it is still gated on **D3 + D4**.
 
 ## Blockers / open questions
 

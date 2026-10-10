@@ -1,8 +1,22 @@
-"""Browser verification for the scaffold: does the app actually run?
+"""Browser verification for the Task 2 scaffold: did the app actually run?
 
-This is the executable form of Task 2's acceptance criterion (see PROGRESS.md).
-It is deliberately kept in the repo so the "task is done" claim can be re-checked
+This is the executable form of Task 2's acceptance criterion (see PROGRESS.md). It
+is deliberately kept in the repo so the "task is done" claim can be re-checked
 later instead of being taken on trust.
+
+NOTE (2026-10-06) — this check is SUPERSEDED, and says so rather than crashing.
+Task 3 (commit 1c548ae) replaced the `basicSetup` scaffold on purpose: the
+provisional extension list went away, and the dev handle `window.__editor` with
+it (`window.__workspace` replaced it). So this script can no longer pass against
+HEAD, and it must not pretend otherwise. It now reports SUPERSEDED and names the
+commit that still contains what it tested. The live acceptance check for the app
+as it exists is `scripts/verify-task3.py`.
+
+To reproduce the Task 2 result itself:
+
+    git checkout 26aaea6     # the scaffold commit this script was written for
+    npm install && npm run dev
+    python3 scripts/verify-task2.py
 
 Prerequisites:
   1. the dev server is running:  npm run dev        (serves http://127.0.0.1:5173)
@@ -16,7 +30,8 @@ Checks: HTTP 200, one CodeMirror instance mounted, line numbers present, a dev
 handle on window, typing changes the document, and zero console errors.
 Screenshot lands in .hermes/cache/screenshots/ (git-ignored — no binaries in git).
 
-Exit code 0 = PASS, 1 = FAIL.
+Exit codes: 0 = PASS, 1 = FAIL, 2 = SUPERSEDED (the scaffold it tests was
+replaced by Task 3 — see the note above).
 """
 
 from __future__ import annotations
@@ -54,6 +69,28 @@ def main() -> int:
         status = response.status if response else None
 
         page.wait_for_selector(".cm-editor", timeout=15000)
+
+        # Supersession guard. Checked *before* asserting anything about the
+        # scaffold, so a reader gets an explanation instead of
+        # "TypeError: Cannot read properties of undefined (reading 'state')".
+        if page.evaluate("() => typeof window.__editor === 'undefined'"):
+            print(
+                json.dumps(
+                    {
+                        "superseded": True,
+                        "reason": "window.__editor is gone — Task 3 replaced the basicSetup scaffold",
+                        "reproduceAgainst": "git checkout 26aaea6  (then npm install && npm run dev)",
+                        "liveEquivalent": "scripts/verify-task3.py",
+                        "appExposesInstead": "window.__workspace"
+                        if page.evaluate("() => typeof window.__workspace !== 'undefined'")
+                        else None,
+                    },
+                    indent=2,
+                )
+            )
+            print("\nTASK2_VERIFICATION: SUPERSEDED (not a failure — see the module docstring)")
+            browser.close()
+            return 2
 
         dom = page.evaluate(
             """() => ({
