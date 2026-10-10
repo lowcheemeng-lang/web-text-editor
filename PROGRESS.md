@@ -55,22 +55,25 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**Task 4 — file operations without backend** (`src/file/`, per the plan's Task 4 spec). Both gates
-are now answered (**D3** = tier A only; **D4** = WHATWG set, explicit warning for the rest), so
-this is unblocked: the S4 capability check, Tier-A `showOpenFilePicker` / `showSaveFilePicker`,
-BOM-aware reads and writes, the encoding policy, recent-file handles, the **menu bar** that
-`chrome.ts` and `index.html` already promise to this task, and the line-ending + encoding fields
-in the status bar.
+**Task 4 is finished except for one manual step.** Every plan step is built and every automated
+check passes (`scripts/verify-task4.py` → 44/44, `scripts/test-file-io.mjs` → 45/45). What remains
+is the **manual picker checklist**, which no script can perform because it means clicking a real
+OS dialog:
 
-Two facts from the 2026-10-06 re-verification that shape the code:
-- `showOpenFilePicker` needs **transient user activation** — open/save must run inside a user
-  gesture (no picker on load or from a timer), and it rejects with **`AbortError`** when the user
-  dismisses the dialog. A cancel is not a failure and must not be reported as one.
-- The pickers are **Chromium-desktop only**: caniuse shows Firefox unsupported at every version,
-  Safari unsupported, and **Chrome for Android unsupported too** — which is exactly who the S4
-  message is for.
+1. Create the two fixtures and record their hashes:
+   `printf '\xef\xbb\xbfline one\r\nline two\r\n' > /tmp/t4-crlf-bom.txt` ·
+   `printf 'caf\xe9 \x97 na\xef\xbe\r\n' > /tmp/t4-win1252.txt` · `md5sum /tmp/t4-*.txt`
+2. In Chrome at `http://127.0.0.1:5173`: **Alt+O** and open each file; confirm the text and the
+   accented characters look right; **Alt+S** without editing; `md5sum` again — both must match.
+3. Cancel a picker once and confirm nothing happens (a cancel is not an error).
 
-Nothing gates Task 6 any more (D9 accepted). Task 5 is ungated and unblocked.
+Record the result here as manual evidence, then move Task 4 to `DONE`.
+
+**Then: Task 5 — search, replace, navigation** (`src/search/find-replace.ts`), which is ungated:
+find/replace with regex, match case, whole word and wrap-around; mark-all and find-next/prev;
+GoTo line and bookmark margin. Verified by a search/replace pass over a 10k-line file.
+
+Nothing gates Task 6 either (D9 accepted). D1, D5 and D8 remain `Proposed`; none blocks a task.
 
 ### Scope settled at sign-off (2026-09-25)
 
@@ -523,20 +526,40 @@ sits after the final newline), and one pinned the welcome text to a task number.
 **The only item still outstanding is the manual picker checklist** — unchanged, and still
 something no script may claim on the user's behalf.
 
+#### Session 2, continued — handoff checked before pausing (docs only)
+
+The user asked whether progress was saved somewhere a later session could resume from. It is —
+that is what this ledger, `scripts/status.mjs` and the plan's progress markers are for — but
+checking turned up **the same class of drift the earlier audit found**, in the two sections a new
+session reads first:
+
+- **Next action** still described Task 4 as "unblocked: the S4 capability check, the pickers, the
+  menu bar…", every item of which had shipped during the session. A fresh session following it
+  would have started rebuilding finished work.
+- **Blockers** still listed **D3 + D4** as `Proposed` gatekeepers for Task 4, hours after both
+  were accepted, and the `Resolved` line did not mention them.
+
+Both are corrected. The pattern worth remembering: the **status board and decision log stayed
+accurate because work updates them directly**, while the two *prose* sections — the ones nothing
+mechanically rewrites — drifted. `npm run status` parses the board, so it never surfaced either
+problem, which is exactly why the handoff should be read end to end before pausing rather than
+trusted section by section.
+
 ## Blockers / open questions
 
 Nothing blocking. All four original scope questions are closed (see `docs/scope.md` §10).
 
-Still `Proposed` (not blocking Task 4 until its own gate, confirm when the owning task starts):
+Open items, none of which blocks the next task:
 
-1. **D3 + D4** — the two-tier file-I/O design and the encoding policy, both as narrowed by
-   D10/D11. Gate **Task 4**.
+1. **Task 4's manual picker checklist** — the only thing between Task 4 and `DONE`. Needs a human
+   and a real OS dialog; the steps are in Next action above.
 2. **D1, D5, D8** — lower-stakes consolidations of choices already implied by the accepted
-   decisions. (D6 and D9 left this group on 2026-10-06: both accepted.)
+   decisions. D8 is *half in use* (Task 4's recent files exercise its IndexedDB half) but is still
+   `Proposed`; only the user moves it.
+3. One loose end, not a decision: **is mobile/tablet in scope at all?** D11 didn't address it.
+   Settle it before Task 7, whose OPFS/eviction work is what it changes.
 
-One loose end, not a decision: **is mobile/tablet in scope at all?** D11 didn't address it.
-
-Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D6~~ · ~~D9~~ (2026-10-06).
+Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~~ · ~~D9~~ (2026-10-06).
 
 ## Definition of done for the whole project
 

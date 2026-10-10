@@ -6,7 +6,9 @@
 > spec (what to build, which files, how to verify). Start any new session by reading
 > `PROGRESS.md` → `docs/scope.md` → this plan, in that order.
 
-**Status:** Tasks 1–3 ✅ done · Tasks 4–8 ⬜ todo · see `PROGRESS.md` for live state (`npm run status`)
+**Status:** Tasks 1–3 ✅ done · Task 4 ✅ built and verified, awaiting its manual picker checklist
+(the only reason the ledger says `WIP`) · Tasks 5–8 ⬜ todo · see `PROGRESS.md` for live state
+(`npm run status`)
 
 **Scope settled 2026-09-25:** CodeMirror 6 (D2) · no Run/exec or native plugins (D7) ·
 phase-3 priority = encoding fidelity + large-file mode (D10) · **MVP is Chromium-only (D11)**.
