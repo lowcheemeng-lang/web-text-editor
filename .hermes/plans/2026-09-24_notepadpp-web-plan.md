@@ -6,9 +6,9 @@
 > spec (what to build, which files, how to verify). Start any new session by reading
 > `PROGRESS.md` → `docs/scope.md` → this plan, in that order.
 
-**Status:** Tasks 1–3 ✅ done · Task 4 ✅ built and verified, awaiting its manual picker checklist
-(the only reason the ledger says `WIP`) · Tasks 5–8 ⬜ todo · see `PROGRESS.md` for live state
-(`npm run status`)
+**Status:** Tasks 1–4 ✅ done · Task 5 ⬜ next · see `PROGRESS.md` for live state
+(`npm run status`). Task 4 was accepted 2026-10-10: its picker round trip is automated in
+`scripts/verify-task4-pickers.py` (41/41), so nothing waits on a human any more.
 
 **Scope settled 2026-09-25:** CodeMirror 6 (D2) · no Run/exec or native plugins (D7) ·
 phase-3 priority = encoding fidelity + large-file mode (D10) · **MVP is Chromium-only (D11)**.
@@ -43,8 +43,8 @@ Task 4 below already reflects D11.
 1. Define a scoped feature set that is realistically buildable client-side. ✅ Task 1
 2. Scaffold a Vite + TS app. ✅ Task 2
 3. Integrate an existing web editor core and layer Notepad++-style UI/UX on top. ✅ Task 3
-4. Implement file I/O using browser APIs with graceful fallbacks. ← Task 4 (next)
-5. Add high-value features from Notepad++ that map cleanly to web capabilities.
+4. Implement file I/O using browser APIs with graceful fallbacks. ✅ Task 4
+5. Add high-value features from Notepad++ that map cleanly to web capabilities. ← Task 5 (next)
 6. Package as a standalone HTML/JS bundle or PWA.
 
 ## Step-by-Step Plan
@@ -141,17 +141,20 @@ wrong. Details in `PROGRESS.md`.
 
 ---
 
-### Task 4: Implement file operations without backend
+### Task 4: Implement file operations without backend — ✅ DONE (2026-10-10)
 
 **Objective:** Add the file lifecycle using browser APIs only. **Chromium-only in the MVP (D11)** —
 the tier B/C fallback I/O is deferred to phase 2, not deleted.
 
 **Files:**
-- Create: `src/file/file-io.ts` (the single module boundary — see risk R8)
-- Create: `src/platform/capabilities.ts` (thin feature test — S4)
+- Create: `src/file/file-io.ts` (the single module boundary — see risk R8) ✅
+- Create: `src/platform/capabilities.ts` (thin feature test — S4) ✅
+- Create: `src/file/recent-files.ts` ✅ *(added during the task — step 3)*
 - Create: `src/file/fallbacks.ts` — **phase 2 (deferred by D11)**
-- Modify: `src/editor/chrome.ts` + `src/editor/workspace.ts` (menu-bar host — see step 6)
-- Modify: `src/main.ts`
+- Modify: `src/editor/chrome.ts` + `src/editor/workspace.ts` (menu-bar host — see step 6) ✅
+- Modify: `src/main.ts` ✅
+- Create: `scripts/verify-task4.py` ✅ *(S2 acceptance check, OPFS-stubbed pickers)*
+- Create: `scripts/verify-task4-pickers.py` ✅ *(added 2026-10-10 — the real dialog, end to end)*
 
 **Steps:**
 1. Use File System Access API for open/save/save-as. ✅ in scope for the MVP.
@@ -174,14 +177,33 @@ the tier B/C fallback I/O is deferred to phase 2, not deleted.
 - Open a local text file, edit, and save changes in Chrome — including a byte-identical
   round-trip when nothing was edited (CRLF and CRLF+BOM).
 - Confirm a non-Chromium browser shows the unsupported-browser message instead of a stack trace.
-- **Automation constraint, settled here rather than discovered mid-task:** Playwright cannot drive
-  `showOpenFilePicker` / `showSaveFilePicker` — they are OS-level dialogs outside the page, and
-  there is no CDP hook for them. So `scripts/verify-task4.py` (S2) must **stub the pickers in-page
-  with handles backed by OPFS** (`navigator.storage.getDirectory()`), which returns genuine
-  `FileSystemFileHandle` objects. That exercises the real read/write/BOM/encoding paths against
-  real browser file APIs with only the OS dialog faked. The end-to-end picker round-trip stays a
-  short **manual** checklist (open → edit → save → confirm on disk, including a CRLF+BOM file),
-  recorded in the ledger as manual evidence — no automation may claim it on its behalf.
+- **Automation, settled and then corrected (2026-10-10).** The CDP facts stand: Playwright cannot
+  *answer* `showOpenFilePicker` / `showSaveFilePicker` — `Page.setInterceptFileChooserDialog` emits
+  `Page.fileChooserOpened` for a File System Access picker without a `backendNodeId`, and
+  `DOM.setFileInputFiles` only answers a chooser that has an `<input type=file>` behind it. So
+  `scripts/verify-task4.py` (S2) stubs the pickers in-page with handles backed by OPFS
+  (`navigator.storage.getDirectory()`), which returns genuine `FileSystemFileHandle` objects and
+  exercises the real read/write/BOM/encoding paths with only the dialog faked.
+  **But the dialog itself is driveable on a machine with an X server**, which this plan originally
+  concluded was impossible: `scripts/verify-task4-pickers.py` runs a *headed* Chrome under `Xvfb`,
+  finds the GTK chooser as an X window, types the path with `xdotool`, screenshots it with
+  `ffmpeg -f x11grab`, and answers Chrome's "Save changes to …?" write prompt. It opens and writes
+  real files in `/tmp` and compares `md5` on disk → **PASS (41/41)**, so the end-to-end picker round
+  trip is no longer a manual step. Two environment notes it encodes: Chrome must run under
+  `dbus-run-session` (otherwise `xdg-desktop-portal` takes the request and renders the dialog on the
+  portal's own display), and a plain Save is not proof of anything unless the file's inode/mtime
+  move — a cancelled write leaves the bytes byte-identical too.
+- A human pass on the user's own desktop is still possible and now optional: `Alt+O` each
+  `/tmp/t4-*.txt`, `Alt+S`, `md5sum` again, and cancel one picker.
+
+**Outcome:** Complete 2026-10-10. `python3 scripts/verify-task4-pickers.py` → **PASS (41/41)** on
+the real chooser; `python3 scripts/verify-task4.py` → **PASS (44/44)**; `node
+--experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3
+scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE:
+PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0 with `editor-core` 296.81 kB raw /
+**96.16 kB gzip**. Two of this task's own checks were caught passing vacuously (a cancelled write
+leaves a file byte-identical, so "bytes unchanged" proved nothing) and now assert the write's side
+effect — see `PROGRESS.md`, Session 3.
 
 ---
 
@@ -319,5 +341,5 @@ All of the original three are closed; kept for the audit trail.
 
 ---
 
-Plan complete and saved. Tasks 1–3 are done; Task 4 is the next unit of work and is gated on
-decisions **D3** and **D4** — see `PROGRESS.md` for the live next action.
+Plan complete and saved. Tasks 1–4 are done; Task 5 is the next unit of work and is ungated —
+see `PROGRESS.md` for the live next action.
