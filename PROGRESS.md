@@ -40,7 +40,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 1 | Define scope & compatibility matrix | DONE | `docs/scope.md` — 3 tiers, capability matrix, encoding matrix, R1–R8 risks; all claims sourced | `1b5bcd4` |
 | 2 | Initialize project scaffold | DONE | `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **382.37 kB / 123.08 kB gz**; `python3 scripts/verify-task2.py` → **PASS** (HTTP 200, 1 CM6 instance, 15 lines, typing verified, 0 console errors) | `26aaea6` |
 | 3 | Editor core with N++ defaults | DONE | `python3 scripts/verify-task3.py` → **PASS (56/56)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS** (12/12); `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** (down from 382.37 kB — `basicSetup` carried autocompletion/search that Tasks 5–6 own) | `1c548ae` |
-| 4 | File operations without backend | DONE | `python3 scripts/verify-task4-pickers.py` → **PASS (42/42)**, twice in a row — the **real** OS file chooser, driven end to end: headed Chrome under Xvfb, the GTK dialog screenshotted and driven by xdotool, real files in `/tmp` opened, edited and saved, md5 compared on disk. Includes the write that the manual checklist existed to prove: Chrome's "Save changes to …?" permission prompt is answered, and the save is confirmed by the file's inode/mtime moving rather than by "no error appeared". `python3 scripts/verify-task4.py` → **PASS (44/44)** — OPFS-stubbed pickers, byte-level (CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, recent files surviving a page reload, unsupported-browser notice); `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** | `f79477c` |
+| 4 | File operations without backend | DONE | `python3 scripts/verify-task4-pickers.py` → **PASS (42/42)**, twice in a row — the **real** OS file chooser, driven end to end: headed Chrome under Xvfb, the GTK dialog screenshotted and driven by xdotool, real files in `/tmp` opened, edited and saved, md5 compared on disk. Includes the write that the manual checklist existed to prove: Chrome's "Save changes to …?" permission prompt is answered, and the save is confirmed by the file's inode/mtime moving rather than by "no error appeared". `python3 scripts/verify-task4.py` → **PASS (44/44)** — OPFS-stubbed pickers, byte-level (CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, recent files surviving a page reload, unsupported-browser notice); `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** | `f79477c` · `e0a74c3` |
 | 5 | Search, replace, navigation | TODO | - | - |
 | 6 | Syntax highlighting & language modes | TODO | - | - |
 | 7 | Session persistence & preferences | TODO | - | - |
@@ -449,6 +449,8 @@ saving one returns a written explanation rather than pretending. That is the hon
 - **Task 4 is WIP, not done.** The pickers are written but unwired; still outstanding: the menu
   bar, recent-file handles, the status-bar EOL/encoding fields, `scripts/verify-task4.py`
   (OPFS-stubbed per the plan) and the manual picker checklist.
+  *(Superseded 2026-10-10, Session 3: all of it shipped, and the picker checklist is automated —
+  see the end of this log.)*
 
 #### Session 2, continued — Task 4 wired and verified (still WIP: two items)
 
@@ -489,6 +491,8 @@ file to end with a trailing CRLF after typing at Control+End (it correctly does 
 sits after the final newline), and one pinned the welcome text to a task number.
 
 **Left before Task 4 can be called DONE**
+*(Both items closed later: recent files shipped in the next entry; the checklist was automated in
+Session 3, 2026-10-10.)*
 1. **Recent files in IndexedDB** — plan step 3. Deliberately **not** started: that step *is*
    decision **D8** (OPFS for bodies, IndexedDB for metadata and handles), and D8 is still
    `Proposed`. Building it now would pre-empt a decision the user has not made.
@@ -528,6 +532,8 @@ sits after the final newline), and one pinned the welcome text to a task number.
 
 **The only item still outstanding is the manual picker checklist** — unchanged, and still
 something no script may claim on the user's behalf.
+*(Superseded 2026-10-10, Session 3: `scripts/verify-task4-pickers.py` drives the real dialog, so
+that item became optional — see the end of this log.)*
 
 #### Session 2, continued — handoff checked before pausing (docs only)
 
@@ -626,7 +632,12 @@ still reported success); it is now anchored on the prompt's own *Cancel* button.
 - Task 5 (search/replace/navigation) is the next unit of work and is ungated.
 
 **Repo state at session end**
-- Committed in `f79477c`.
+- Three commits, each verifiable with `git log -1 --format=%s <sha>`:
+  - `f79477c` — `task-4: drive the real OS file chooser end to end — Task 4 accepted` (the new
+    check, the plan updates, Task 4 moved to `DONE`).
+  - `9a11f15` — `docs: record the task-4 SHA (f79477c) in the board`.
+  - `e0a74c3` — `task-4: harden the picker check — the warning dialog was a race, not a step`
+    (the 42/42 the evidence cell quotes comes from this one).
 - `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
   recorded in Session 1, still not this project's to commit or revert.
 
