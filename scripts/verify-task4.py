@@ -210,6 +210,38 @@ with sync_playwright() as p:
     page.keyboard.press("Escape")
     page.wait_for_timeout(50)
 
+    # ══ Part 3: recent files survive a reload (IndexedDB — D8's handle half) ══
+    # A reload throws away every in-page stub, so anything that still works after
+    # it is genuinely persisted rather than held in memory.
+    page.reload(wait_until="load")
+    page.wait_for_selector(".npp-app", timeout=10000)
+
+    # The list is read from IndexedDB asynchronously during startup, so wait for it
+    # rather than racing the load.
+    page.wait_for_function(
+        "() => window.__workspace.inspect().recentFiles.length > 0", timeout=10000
+    )
+    recent = info(page)["recentFiles"]
+    check("recent: opened files are remembered across a reload",
+          "crlf-bom.txt" in recent and "latin.txt" in recent, str(recent))
+    check("recent: newest first", recent[:1] == ["copy-as.txt"], str(recent))
+
+    # Reachable from the menu, not only from the dev handle.
+    page.click(".npp-menu-title >> nth=0")
+    entry = page.locator("[data-menu-item='recent:crlf-bom.txt']")
+    check("recent: the File menu lists the file", entry.count() == 1)
+    entry.click()
+    page.wait_for_function("() => window.__workspace.inspect().documents > 1", timeout=10000)
+
+    reopened = info(page)
+    check("recent: clicking it reopens the file",
+          reopened["activeFileName"] == "crlf-bom.txt", str(reopened["activeFileName"]))
+    check("recent: the text came back", "line one" in (reopened["text"] or ""),
+          repr((reopened["text"] or "")[:16]))
+    check("recent: the encoding and line ending came with it",
+          reopened["eol"] == "CRLF" and reopened["encoding"] == "utf-8",
+          f"{reopened['encoding']}/{reopened['eol']}")
+
     # ══ Part 2: an unsupported browser must fail loudly (S4) ════════════════
     # The pickers must be gone *before* the app script runs, so this uses an init
     # script rather than a post-load stub.

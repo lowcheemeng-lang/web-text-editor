@@ -43,10 +43,12 @@ import {
   toFileLineEndings,
   writeHandle,
 } from "../file/file-io";
+import { ensureAccess, forgetRecent, listRecent, rememberRecent } from "../file/recent-files";
+import type { RecentFile } from "../file/recent-files";
 import type { DocumentFormat } from "../file/types";
 import { detectCapabilities, unsupportedNotice } from "../platform/capabilities";
 
-import { Chrome, type PaneElements, type TabDescriptor } from "./chrome";
+import { Chrome, type MenuEntry, type PaneElements, type TabDescriptor } from "./chrome";
 import {
   NPP_WORD_WRAP,
   WEB_PORT_KEYS,
@@ -140,6 +142,13 @@ export class Workspace {
   #nextDocumentNumber = 0;
   #split = false;
   #lastStatusSignature = "";
+  /**
+   * File ▸ Recent renders synchronously and IndexedDB does not, so the list is
+   * cached here and refreshed on startup and after every open or save. A file
+   * changed in another tab therefore appears after the next refresh rather than
+   * instantly — an acceptable lag for a convenience list.
+   */
+  #recent: RecentFile[] = [];
 
   constructor(host: HTMLElement) {
     this.#chrome = new Chrome(host);
@@ -199,9 +208,10 @@ export class Workspace {
     });
   }
 
-  /** Create the first document, and say so if this browser cannot do file I/O. */
+  /** Create the first document, load the recent list, and report a browser we cannot use. */
   start(): void {
     this.newDocument(WELCOME);
+    void this.#refreshRecent();
     const notice = unsupportedNotice(this.#capabilities);
     if (notice) this.#chrome.showNotice(notice.title, notice.body);
   }
@@ -210,18 +220,9 @@ export class Workspace {
     this.#chrome.addMenus([
       {
         label: "File",
-        items: [
-          { id: "new", label: "New", shortcut: WEB_PORT_KEYS.newDocument, onClick: () => this.newDocument() },
-          { id: "open", label: "Open…", shortcut: WEB_PORT_KEYS.openFile, onClick: () => void this.openFile() },
-          { id: "save", label: "Save", shortcut: WEB_PORT_KEYS.saveFile, onClick: () => void this.saveFile() },
-          {
-            id: "save-as",
-            label: "Save As…",
-            shortcut: WEB_PORT_KEYS.saveFileAs,
-            onClick: () => void this.saveFile({ forceDialog: true }),
-          },
-          { id: "close", label: "Close", shortcut: WEB_PORT_KEYS.closeDocument, onClick: () => this.#closeActive() },
-        ],
+        // A function, not an array: the Recent section is rebuilt from the cache
+        // each time the menu opens, so it reflects the most recent refresh.
+        items: () => this.#fileMenu(),
       },
       {
         label: "View",
@@ -241,6 +242,39 @@ export class Workspace {
         ],
       },
     ]);
+  }
+
+  /** N++ File menu: the commands, then a rule, then the recent files. */
+  #fileMenu(): MenuEntry[] {
+    const entries: MenuEntry[] = [
+      { id: "new", label: "New", shortcut: WEB_PORT_KEYS.newDocument, onClick: () => this.newDocument() },
+      { id: "open", label: "Open…", shortcut: WEB_PORT_KEYS.openFile, onClick: () => void this.openFile() },
+      { id: "save", label: "Save", shortcut: WEB_PORT_KEYS.saveFile, onClick: () => void this.saveFile() },
+      {
+        id: "save-as",
+        label: "Save As…",
+        shortcut: WEB_PORT_KEYS.saveFileAs,
+        onClick: () => void this.saveFile({ forceDialog: true }),
+      },
+      { id: "close", label: "Close", shortcut: WEB_PORT_KEYS.closeDocument, onClick: () => this.#closeActive() },
+    ];
+
+    if (this.#recent.length > 0) {
+      entries.push({ id: "recent-rule", separator: true });
+      for (const entry of this.#recent) {
+        entries.push({
+          id: `recent:${entry.name}`,
+          label: entry.name,
+          onClick: () => void this.openRecent(entry.name),
+        });
+      }
+    }
+
+    return entries;
+  }
+
+  async #refreshRecent(): Promise<void> {
+    this.#recent = await listRecent();
   }
 
   /* ------------------------------------------------------------ documents */
@@ -304,6 +338,7 @@ export class Workspace {
     canEncode: boolean | null;
     fileSystemAccess: boolean;
     menuTitles: string[];
+    recentFiles: string[];
   } {
     const document = this.#active();
     const owner = document ? ownerView(document.runtime) : undefined;
@@ -332,6 +367,7 @@ export class Workspace {
       menuTitles: [...this.#chrome.menuBar.querySelectorAll(".npp-menu-title")].map(
         (node) => node.textContent ?? "",
       ),
+      recentFiles: this.#recent.map((entry) => entry.name),
     };
   }
 
@@ -400,18 +436,56 @@ export class Workspace {
     }
     if (!handle) return; // dismissed — a cancel, not a failure
 
+    await this.#adopt(handle);
+  }
+
+  /**
+   * Reopen a file from File ▸ Recent. Runs inside a click because a stored handle
+   * says nothing about permission: `ensureAccess` may still have to ask, and the
+   * browser only allows that during a user gesture.
+   */
+  async openRecent(name: string): Promise<void> {
+    const entry = this.#recent.find((item) => item.name === name);
+    if (!entry) return;
+
+    if (!(await ensureAccess(entry.handle))) {
+      await this.#chrome.alert({
+        title: `Access to ${name} was not granted`,
+        body:
+          "The browser did not allow this file to be reopened. It has been removed from the " +
+          "recent list — use File ▸ Open… to choose it again.",
+      });
+      await forgetRecent(name);
+      await this.#refreshRecent();
+      return;
+    }
+
+    // A handle can outlive the file it points at, so a failure here forgets the
+    // entry rather than leaving one that can never work again.
+    const opened = await this.#adopt(entry.handle);
+    if (!opened) {
+      await forgetRecent(name);
+      await this.#refreshRecent();
+    }
+  }
+
+  /**
+   * Decode a handle and adopt it as a document, applying D4's honesty rules.
+   * Returns false when nothing was opened, so the caller can react.
+   */
+  async #adopt(handle: FileSystemFileHandle): Promise<boolean> {
     let decoded;
     try {
       decoded = await readHandle(handle);
     } catch (error) {
       await this.#chrome.alert({ title: `Could not read ${handle.name}`, body: describe(error) });
-      return;
+      return false;
     }
 
     // UTF-32 and friends: refused with the reason rather than opened as mojibake.
     if (decoded.unsupported) {
       await this.#chrome.alert({ title: `${handle.name} was not opened`, body: decoded.unsupported });
-      return;
+      return false;
     }
 
     const document = this.#createDocument(handle.name, toEditorLineEndings(decoded.text), {
@@ -421,6 +495,9 @@ export class Workspace {
     });
     this.#documents.push(document);
     this.#show(document.id);
+
+    await rememberRecent(handle);
+    await this.#refreshRecent();
 
     // D4: never let an uncertain decode pass silently.
     if (decoded.assumed) {
@@ -440,6 +517,8 @@ export class Workspace {
           "would write those replacements to disk, so check the document before saving.",
       });
     }
+
+    return true;
   }
 
   /**
@@ -491,6 +570,9 @@ export class Workspace {
     document.savedText = document.state.doc;
     document.dirty = false;
     document.assumedEncoding = false;
+    // Save As can land on a file that was not in the list before.
+    await rememberRecent(handle);
+    await this.#refreshRecent();
     this.#render();
     return true;
   }

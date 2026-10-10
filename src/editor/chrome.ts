@@ -61,9 +61,25 @@ export interface MenuItemSpec {
   readonly onClick: () => void;
 }
 
+/** A rule between groups of items. */
+export interface MenuSeparator {
+  readonly id: string;
+  readonly separator: true;
+}
+
+export type MenuEntry = MenuItemSpec | MenuSeparator;
+
+export function isSeparator(entry: MenuEntry): entry is MenuSeparator {
+  return "separator" in entry;
+}
+
 export interface MenuSpec {
   readonly label: string;
-  readonly items: readonly MenuItemSpec[];
+  /**
+   * A function is re-read every time the menu opens. That is what lets File ▸
+   * Recent show a live list without every menu being rebuilt on each change.
+   */
+  readonly items: readonly MenuEntry[] | (() => readonly MenuEntry[]);
 }
 
 export class Chrome {
@@ -75,7 +91,10 @@ export class Chrome {
   readonly statusBar: HTMLElement;
 
   readonly #buttons = new Map<string, HTMLButtonElement>();
-  readonly #menus = new Map<string, { popup: HTMLElement; button: HTMLButtonElement }>();
+  readonly #menus = new Map<
+    string,
+    { spec: MenuSpec; popup: HTMLElement; button: HTMLButtonElement }
+  >();
   #openMenu: string | null = null;
 
   constructor(host: HTMLElement) {
@@ -119,31 +138,13 @@ export class Chrome {
       const popup = el("div", { className: "npp-menu-popup", attrs: { role: "menu" } });
       popup.hidden = true;
 
-      for (const item of menu.items) {
-        const entry = el("button", {
-          className: "npp-menu-item",
-          attrs: { type: "button", role: "menuitem", "data-menu-item": item.id },
-        });
-        entry.append(
-          el("span", { className: "npp-menu-label", text: item.label }),
-          el("span", { className: "npp-menu-shortcut", text: item.shortcut ?? "" }),
-        );
-        entry.addEventListener("click", () => {
-          this.#closeMenus();
-          item.onClick();
-          // The next keystroke belongs to the editor, not the menu.
-          document.querySelector<HTMLElement>(".npp-pane .cm-content")?.focus();
-        });
-        popup.appendChild(entry);
-      }
-
       const wrapper = el("div", { className: "npp-menu" });
       button.addEventListener("click", (event) => {
         event.stopPropagation();
         this.#toggleMenu(menu.label);
       });
       wrapper.append(button, popup);
-      this.#menus.set(menu.label, { popup, button });
+      this.#menus.set(menu.label, { spec: menu, popup, button });
       this.menuBar.appendChild(wrapper);
     }
 
@@ -153,12 +154,43 @@ export class Chrome {
     });
   }
 
+  /** Rebuild one menu's popup — cheap, and the only way a dynamic list stays live. */
+  #renderMenu(target: { spec: MenuSpec; popup: HTMLElement }): void {
+    const items = typeof target.spec.items === "function" ? target.spec.items() : target.spec.items;
+    target.popup.replaceChildren(
+      ...items.map((item) => (isSeparator(item) ? this.#menuRule() : this.#menuItem(item))),
+    );
+  }
+
+  #menuRule(): HTMLElement {
+    return el("hr", { className: "npp-menu-rule" });
+  }
+
+  #menuItem(item: MenuItemSpec): HTMLElement {
+    const entry = el("button", {
+      className: "npp-menu-item",
+      attrs: { type: "button", role: "menuitem", "data-menu-item": item.id },
+    });
+    entry.append(
+      el("span", { className: "npp-menu-label", text: item.label }),
+      el("span", { className: "npp-menu-shortcut", text: item.shortcut ?? "" }),
+    );
+    entry.addEventListener("click", () => {
+      this.#closeMenus();
+      item.onClick();
+      // The next keystroke belongs to the editor, not the menu.
+      document.querySelector<HTMLElement>(".npp-pane .cm-content")?.focus();
+    });
+    return entry;
+  }
+
   #toggleMenu(label: string): void {
     const target = this.#menus.get(label);
     if (!target) return;
     const wasOpen = this.#openMenu === label;
     this.#closeMenus();
     if (wasOpen) return;
+    this.#renderMenu(target);
     target.popup.hidden = false;
     target.button.setAttribute("aria-expanded", "true");
     this.#openMenu = label;

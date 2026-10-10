@@ -48,3 +48,19 @@ interface Window {
   showOpenFilePicker(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
   showSaveFilePicker(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle>;
 }
+
+/**
+ * Permission methods, also missing from TypeScript's lib (checked: the interface
+ * there declares only `kind`, `name` and `isSameEntry`; the `requestPermission`
+ * occurrences in lib.dom belong to `Notification`).
+ *
+ * Optional on purpose: they are the part of the File System Access API with the
+ * least uniform implementation, so callers must feature-detect rather than assume.
+ * A handle restored from IndexedDB is not automatically usable again — a stored
+ * handle is a *capability reference*, and the browser may still say "prompt".
+ */
+interface FileSystemHandle {
+  queryPermission?(descriptor?: { mode?: "read" | "readwrite" }): Promise<PermissionState>;
+  /** Requires a user gesture — which is why reopening a recent file is a click. */
+  requestPermission?(descriptor?: { mode?: "read" | "readwrite" }): Promise<PermissionState>;
+}

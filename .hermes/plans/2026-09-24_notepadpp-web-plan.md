@@ -154,7 +154,10 @@ the tier B/C fallback I/O is deferred to phase 2, not deleted.
 **Steps:**
 1. Use File System Access API for open/save/save-as. ✅ in scope for the MVP.
 2. ~~Implement `<input type="file">` + Blob download fallback.~~ **Deferred to phase 2 by D11.**
-3. Persist recent files in IndexedDB (stored handles).
+3. Persist recent files in IndexedDB (stored handles). ✅ `src/file/recent-files.ts` — handles are
+   structured-cloneable, so the list survives a reload (proved by the acceptance check, which
+   asserts it *after* a page reload). A restored handle is treated as a capability reference, not
+   as permission: `ensureAccess` re-checks before reopening, and a dead entry is forgotten.
 4. Handle encoding selection and BOM-aware reads/writes, limited to the WHATWG label set (D4).
    The `iso-8859-1`→windows-1252 trap in `docs/scope.md` §6 must be encoded as an explicit
    comment, not discovered later.

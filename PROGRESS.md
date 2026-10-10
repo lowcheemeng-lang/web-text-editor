@@ -40,7 +40,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 1 | Define scope & compatibility matrix | DONE | `docs/scope.md` — 3 tiers, capability matrix, encoding matrix, R1–R8 risks; all claims sourced | `1b5bcd4` |
 | 2 | Initialize project scaffold | DONE | `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **382.37 kB / 123.08 kB gz**; `python3 scripts/verify-task2.py` → **PASS** (HTTP 200, 1 CM6 instance, 15 lines, typing verified, 0 console errors) | `26aaea6` |
 | 3 | Editor core with N++ defaults | DONE | `python3 scripts/verify-task3.py` → **PASS (56/56)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS** (12/12); `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** (down from 382.37 kB — `basicSetup` carried autocompletion/search that Tasks 5–6 own) | `1c548ae` |
-| 4 | File operations without backend | WIP | `python3 scripts/verify-task4.py` → **PASS (38/38)** — OPFS-stubbed pickers, byte-identical CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, unsupported-browser notice; `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0. **Built:** menu bar (File/View), open/save/save-as, BOM+encoding round-trip, S4 capability check + notice, status-bar encoding/EOL, three-way close prompt. **Left:** recent files in IndexedDB (plan step 3 — depends on D8, still `Proposed`) and the **manual** picker checklist (a human must click the real OS dialog; no automation may claim it) | - |
+| 4 | File operations without backend | WIP | `python3 scripts/verify-task4.py` → **PASS (44/44)** — OPFS-stubbed pickers: byte-identical CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, recent files surviving a page reload, unsupported-browser notice; `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0. **Every plan step is now done** (menu bar, open/save/save-as, BOM+encoding round-trip, recent files in IndexedDB, S4 capability check, status-bar encoding/EOL, three-way close prompt). **The single remaining item is the manual picker checklist** — a human must click the real OS dialog, and no script may claim that on its behalf | - |
 | 5 | Search, replace, navigation | TODO | - | - |
 | 6 | Syntax highlighting & language modes | TODO | - | - |
 | 7 | Session persistence & preferences | TODO | - | - |
@@ -111,7 +111,7 @@ Nothing gates Task 6 any more (D9 accepted). Task 5 is ungated and unblocked.
 | D5 | 2026-09-25 | Plugins = runtime-loaded ES modules + WASM, no native ABI | Only backend-free option | Proposed |
 | D6 | 2026-09-25 | Macros = editor transaction record/replay, not OS input replay | CM6 exposes every change as a transaction, so record/replay/run-N-times works without native hooks (N++'s macro playback is OS-input based and cannot be emulated literally) | **Accepted — user-confirmed 2026-10-06** |
 | D7 | 2026-09-25 | Run/exec + native plugins permanently out of scope | Impossible without a process/shell | **Accepted — user-confirmed 2026-09-25** |
-| D8 | 2026-09-25 | OPFS for documents, IndexedDB for metadata/prefs | OPFS is Baseline cross-browser since March 2023 | Proposed |
+| D8 | 2026-09-25 | OPFS for documents, IndexedDB for metadata/prefs | OPFS is Baseline cross-browser since March 2023 | **Half in use, still `Proposed`:** the user directed Task 4's recent files to be implemented, which exercises the *IndexedDB-for-metadata-and-handles* half (`src/file/recent-files.ts`). The OPFS-for-document-bodies half belongs to Task 7 and is unbuilt. Only the user may move this to `Accepted` |
 | D9 | 2026-09-25 (proposal refined 2026-10-06) | MVP language set: **all 22 official CM6 packages + all 103 legacy-modes ports**, lazily loaded per file; UDL stays Tier 3 | Counted and verified 2026-10-06: all 22 official `@codemirror/lang-*` packages and `legacy-modes@6.5.4` / `language-data@6.5.2` install from npm; the original "~20" was a guess. Lazily loaded per language, so extra languages cost 0 bytes until opened. Gaps vs N++: makefile, batch, INI, Kotlin, Scala, GraphQL, Objective-C, MATLAB (+ C# unconfirmed) | **Accepted — user-confirmed 2026-10-06** (proposal filed in `7e1de3a`). **D10 ranks UDL below encoding/large-file**; the MVP language set is unaffected. Gates Task 6 |
 | D10 | 2026-09-25 | Phase-3 priority: encoding fidelity (WASM for UTF-32/DOS codepages) + large-file mode. UDL parity ranks below it and stays unscheduled | Correctness beats breadth — a mis-decoded legacy file or a stalled editor is silent data loss or a hard block (R1, R3, B7); UDL is a visible missing feature with a documented workaround | **Accepted — user-confirmed 2026-09-25** |
 | D11 | 2026-09-25 | MVP browser scope: **Chromium only** (Chrome/Edge/Opera). Firefox/Safari tier B/C fallback UX moves to phase 2; §8 acceptance is Chrome-only | User decision. Keeps the MVP on the single File System Access path; halves the file-I/O test matrix | **Accepted — user-confirmed 2026-09-25** |
@@ -489,6 +489,39 @@ sits after the final newline), and one pinned the welcome text to a task number.
 2. **The manual picker checklist** — no automation can click an OS dialog, so a human must
    confirm it: open a real file, edit, save, and check the result on disk, including a CRLF+BOM
    file. Recorded as manual evidence when done, never claimed by the scripts.
+
+#### Session 2, continued — recent files (Task 4 step 3), on the user's instruction
+
+**User input received**
+- "implement it" — build the recent-files step the entry above declined to start, because that
+  step *is* decision **D8** and D8 was still `Proposed`. Recorded in the decision log as D8
+  *half in use, still proposed*: this exercises its IndexedDB-for-metadata-and-handles half and
+  leaves OPFS-for-document-bodies to Task 7. Only the user moves a D decision's status.
+
+**Built**
+- `src/file/recent-files.ts` — handles in IndexedDB, newest first, pruned to 8, keyed by name so
+  re-opening a file moves it up the list rather than duplicating it. Every operation **fails
+  soft**: if IndexedDB is unavailable the list is simply empty, because a convenience list must
+  never become a failure mode for opening or saving.
+- A stored handle is treated as a **capability reference, not as permission**. `ensureAccess`
+  re-checks `queryPermission` and asks for `requestPermission` when the browser answers "prompt";
+  a handle whose file has since moved or been deleted is **forgotten** rather than offered
+  forever as an entry that can never work.
+- `File ▸ Recent` entries, rendered from a cache (menus build synchronously, IndexedDB does not).
+  Menus gained a dynamic form — `items` may be a function, re-read on open — plus a separator,
+  because the recent list changes at runtime while every other entry does not.
+- The permission methods were missing from TypeScript's lib as well: `FileSystemHandle` there
+  declares only `kind`, `name` and `isSameEntry` (the `requestPermission` occurrences in
+  `lib.dom` belong to `Notification`), so they are declared — optional — in `fs-access.d.ts`.
+
+**Verified**
+- `python3 scripts/verify-task4.py` → **PASS (44/44)**, six checks of which are new and run
+  **after `page.reload()`** — the strongest proof available that the list is persisted rather
+  than held in a variable, since the reload discards every in-page stub. The entries are still
+  there, newest first, and clicking one reopens the file with its encoding and CRLF intact.
+
+**The only item still outstanding is the manual picker checklist** — unchanged, and still
+something no script may claim on the user's behalf.
 
 ## Blockers / open questions
 

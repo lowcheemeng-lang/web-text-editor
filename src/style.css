@@ -309,6 +309,21 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Recent-file entries are filenames, which can be long; keep them on one line
+   with the tail visible rather than letting the popup grow. */
+.npp-menu-item .npp-menu-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
+}
+
+.npp-menu-rule {
+  margin: 4px 6px;
+  border: none;
+  border-top: 1px solid #e2e2e2;
+}
+
 /* ------------------------------------------------ capability notice (S4) */
 
 /* Never auto-dismissed and never subtle: scope §8 criterion 6 is that an
