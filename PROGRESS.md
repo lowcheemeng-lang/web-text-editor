@@ -40,10 +40,10 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 1 | Define scope & compatibility matrix | DONE | `docs/scope.md` — 3 tiers, capability matrix, encoding matrix, R1–R8 risks; all claims sourced | `1b5bcd4` |
 | 2 | Initialize project scaffold | DONE | `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **382.37 kB / 123.08 kB gz**; `python3 scripts/verify-task2.py` → **PASS** (HTTP 200, 1 CM6 instance, 15 lines, typing verified, 0 console errors) | `26aaea6` |
 | 3 | Editor core with N++ defaults | DONE | `python3 scripts/verify-task3.py` → **PASS (56/56)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS** (12/12); `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** (down from 382.37 kB — `basicSetup` carried autocompletion/search that Tasks 5–6 own) | `1c548ae` |
-| 4 | File operations without backend | DONE | `python3 scripts/verify-task4-pickers.py` → **PASS (42/42)**, twice in a row — the **real** OS file chooser, driven end to end: headed Chrome under Xvfb, the GTK dialog screenshotted and driven by xdotool, real files in `/tmp` opened, edited and saved, md5 compared on disk. Includes the write that the manual checklist existed to prove: Chrome's "Save changes to …?" permission prompt is answered, and the save is confirmed by the file's inode/mtime moving rather than by "no error appeared". `python3 scripts/verify-task4.py` → **PASS (44/44)** — OPFS-stubbed pickers, byte-level (CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, recent files surviving a page reload, unsupported-browser notice); `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** | `f79477c` · `e0a74c3` |
+| 4 | File operations without backend | DONE | `python3 scripts/verify-task4-pickers.py` → **PASS (43/43)** re-run on **2026-10-11** at Task 7's HEAD (and 42/42 twice on 2026-10-10) — the script now wipes its own Chrome profile and asserts a clean start, because Task 7's session restore otherwise changes the state its assertions assume; see the session log. The **real** OS file chooser, driven end to end: headed Chrome under Xvfb, the GTK dialog screenshotted and driven by xdotool, real files in `/tmp` opened, edited and saved, md5 compared on disk. Includes the write that the manual checklist existed to prove: Chrome's "Save changes to …?" permission prompt is answered, and the save is confirmed by the file's inode/mtime moving rather than by "no error appeared". `python3 scripts/verify-task4.py` → **PASS (44/44)** — OPFS-stubbed pickers, byte-level (CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, recent files surviving a page reload, unsupported-browser notice); `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** | `f79477c` · `e0a74c3` |
 | 5 | Search, replace, navigation | DONE | `python3 scripts/verify-task5.py` → **PASS (105/105)**, twice in a row — N++'s Search dialog driven through its own controls (Normal / Extended / Regular-expression modes, Match case, Match whole word only, Wrap around, Backward direction, In selection, and N++'s per-mode gating of them), find next/previous with wrap-around and N++'s own status wording, Count, Mark All, Clear all marks, Replace and Replace All (`$1` back-references, `\t` in a replacement), Go To (line and offset) and the bookmark family (Ctrl+F2 / F2 / Shift+F2 / Clear All Bookmarks / the margin toggle). Over a **10 000-line** document: regex Count **2.4 ms**, Mark All **4.8 ms**, Replace All **46.5 ms**; `no request left the machine (D1)` green. `python3 scripts/probe-reserved-keys.py` → the keymap measurement behind decision **S6**. Regressions at HEAD: `verify-task3.py` → **PASS (58/58)**; `verify-task4.py` → **PASS (44/44)**; `verify-task4-pickers.py` → **PASS (42/42)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **305.27 kB / 98.72 kB gz** (was 296.81 / 96.16 — `@codemirror/search` 6.7.2) | `d22f0d8` |
 | 6 | Syntax highlighting & language modes | DONE | **`python3 scripts/verify-task6.py` → PASS (67/67)** — `.js`, `.py`, `.html`, `.md` (plus `.cs`, `Dockerfile`, a shebang file and two of D9's gaps) opened through the real File ▸ Open path against OPFS handles, with every token read back as **computed colour on rendered spans** and every ruler tick read back from **canvas pixels**. `node --experimental-strip-types scripts/test-languages.mjs` → **PASS (238/238)** — all **140** loaders resolve in Node (`27` first-class + `113` legacy), every detection rule, the named extension collisions, and the gaps. `node --experimental-strip-types scripts/gen-language-registry.mjs --check` → **152 of 152** parsers the package exports are accounted for (113 catalogued, 32 superseded by a first-class grammar, 7 not languages). Over a 10 000-line JavaScript file the ruler's structure walk returns its **2000-tick** cap in **8.5 ms**. Regressions at HEAD: `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task4-pickers.py` → **PASS (42/42)**, real OS chooser included; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.24 kB / 109.13 kB gz** across **129 chunks** (was 305.27 / 98.72 — the ruler, the highlight style and the registry; a naive `manualChunks` would have made it **1 591.85 kB / 565.20 kB gz**, see S3's cousin in the plan) | `c4e3c9e` |
-| 7 | Session persistence & preferences | DONE | **`python3 scripts/verify-task7.py` → PASS (82/82)**, twice, every assertion made **after a real `page.reload()`** — the reload discards every in-page stub, so only stored state survives it: the Preferences dialog (Cancel applies nothing; OK stores, applies and persists — toolbar hidden, 12 pt text), View ▸ Zoom, an unsaved scratch buffer returning dirty with its caret and its bookmark, a CRLF+BOM file returning dirty from its `backup/` body and saving back **byte-identical** (`EF BB BF` + `one\r\ntwo\r\nTHREE`), N++'s both modified-file answers, folds/bookmarks/wrap/split/language restored (folds as *rendered* fold placeholders, in both panes), a file deleted behind the app dropped or offered as a read-only placeholder that refuses typing, and unsaved work that cannot be restored reported **by name** with snapshot mode off. `node --experimental-strip-types scripts/test-session.mjs` → **PASS (75/75)** — the storage logic in Node, where neither IndexedDB nor OPFS exists: N++'s `FILENAME@YYYY-MM-DD_HHMMSS` naming, the preference defaults and ranges, the restore decision table, the line↔offset conversions, and the fail-soft contract. Regressions at HEAD: `verify-task6.py` → **PASS (67/67)**; `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `test-languages.mjs` → **PASS (238/238)**; `gen-language-registry.mjs --check` → **OK**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.26 kB / 109.14 kB gz** across **129 chunks** (unchanged from Task 6 — the storage layer, the dialog and the ruler fix all land in the app's own chunk, now `index` **113.19 kB / 34.55 kB gz**). `verify-task4-pickers.py` is the one check whose re-run is **outstanding**, and the session log has the measurements: its best run today was **36/39**, with the three failures traced to this environment rather than the app — the check reports "handed back t4-win1252.txt" while its own detail says `active document is 't4-win1252.txt'`, i.e. the file arrived after the deadline — and a Chrome "Relaunch to update" bubble visible in the dialog OCR is eating the script's synthetic keystrokes. Its last green run remains 2026-10-10 (42/42 twice). | `f829697` |
+| 7 | Session persistence & preferences | DONE | **`python3 scripts/verify-task7.py` → PASS (82/82)**, twice, every assertion made **after a real `page.reload()`** — the reload discards every in-page stub, so only stored state survives it: the Preferences dialog (Cancel applies nothing; OK stores, applies and persists — toolbar hidden, 12 pt text), View ▸ Zoom, an unsaved scratch buffer returning dirty with its caret and its bookmark, a CRLF+BOM file returning dirty from its `backup/` body and saving back **byte-identical** (`EF BB BF` + `one\r\ntwo\r\nTHREE`), N++'s both modified-file answers, folds/bookmarks/wrap/split/language restored (folds as *rendered* fold placeholders, in both panes), a file deleted behind the app dropped or offered as a read-only placeholder that refuses typing, and unsaved work that cannot be restored reported **by name** with snapshot mode off. `node --experimental-strip-types scripts/test-session.mjs` → **PASS (75/75)** — the storage logic in Node, where neither IndexedDB nor OPFS exists: N++'s `FILENAME@YYYY-MM-DD_HHMMSS` naming, the preference defaults and ranges, the restore decision table, the line↔offset conversions, and the fail-soft contract. Regressions at HEAD: `verify-task6.py` → **PASS (67/67)**; `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `test-languages.mjs` → **PASS (238/238)**; `gen-language-registry.mjs --check` → **OK**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.26 kB / 109.14 kB gz** across **129 chunks** (unchanged from Task 6 — the storage layer, the dialog and the ruler fix all land in the app's own chunk, now `index` **113.19 kB / 34.55 kB gz**). **`scripts/verify-task4-pickers.py` → PASS (43/43)** at the same HEAD — Task 4's real-chooser check, re-run because Task 7's restore changes the state it starts from. Three runs failed first (`36/39`), all three on one check, and they shared a cause worth knowing: a **stale session in the Chrome profile** (each run's own Chrome rewrites the profile while shutting down, after the profile had been wiped for the next run), so the app restored a previous run's documents and the check asserted a *fresh* open's fact about a *restored* document. The script wipes its own profile now and asserts the clean start as a check; the runs also turned up a real defect — `RestoreState.assumedEncoding` was built and never read, so a restored windows-1252 document reported an identified encoding to `inspect()` and the status bar (measured: `assumedEncoding: false` on the restored document, `true` after the fix) — now fixed and verified through a reload. | `f829697` |
 | 8 | PWA / offline packaging | TODO | - | - |
 
 **Status vocabulary:** `TODO` · `WIP` · `DONE` · `BLOCKED` · `DEFERRED`
@@ -116,7 +116,10 @@ there") one this port cannot honestly keep. It needs a yes or a no; nothing is b
   and every queued timer, so only genuinely stored state can survive it.
 - One check needs more than Chrome: `scripts/verify-task4-pickers.py` drives a **real** OS file
   chooser, so it needs `Xvfb`, `xdotool`, `ffmpeg` (x11grab), `tesseract` and `dbus-run-session`.
-  It starts its own Xvfb on `:99` and never touches the desktop; run it with `npm run dev` up.
+  It starts its own Xvfb on `:99` and never touches the desktop; run it with `npm run dev` up. It also
+  **wipes its own Chrome profile before each run** (`.hermes/cache/scratch/task4-pickers/chrome-profile`)
+  and asserts a clean start: Task 7's session restore would otherwise hand the checks a state their
+  assertions do not describe — a lesson the first three runs of the day taught, at 7 minutes each.
 - **Three checks run in Node, with no browser at all** (they need
   `node --experimental-strip-types`, because they import the `.ts` sources directly):
   `scripts/test-languages.mjs` (all 140 language loaders + every detection rule) and
@@ -189,6 +192,54 @@ there") one this port cannot honestly keep. It needs a yes or a no; nothing is b
 - All browser-support and library claims checked against MDN, caniuse, Mozilla standards-positions
   and the CodeMirror 6 reference; npm versions confirmed live on 2026-09-25.
 - `node --version` → v22.23.0, `npm --version` → 10.9.8 (toolchain is present for Task 2).
+
+#### Session 6, continued (2026-10-12, 00:0x–01:0x) — the pickers check, re-run because Task 7 moved its starting state
+
+Task 7 was already committed when this began. What follows is Task 4's real-chooser check re-run, three
+failed runs, and the defect they turned up. The *way* the failures were read is the part worth keeping.
+
+**Measured, in order.**
+
+1. **36/39**, twice, on a single check: `windows-1252: flagged as assumed, not silently guessed (D4)` —
+   whose own detail now read `the active document was 't4-win1252.txt' at the deadline`. Two instrumented
+   runs settled what that meant: `0 modal alert(s) were dismissed while waiting`, the page reported
+   `assumedEncoding: false`, and the document was already active — so the app had *adopted* a document that
+   already existed and the check was asserting a fresh open's fact about it.
+2. A fourth run printed the state: `{"documents": 3, "assumedEncoding": false, "dirty": false}` with tabs
+   `[t4-crlf-bom.txt, t4-win1252.txt, t4-edit-copy.txt]` and **no welcome buffer** — the shape a *restore*
+   leaves. `#restoreSession` is the only path that closes the welcome buffer (`workspace.ts:1748-1853`), and
+   that tab order is not the order this run opened things in.
+3. So the app had restored a *previous* run's session although the profile was deleted before the run:
+   each run's own Chrome rewrites the profile **while shutting down**, so a delete immediately before the
+   next run happens before that shutdown finishes and the stale session comes back. The fix belongs in the
+   script: it wipes the profile itself, before Chrome starts, and asserts a clean start
+   (`the run starts from a clean profile: one empty buffer, nothing restored`). With that: **43/43**.
+
+**The defect the failures turned up — real, and worth the runs.** In the restore path the session records
+`assumedEncoding` per file (`session-store.ts:69`), `#planRestore` carries it (`workspace.ts:1976`),
+`#restoreSession` puts it into `RestoreState` (`:1798`) — and **the document factory never read it**: the
+flag was set only from a fresh file read (`:812`). A restored windows-1252 document therefore reported an
+*identified* encoding to `inspect()` and to the status bar while its format was still `windows-1252` and a
+save still wrote windows-1252 back — D4's "never silent" promise broken by a reload. Before the fix, a
+pickers run measured `assumedEncoding: false` on exactly that state; after it, a probe that opens the file
+through the app, lets the session write, reloads and asks again reads
+`{"encoding": "windows-1252", "assumedEncoding": true}` (and `documents: 1`, which proves the restore ran).
+`docs/session-persistence.md` now has the section "The assumed encoding survives a reload (D4)" with its two
+stated limits: a save clears the flag, and a placeholder is never assumed.
+
+**Mistakes of mine in this stretch.**
+- **I edited the script while it was running.** A traceback then printed frames that did not match the code
+  (`line 819, in <module> try:`); the message was right, but a reader would have been misled. Instrument
+  through a log or a probe, not a moving target.
+- **I trusted a manual `rm -rf` of the profile.** The script's own wipe plus an assertion is what makes the
+  start state actually true, and it is a check now.
+- **Two harness ideas were added and then corrected or removed by measurement**: an OCR read-back of the
+  dialog's location bar (vacuous — the fixture is in the dialog's own `/tmp` listing — and fragile), and a
+  geometry check that rejected `X=0 Y=0` (wrong: with no window manager the chooser is *placed* at the
+  origin; measured `WIDTH=930 HEIGHT=510`).
+- **Half of this session went to a check that is not the task's.** Task 7 was finished and committed; the
+  work above is Task 4's evidence script. It ended in a real app fix and a green re-run, which is worth it
+  once — but the ledger should say plainly where the time went.
 
 **Repo state at session end**
 - Committed in `1b5bcd4`.
@@ -1041,23 +1092,15 @@ Open items, none of which blocks the next task:
 4. **No Dark Mode.** Task 7 built the *preference* (stored, applied at startup, threaded through
    `PALETTES`/`THEMES`) and its single value is N++'s light palette; the dark skin — its token palette
    and chrome colours — is a Tier-1 row in `docs/scope.md` that no task has claimed.
-5. **`verify-task4-pickers.py` needs one green re-run in a quiet environment.** Task 4's row keeps its
-   2026-10-10 evidence (42/42 twice), and today's runs show the app behaving correctly (35/39, with the
-   four failures in the harness), but the check has not been re-run green since Task 7's harness
-   changes. Cause, visible in the evidence: a Chrome "Relaunch to update" bubble on this machine ate
-   synthetic keystrokes, and one screenshot hit a 60-second `ffmpeg` timeout. Do this first next
-   session: let Chrome finish its update (or delete `.hermes/cache/scratch/task4-pickers/chrome-profile`)
-   and run it until it is green twice.
-6. **Task 4's manual picker pass is now optional.** It used to be the gate;
+5. **Task 4's manual picker pass is now optional.** It used to be the gate;
    `scripts/verify-task4-pickers.py` now drives the real dialog, the real files and Chrome's write
    prompt automatically (42/42, two consecutive runs on 2026-10-10), so the evidence rule is satisfied
    without it. Offered, not required: two minutes on your own desktop — `Alt+O` each `/tmp/t4-*.txt`,
    `Alt+S`, `md5sum` again, cancel one picker.
-7. Re-measuring Chrome's **per-origin** file-edit prompt needs a browser profile that has never
-   granted it: `verify-task4-pickers.py` answers it with "Allow on every visit", which persists, so later
-   runs legitimately see no prompt at all (the check accepts that and says which prompts it answered).
-   Delete the profile directory to see the bubble again.
-8. The overview ruler's structure layer **saturates at 2000 ticks**. On a 10 000-line file that is
+6. Chrome's **per-origin** file-edit prompt is answered on every run now: the pickers script wipes its
+   own profile before each run (see the session log), so the prompt is no longer a leftover grant from an
+   earlier run — the check records which prompts it answered.
+7. The overview ruler's structure layer **saturates at 2000 ticks**. On a 10 000-line file that is
    already three ticks per pixel, so the cap is right for legibility — but a large-file mode (D10
    phase 3) should thin the ticks out instead of truncating them.
 

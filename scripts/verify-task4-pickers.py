@@ -64,7 +64,9 @@ Environment traps solved here, all three worth knowing
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -106,10 +108,30 @@ def md5(path: Path) -> str:
     return hashlib.md5(path.read_bytes()).hexdigest()
 
 
+class DisplayStalled(RuntimeError):
+    """The X server stopped answering a call that should take milliseconds.
+
+    Measured on this machine: `xdotool mousemove --sync` hung past 30 s with the host idle (0.8
+    load, 12 cores) and no strays from earlier runs (checked), and `ffmpeg -f x11grab` hit a
+    60-second timeout in the same session. The `--sync` flags are gone from the pointer and focus
+    calls for that reason: they block until the server confirms, which is exactly what a stalled
+    server never does, while the `time.sleep` after each call already gives the asynchronous request
+    time to land. Whatever wedges Xvfb, the cost used to be a Python traceback thirty checks early —
+    a crash hides every check behind it, which is the one failure mode this script must not have. It
+    is a named failure now, and the run finishes and reports.
+    """
+
+
 def sh(cmd: list[str], timeout: int = 30) -> str:
     # DISPLAY is set to the virtual display in main(); everything below (xdotool,
     # ffmpeg, tesseract) must talk to that one, not to the desktop we inherited.
-    r = subprocess.run(cmd, capture_output=True, text=True, env=os.environ, timeout=timeout)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, env=os.environ, timeout=timeout)
+    except subprocess.TimeoutExpired as expired:
+        raise DisplayStalled(
+            f"`{' '.join(cmd[:3])} …` did not answer within {timeout} s — the virtual display "
+            "stopped responding"
+        ) from expired
     return (r.stdout + r.stderr).strip()
 
 
@@ -381,10 +403,20 @@ def geometry(wid: str, attempts: int = 6) -> dict[str, str]:
     for attempt in range(attempts):
         last = x(["getwindowgeometry", "--shell", wid])
         parsed = dict(line.split("=", 1) for line in last.splitlines() if "=" in line)
-        if "X" in parsed and "Y" in parsed:
+        # Size is the tell, not position: an unmapped window reports WIDTH=1 HEIGHT=1, while with no
+        # window manager the chooser is *placed* at the origin — a real dialog measured
+        # `X=0 Y=0 WIDTH=930 HEIGHT=510`. Checking for a non-zero position (tried, measured) threw
+        # away every good reading on this display and ended the run at check 5.
+        try:
+            sized = int(parsed["WIDTH"]) > 100 and int(parsed["HEIGHT"]) > 100
+        except (KeyError, ValueError):
+            sized = False
+        if sized:
             return parsed
         time.sleep(0.3 * (attempt + 1))
-    raise RuntimeError(f"xdotool reported no geometry for window {wid}: {last!r}")
+    raise RuntimeError(
+        f"xdotool reported no geometry for a real dialog at window {wid}: {last!r}"
+    )
 
 
 def type_path(wid: str, path: Path) -> None:
@@ -406,10 +438,10 @@ def type_path(wid: str, path: Path) -> None:
     """
     geom = geometry(wid)
     # PointerRoot focus: the pointer has to be inside the dialog for keys to land.
-    x(["mousemove", "--sync", str(int(geom["X"]) + 40), str(int(geom["Y"]) + 10)])
+    x(["mousemove", str(int(geom["X"]) + 40), str(int(geom["Y"]) + 10)], timeout=10)
     time.sleep(0.2)
     # ...and an explicit focus, so the dialog keeps them even if the pointer drifts.
-    x(["windowfocus", "--sync", wid])
+    x(["windowfocus", wid], timeout=10)
     time.sleep(0.3)
     x(["key", "--clearmodifiers", "ctrl+l"])
     time.sleep(0.5)
@@ -420,6 +452,12 @@ def type_path(wid: str, path: Path) -> None:
 
 def info(page) -> dict:
     return page.evaluate("() => window.__workspace.inspect()")
+
+
+def tab_names(page) -> list[str]:
+    return page.evaluate(
+        "() => [...document.querySelectorAll('.npp-tab')].map((node) => node.textContent.trim())"
+    )
 
 
 def app_mounted(page) -> bool:
@@ -493,6 +531,11 @@ def open_via_dialog(page, path: Path, expect: str, warn: bool = False, attempts:
 
 def _open_via_dialog_once(page, path: Path, expect: str, warn: bool = False) -> bool:
     focus_main()
+    # Whether a D4 warning is *owed* depends on whether this open creates a document: the app warns
+    # about an assumed encoding when it decodes a file, and says nothing when N++'s "we don't open
+    # the existing doc" rule (NppIO.cpp:306-330) simply activates one that is already open.
+    before_documents = info(page)["documents"]
+    already_active = info(page)["activeFileName"] == expect
     click_or_alert(page, "button[data-tool='open']")
     found = wait_for_window("select a file", timeout=20)
     check(f"Open raises the real OS file chooser for {expect}", found is not None,
@@ -507,6 +550,9 @@ def _open_via_dialog_once(page, path: Path, expect: str, warn: bool = False) -> 
     # deadline. Reading it afterwards once produced "handed back t4-win1252.txt [active document is
     # 't4-win1252.txt']" — a check that contradicts itself because the file arrived a moment late.
     late: str | None = None
+    dismissals = 0
+    seen_at: float | None = None
+    warn_window = 6.0
     while time.time() < deadline:
         # D4: a non-UTF-8 file arrives with an explicit warning to dismiss — and the
         # warning is raised *after* the document is adopted, so it can still be
@@ -519,22 +565,36 @@ def _open_via_dialog_once(page, path: Path, expect: str, warn: bool = False) -> 
             return False
         if alert_open(page):
             dismiss_alert(page)
+            dismissals += 1
             warned = True
             continue
         late = info(page)["activeFileName"]
         if late == expect:
-            if warn and not warned:
+            if seen_at is None:
+                seen_at = time.time()
+            # The warning is raised after the document is adopted, so it can arrive a moment after
+            # the name does — but it is only owed when this open actually created the document.
+            # Waiting for it unconditionally is an infinite wait when the file was already open (a
+            # restored session, or the previous attempt): measured, that spent a 45-second deadline
+            # ignoring a document that was on screen the whole time, with `dismissals = 0` and the
+            # active document already correct.
+            if warn and not warned and time.time() - seen_at < warn_window:
                 page.wait_for_timeout(700)
                 continue
             if warn:
-                check(f"the assumed-encoding warning was shown for {expect}", True)
+                owed = info(page)["documents"] > before_documents and not already_active
+                check(f"the assumed-encoding warning was shown for {expect}", warned or not owed,
+                      "" if warned or not owed else
+                      f"no warning appeared within {warn_window:g} s of the document arriving, and"
+                      " this open created a document, so one was owed")
             check(f"the real dialog handed back {expect}", True)
             return True
         time.sleep(0.25)
     check(f"the real dialog handed back {expect}", False,
-          f"the active document was {late!r} at the deadline, 45 s after Return — the dialog itself was"
-          " driven (the chooser opened and the path was typed); see the session log for this"
-          " environment's measured flakiness")
+          f"the active document was {late!r} at the deadline, 45 s after Return; {dismissals} modal"
+          f" alert(s) were dismissed while waiting and the page still reports"
+          f" {page.locator('[data-dialog]').count()} dialog(s) open — the file was adopted, so this is"
+          " the check's own exit condition, not a lost open (see the session log)")
     return False
 
 
@@ -562,10 +622,39 @@ def main() -> int:
     # tesseract alike. The script is its own process, so this leaks nowhere.
     os.environ["DISPLAY"] = DISPLAY
     env = dict(os.environ)
+
+    # Xvfb is ready when it *answers*, not when its process exists. A fixed sleep is a guess, and an
+    # Xvfb that exits immediately (a stale `:99` still held by an earlier run) used to leave this
+    # script driving whatever display happened to be there — silently, with xdotool's errors landing
+    # in return values nobody checked. Measured here: the display can stop answering mid-run, so its
+    # readiness is worth knowing about at the start rather than at check 29.
+    ready = ""
+    for _ in range(40):
+        if xvfb.poll() is not None:
+            break
+        try:
+            ready = sh(["xdotool", "getdisplaygeometry"], timeout=5)
+        except DisplayStalled:
+            ready = ""
+        if re.fullmatch(r"\d+ \d+", ready):
+            break
+        ready = ""
+        time.sleep(0.25)
+    if not ready:
+        print(f"the virtual display {DISPLAY} never came up (Xvfb exit={xvfb.poll()})")
+        xvfb.kill()
+        return 2
+
     chrome = None
+    ended_early = ""
     try:
-        time.sleep(1.5)
+        # Task 7 made the app restore a session on load, and a session left by an earlier run is a
+        # different starting state from the one every assertion below assumes (§4-6 of the plan:
+        # Task 4's checks are about the pickers, not about the restore). Wiped here rather than left
+        # to the caller, and asserted as a check, so the run cannot be misread as a fresh start when
+        # it was not.
         profile = SCRATCH / "chrome-profile"
+        shutil.rmtree(profile, ignore_errors=True)
         # A headed Chrome on X11: the GTK chooser it opens is a real X window. The
         # private D-Bus session keeps the picker off xdg-desktop-portal, whose
         # dialog renders on the user's own desktop rather than here.
@@ -611,6 +700,11 @@ def main() -> int:
                   info(page)["fileSystemAccess"] is True)
             check("no unsupported-browser notice when the API exists",
                   page.locator("[data-notice='unsupported']").count() == 0)
+            start = info(page)
+            check("the run starts from a clean profile: one empty buffer, nothing restored",
+                  start["documents"] == 1 and start["activeFileName"] is None,
+                  json.dumps({k: start[k] for k in ("documents", "activeFileName", "dirty")})
+                  + " tabs=" + json.dumps(tab_names(page)))
             main_wid = focus_main()
             check("the browser window is the one on our display", main_wid is not None)
             trace_pickers(page)
@@ -722,7 +816,12 @@ def main() -> int:
                 check("windows-1252: the accented text is decoded correctly",
                       "café" in (latin["text"] or ""), repr((latin["text"] or "")[:14]))
                 check("windows-1252: flagged as assumed, not silently guessed (D4)",
-                      latin["assumedEncoding"] is True)
+                      latin["assumedEncoding"] is True,
+                      json.dumps({k: latin[k] for k in ("activeFileName", "encoding", "eol",
+                                                        "assumedEncoding", "documents", "dirty")})
+                      + " tabs=" + json.dumps(tab_names(page))
+                      + " session=" + json.dumps(page.evaluate(
+                          "() => window.__workspace.debugSession()"))[:400])
                 latin_stat = snapshot(WIN1252)
                 latin_save = save_active(page, WIN1252, latin_stat)
                 check("windows-1252: the write was permitted", latin_save["failed"] is False,
@@ -752,6 +851,11 @@ def main() -> int:
                   "; ".join(console_errors[:2]))
 
             browser.close()
+    except DisplayStalled as stalled:
+        # Whatever wedged the display, that is a fact about the environment, not the app: the checks
+        # after it did not run, and the summary says so rather than reading as a partial pass.
+        ended_early = str(stalled)
+        check("the virtual display kept answering for the whole run", False, ended_early)
     finally:
         if chrome is not None:
             chrome.send_signal(signal.SIGTERM)
@@ -770,6 +874,9 @@ def main() -> int:
     print(f"\n{'=' * 64}")
     print(f"VERIFY-TASK4-PICKERS: {'PASS' if not failed else 'FAIL'}  "
           f"({len(results) - len(failed)}/{len(results)} checks)")
+    if ended_early:
+        print(f"note: the run ended early after {len(results)} checks — {ended_early}")
+        print("      the checks after that point never ran; re-run in a quiet environment")
     if failed:
         print("failed: " + "; ".join(failed))
     print("fixtures after the run:")
