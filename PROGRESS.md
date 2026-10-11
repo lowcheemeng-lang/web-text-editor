@@ -1006,7 +1006,10 @@ when written; the re-run is outstanding and the next session should do it in a q
 **Repo state at session end**
 - `f829697` — `task-7: session persistence and preferences — session.xml's fields, N++'s backup/ on
   OPFS, and a Settings menu` (src, scripts, `docs/session-persistence.md`, the plan's Task 7 section,
-  the three scope rows and the D12 proposal), then a docs commit recording that SHA in the board.
+  the three scope rows and the D12 proposal).
+- `ce8e7dd` — `verify-task4-pickers: a lost keystroke costs a retry, not the run — and a crash names
+  itself` (the harness fixes above, with the measured, not-green outcome in the message).
+- then this docs commit, recording both SHAs in the board and closing the session.
 - `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
   from Session 1, still not this project's to commit or revert.
 
