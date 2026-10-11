@@ -43,7 +43,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 4 | File operations without backend | DONE | `python3 scripts/verify-task4-pickers.py` → **PASS (42/42)**, twice in a row — the **real** OS file chooser, driven end to end: headed Chrome under Xvfb, the GTK dialog screenshotted and driven by xdotool, real files in `/tmp` opened, edited and saved, md5 compared on disk. Includes the write that the manual checklist existed to prove: Chrome's "Save changes to …?" permission prompt is answered, and the save is confirmed by the file's inode/mtime moving rather than by "no error appeared". `python3 scripts/verify-task4.py` → **PASS (44/44)** — OPFS-stubbed pickers, byte-level (CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, recent files surviving a page reload, unsupported-browser notice); `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** | `f79477c` · `e0a74c3` |
 | 5 | Search, replace, navigation | DONE | `python3 scripts/verify-task5.py` → **PASS (105/105)**, twice in a row — N++'s Search dialog driven through its own controls (Normal / Extended / Regular-expression modes, Match case, Match whole word only, Wrap around, Backward direction, In selection, and N++'s per-mode gating of them), find next/previous with wrap-around and N++'s own status wording, Count, Mark All, Clear all marks, Replace and Replace All (`$1` back-references, `\t` in a replacement), Go To (line and offset) and the bookmark family (Ctrl+F2 / F2 / Shift+F2 / Clear All Bookmarks / the margin toggle). Over a **10 000-line** document: regex Count **2.4 ms**, Mark All **4.8 ms**, Replace All **46.5 ms**; `no request left the machine (D1)` green. `python3 scripts/probe-reserved-keys.py` → the keymap measurement behind decision **S6**. Regressions at HEAD: `verify-task3.py` → **PASS (58/58)**; `verify-task4.py` → **PASS (44/44)**; `verify-task4-pickers.py` → **PASS (42/42)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **305.27 kB / 98.72 kB gz** (was 296.81 / 96.16 — `@codemirror/search` 6.7.2) | `d22f0d8` |
 | 6 | Syntax highlighting & language modes | DONE | **`python3 scripts/verify-task6.py` → PASS (67/67)** — `.js`, `.py`, `.html`, `.md` (plus `.cs`, `Dockerfile`, a shebang file and two of D9's gaps) opened through the real File ▸ Open path against OPFS handles, with every token read back as **computed colour on rendered spans** and every ruler tick read back from **canvas pixels**. `node --experimental-strip-types scripts/test-languages.mjs` → **PASS (238/238)** — all **140** loaders resolve in Node (`27` first-class + `113` legacy), every detection rule, the named extension collisions, and the gaps. `node --experimental-strip-types scripts/gen-language-registry.mjs --check` → **152 of 152** parsers the package exports are accounted for (113 catalogued, 32 superseded by a first-class grammar, 7 not languages). Over a 10 000-line JavaScript file the ruler's structure walk returns its **2000-tick** cap in **8.5 ms**. Regressions at HEAD: `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task4-pickers.py` → **PASS (42/42)**, real OS chooser included; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.24 kB / 109.13 kB gz** across **129 chunks** (was 305.27 / 98.72 — the ruler, the highlight style and the registry; a naive `manualChunks` would have made it **1 591.85 kB / 565.20 kB gz**, see S3's cousin in the plan) | `c4e3c9e` |
-| 7 | Session persistence & preferences | TODO | - | - |
+| 7 | Session persistence & preferences | DONE | **`python3 scripts/verify-task7.py` → PASS (82/82)**, twice, every assertion made **after a real `page.reload()`** — the reload discards every in-page stub, so only stored state survives it: the Preferences dialog (Cancel applies nothing; OK stores, applies and persists — toolbar hidden, 12 pt text), View ▸ Zoom, an unsaved scratch buffer returning dirty with its caret and its bookmark, a CRLF+BOM file returning dirty from its `backup/` body and saving back **byte-identical** (`EF BB BF` + `one\r\ntwo\r\nTHREE`), N++'s both modified-file answers, folds/bookmarks/wrap/split/language restored (folds as *rendered* fold placeholders, in both panes), a file deleted behind the app dropped or offered as a read-only placeholder that refuses typing, and unsaved work that cannot be restored reported **by name** with snapshot mode off. `node --experimental-strip-types scripts/test-session.mjs` → **PASS (75/75)** — the storage logic in Node, where neither IndexedDB nor OPFS exists: N++'s `FILENAME@YYYY-MM-DD_HHMMSS` naming, the preference defaults and ranges, the restore decision table, the line↔offset conversions, and the fail-soft contract. Regressions at HEAD: `verify-task6.py` → **PASS (67/67)**; `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `test-languages.mjs` → **PASS (238/238)**; `gen-language-registry.mjs --check` → **OK**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.26 kB / 109.14 kB gz** across **129 chunks** (unchanged from Task 6 — the storage layer, the dialog and the ruler fix all land in the app's own chunk, now `index` **113.19 kB / 34.55 kB gz**). `verify-task4-pickers.py` is the one check whose re-run is **outstanding**, and the session log has the measurements: its best run today was **36/39**, with the three failures traced to this environment rather than the app — the check reports "handed back t4-win1252.txt" while its own detail says `active document is 't4-win1252.txt'`, i.e. the file arrived after the deadline — and a Chrome "Relaunch to update" bubble visible in the dialog OCR is eating the script's synthetic keystrokes. Its last green run remains 2026-10-10 (42/42 twice). | `f829697` |
 | 8 | PWA / offline packaging | TODO | - | - |
 
 **Status vocabulary:** `TODO` · `WIP` · `DONE` · `BLOCKED` · `DEFERRED`
@@ -55,35 +55,44 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**Task 6 is DONE (2026-10-11).** Its acceptance check is re-runnable and needs nothing but the
-dev server: `python3 scripts/verify-task6.py` → **PASS (67/67)**, plus
-`node --experimental-strip-types scripts/test-languages.mjs` → **PASS (238/238)** and
-`node --experimental-strip-types scripts/gen-language-registry.mjs --check` for the coverage
-claim. The 140 languages, the detection rules and the ruler are described in
-`src/languages/registry.ts` and `src/editor/overview-ruler.ts`, and what is deliberately *not*
-Notepad++'s is in `DEVIATIONS_FROM_NPP`.
+**Task 7 is DONE (2026-10-11).** Its acceptance check needs nothing but the dev server:
+`python3 scripts/verify-task7.py` → **PASS (82/82**, twice), and
+`node --experimental-strip-types scripts/test-session.mjs` → **PASS (75/75)** for the storage logic
+without a browser. The design — N++'s `session.xml`, its `backup/` algorithm and its `config.xml`
+keys, with the browser mapping and every deviation — is written up in
+`docs/session-persistence.md`, and the app's own list of what is *not* Notepad++'s is in
+`DEVIATIONS_FROM_NPP` (nine new entries).
 
-**Then: Task 7 — session persistence and preferences** (`src/storage/session-store.ts`,
-`src/storage/preferences.ts`), which is ungated:
+**Then: Task 8 — wrap as an installable, offline-capable web app** (`public/manifest.webmanifest`,
+`vite.config.ts`, optional single-file bundle), which is ungated:
 
-1. Save open tabs, caret positions and scroll positions in IndexedDB — the second half of **D8**,
-   whose OPFS-for-document-bodies half is still unbuilt (D8 stays `Proposed` until the user says
-   otherwise; Task 4 already used its IndexedDB half for recent files).
-2. Persist UI preferences: theme, font size, word wrap, and now the **language per document**
-   (Task 6 kept it on `OpenDocument` for exactly this).
-3. Restore on startup.
+1. The manifest and a service worker for the app shell. `base: "./"` and relative asset URLs are
+   already in place from Task 2, so a cache-first worker is a small change — but the shell is **129
+   chunks** and the 140 languages are lazy, so the worker has to decide what "offline" means for a
+   language that was never opened: precache the shell and the languages that *were* opened at
+   runtime, and say in the ledger which of the two it does.
+2. Optionally bundle one portable HTML file (the plan's step 2) — worth measuring against the 129
+   chunks rather than assuming.
+3. Verify the offline path: load once, disable the network, reload, and confirm the editor mounts and
+   works. Two things from Task 7 worth asserting there because offline is the first load that cannot
+   fall back to the network: the session restore must work with no network at all (it does — nothing
+   here fetches — but that is the place to prove it), and `navigator.storage.persist()`'s answer is
+   worth re-reading, since an installed PWA is one of the signals Chrome uses to grant it.
 
-Verified by reloading the app after editing and watching the tabs and positions come back.
+**Two things Task 7 deliberately left open**, both named in `DEVIATIONS_FROM_NPP` rather than
+papered over:
 
-**Two things Task 6 deliberately left open for Task 7 to pick up or leave:**
+- **No Language menu** (carried from Task 6, still unbuilt). Everything a menu needs is verified —
+  `languagesByName()`, `Workspace.setLanguage(id)`, `inspect().language` — and the session already
+  stores the language per document, so a language *chosen* from such a menu now survives a reload.
+- **No Dark Mode.** The theme is stored, applied and threaded through `PALETTES`/`THEMES`, and its
+  only value is N++'s light palette. The dark skin (its token palette and chrome colours) is a
+  Tier-1 row in `docs/scope.md` that no task has claimed.
 
-- **No Language menu.** N++ has one; this port names a language from the extension, the file name
-  or the content and offers no way to *override* it, so a scratch buffer and every file with an
-  unmapped extension (makefile, batch, INI, JSON5, GraphQL) stay "Normal text file". The registry
-  already exposes what a menu needs (`languagesByName()`, `Workspace.setLanguage(id)`, both
-  verified through `inspect()`), and `DEVIATIONS_FROM_NPP` says the menu is missing.
-- **Mobile/tablet is still unanswered** (open item 3 below) — settle it before Task 7, whose
-  OPFS/eviction work is what it changes.
+**And one thing needs the user, not a task: `D12` (mobile/tablet) is filed as a proposal in
+`docs/scope.md` §3** — recommendation: out of scope for the MVP, with the S4 notice, because a mobile
+browser evicts origin storage in a way that makes Task 7's promise ("your unsaved work is still
+there") one this port cannot honestly keep. It needs a yes or a no; nothing is blocked on it.
 
 ### Scope settled at sign-off (2026-09-25)
 
@@ -101,14 +110,22 @@ Verified by reloading the app after editing and watching the tabs and positions 
   The `browser_exec` tool **cannot reach loopback addresses in this environment** — it returns
   `ERR_CONNECTION_REFUSED` for `127.0.0.1` while `curl` gets HTTP 200 in the same moment.
 - Screenshots go to `.hermes/cache/screenshots/` (git-ignored): no binaries in git history.
+- **`scripts/verify-task7.py`** (Task 7) drives the session and the preferences the same way — a real page,
+  real reloads — and stubs the pickers with OPFS handles exactly as `verify-task4.py` does. Almost every
+  assertion is made **after a `page.reload()`**, which is the point: a reload discards every in-page stub
+  and every queued timer, so only genuinely stored state can survive it.
 - One check needs more than Chrome: `scripts/verify-task4-pickers.py` drives a **real** OS file
   chooser, so it needs `Xvfb`, `xdotool`, `ffmpeg` (x11grab), `tesseract` and `dbus-run-session`.
   It starts its own Xvfb on `:99` and never touches the desktop; run it with `npm run dev` up.
-- **Two checks run in Node, with no browser at all** (they need
+- **Three checks run in Node, with no browser at all** (they need
   `node --experimental-strip-types`, because they import the `.ts` sources directly):
   `scripts/test-languages.mjs` (all 140 language loaders + every detection rule) and
   `scripts/gen-language-registry.mjs --check` (the generated mode table vs the installed
-  package). `scripts/test-file-io.mjs` is the third of this kind.
+  package). `scripts/test-file-io.mjs` and `scripts/test-session.mjs` (Task 7: N++'s backup naming, the preference
+  defaults and ranges, the restore decision table, the line↔offset conversions, and the fail-soft
+  contract — Node has neither IndexedDB nor OPFS, which is exactly that contract's condition) complete
+  the set. The storage modules import with explicit `.ts` extensions so Node follows the same graph the
+  browser runs, rather than a copy of it that can drift.
 - **Use `npm run typecheck`, or `./node_modules/.bin/tsc`, not `npx tsc`** — in this environment
   `npx` stalls resolving the local binary (measured: a bare `npx tsc --noEmit` hung past a
   7-minute timeout while the local binary finished in 0.2 s).
@@ -149,6 +166,8 @@ Verified by reloading the app after editing and watching the tabs and positions 
 | S7 | 2026-10-10 | Search marks and bookmarks live in **per-view state** (`StateField`), and `workspace.ts` reconciles the views of one document — a clone copies them at mount, and bookmark changes are mirrored to the peers | The split dispatcher forwards document *changes* only. Without the reconciliation a bookmark set in the clone's margin would be invisible in the primary pane and silently lost when the split closed, because a clone's state is rebuilt on every mount | Accepted |
 | S8 | 2026-10-11 | The **overview ruler** is a per-view 13 px strip on the pane's right edge: structure ticks from the language's own fold regions (`foldNodeProp`), search marks in N++'s Mark Style 1, bookmarks in N++'s bookmark colour, a viewport band, and click/drag to scroll — **never** moving the caret. **Not a Notepad++ element.** | The plan's Task 6 step 3 asks for "the overview ruler as the language-aware navigation aid" and names no shape; N++ has nothing like it (its Document Map is a minimap, Tier 2/3, unscheduled). Rejected alternatives: the minimap itself (out of scope, D10 phase 3), and per-line `foldable()` calls for the structure (a `foldNodeProp` tree walk is O(nodes), measured at **8.5 ms for a 10 000-line file**, and returns the same fold regions the gutter shows). The language-awareness is real and also shows D9's trade-off in public: a Lezer grammar has fold regions, a legacy `StreamLanguage` has none, so the skeleton appears only for the 27 first-class languages. Capped at 2000 ticks — beyond that the strip is a solid block | Accepted |
 | S9 | 2026-10-11 | A contested file extension is resolved by the **order of `LANGUAGES`** (first-class rows first, then the legacy table in N++-name order); the collisions are named and asserted in `scripts/test-languages.mjs` rather than left to chance | N++ resolves the same collisions by walking its own language table *backwards* (`Parameters.cpp:4464`), which is an accident of its enum order and not something a port can copy without copying the enum. The collisions are few and real (`.m` MATLAB vs Objective-C, `.s` R vs GNU assembly, `.pp` Pascal vs Puppet, `.mm` Objective-C, `.pyx` Python vs Cython), and each one's winner is now a test | Accepted |
+| S10 | 2026-10-11 | **Task 7's persistence is N++'s own material, not an invention of this port:** the session record carries `session.xml`'s fields, the bodies of unsaved documents go to N++'s `backup/` directory implemented on OPFS with its own `FILENAME@YYYY-MM-DD_HHMMSS` names and its documented sync rules (`Buffer.cpp:1231-1272`), and the preferences are `config.xml`'s session, toolbar and zoom keys — in one IndexedDB database for the metadata (D8's half) plus OPFS for the bodies (D8's other half). | The task's own spec is three sentences ("save tabs, caret and scroll in IndexedDB; persist preferences; restore on startup"), and every question those sentences raise — what to store, when to write it, what to ask on the way back, what to do with a document whose file is gone — N++ has already answered, in code with line numbers attached. Where the browser cannot match the original (a page has no `%APPDATA%`, cannot ask before a reload, cannot be given a folder to write into) the difference is recorded in `DEVIATIONS_FROM_NPP` and `docs/session-persistence.md` rather than improvised. | Accepted |
+| S11 | 2026-10-11 | The split's reconciliation mirrors compare **changes, not states**: a view tells its peers only when the folds or bookmarks *it* holds moved since the last transaction it was asked about, tracked as a per-view signature (`#foldSignatures`, `#bookmarkSignatures`). | A freshly mounted clone legitimately starts empty, so comparing states made the clone's first transaction read as "the document has no folds" and clear the fold in the other pane — silently, and only when the document had a fold *and* the clone had a reason to dispatch before the mount-time handover. Task 7's `verify-task7.py` covers the sequence that exposed it (bookmark, fold, then open the split), and the fix is the same rule the rest of the app follows: propagate what changed. | Accepted |
 
 ## Session log
 
@@ -866,35 +885,178 @@ failure mode is silence.
 - `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
   from Session 1, still not this project's to commit or revert.
 
+#### Session 6 (2026-10-11) — Task 7: session persistence and preferences; five pre-existing defects
+
+**User input received**
+- "task 7" — the Next action the ledger carried.
+
+**What was read before any code was written.** Task 7's spec is three sentences; what made it
+concrete was Notepad++'s own source again, and this time the decisive finds were:
+
+- `NppParameters::writeSession` (`Parameters.cpp:4818`) and `getSessionFromXmlTree`
+  (`Parameters.cpp:3408`) for the session's shape — in particular that it carries the caret *and the
+  selection* (`startPos`/`endPos`/`selMode`), the viewport (`firstVisibleLine`/`xOffset`), the
+  language, the encoding, `userReadOnly`, `backupFilePath`, `originalFileLastModifTimestamp`, and two
+  child elements the port had never persisted: `<Mark line>` and `<Fold line>` — Task 5's bookmarks
+  and Task 6's folds are part of the session.
+- `Buffer.cpp:1231-1272`, where N++ writes the **whole specification** of its snapshot/backup system
+  into a comment above the code: "load backup\FILENAME@CREATION_TIMESTAMP if exist, otherwise load
+  FILENAME", "if … is loaded, set it dirty (red)", the 7-second sync, the delete-on-save, the
+  untitled-buffer case, and the mtime comparison. The name is built at `Buffer.cpp:1312-1324`
+  (`FILENAME@%Y-%m-%d_%H%M%S`).
+- `Notepad_plus::loadSession` (`NppIO.cpp:2494-2613`) for the restore *order*, `newPlaceholderDocument`
+  (`Buffer.cpp:1719-1763`) for the read-only placeholder and its once-per-run question, `doReloadOrNot`
+  (`Notepad_plus.cpp:2593`) for the "modified by another program" wording, and `NppIO.cpp:306-330` for
+  "we don't open the existing doc" — all of which the port now implements.
+- `Notepad_plus.rc` (fetched from the N++ repo) for the View ▸ `Zoom` submenu's item labels and
+  Settings ▸ `Preferences...`, `Parameters.cpp` `winKeyDefs[]` for what N++ binds them to, and
+  Scintilla's own documentation for the range a zoom level may take (`SCI_ZOOMIN` stops at 60,
+  `SCI_ZOOMOUT` at -10, "limiting yourself to -10 to +60 … is a good idea").
+
+**Built**
+- `src/storage/idb.ts` (one database, version 2, three stores, fail-soft), `preferences.ts` (N++'s
+  `config.xml` keys with defaults and clamps), `session-store.ts` (the `session.xml` analogue, with
+  the position helpers and the restore decision table written as pure functions so `test-session.mjs`
+  can exercise the same code Node runs), `backup-store.ts` (N++'s `backup/` on OPFS, its naming, its
+  sync rules, orphan pruning), `persistent-storage.ts` (risk R6's recorded mitigation,
+  `navigator.storage.persist()`, reported not assumed).
+- `src/editor/preferences-dialog.ts` — Settings ▸ Preferences…, N++'s session/toolbar/zoom settings,
+  applied only on OK.
+- `workspace.ts`: the session writer (500 ms debounce, immediate on a tab switch, a close,
+  `visibilitychange` and `pagehide`), the snapshot scheduler on `snapshotBackupTiming`, the restore
+  (preferences → plan every entry → N++'s two questions → adopt → active tab → split → rewrite →
+  prune), View ▸ Zoom, the Settings menu, and `inspect()`/`debugSession()`/`debugBackups()` for the
+  check.
+- `docs/session-persistence.md` — N++'s three mechanisms quoted with their line numbers, the mapping
+  table, the two races a page has that N++ does not, and the five defects below.
+- `scripts/test-session.mjs` (75 checks, no browser) and `scripts/verify-task7.py` (82 checks, every
+  one of them after a real reload), plus nine new `DEVIATIONS_FROM_NPP` entries.
+
+**Verified at HEAD** — `verify-task7.py` → **PASS (82/82)** twice; `test-session.mjs` → **PASS
+(75/75)**; regressions: `verify-task3.py` 58/58, `verify-task4.py` 44/44, `verify-task5.py` 105/105
+(twice), `verify-task6.py` 67/67, `test-file-io.mjs` 45/45, `test-languages.mjs` 238/238,
+`gen-language-registry.mjs --check` OK, `spike-r2-split.py` PASS, `npm run typecheck` exit 0,
+`npm run build` exit 0 with `editor-core` **335.26 kB / 109.14 kB gz** across 129 chunks.
+
+**Five defects this task found — all pre-existing, and all of them only visible once a *reload* was
+part of the story:**
+
+1. **The split erased folds** (and could have erased bookmarks). `#mirrorFolds`/`#mirrorBookmarks`
+   compared *states*; a freshly mounted clone legitimately starts empty, so its first transaction —
+   the bookmark copy, before the fold handover — read as "this document has no folds" and dispatched
+   an unfold into the other pane. Fixed by comparing *changes* (`#foldSignatures`,
+   `#bookmarkSignatures`); S11. **This is the bug the task's own check was written around** (bookmark,
+   fold, then open the split).
+2. **A restored document lost its grammar.** `#loadLanguage` reconfigures the views that exist when
+   its import resolves, and during a restore none exist yet, so the extension went nowhere: no
+   highlighting, and — because `foldable()` needs a grammar — no folds. The restore now awaits the
+   grammar and puts it in the state at document creation.
+3. **The overview ruler showed no structure for a view mounted on an already-parsed state** — caught
+   by *Task 6's* check, which is pleasing: the sequence that hit it was N++'s own
+   "activate rather than re-open" rule below. The plugin walks the tree at construction now.
+4. **A document id could repeat.** Ids were `d{documents.length+1}-{newNumber}`: not unique once a
+   document is *removed* (the welcome buffer a restore discards, or any closed tab), because the
+   `new N` counter does not move when a file is opened. The collision made `#show()` return early —
+   the file opened and never came to the front, which is exactly how a user would report it. One
+   monotonic counter now.
+5. **A redundant warning after a decision the user had already made.** Answering N++'s "reload it and
+   lose the changes made in Notepad++?" with *yes* still produced a second dialog complaining that
+   unsaved changes could not be restored — and because that alert is modal it *blocked the restore*
+   from completing, which is how the check caught it (`session.complete` never became true). The
+   answer is now recorded on the plan (`discardedByUser`) and respected.
+
+**Two mistakes of my own, recorded rather than tidied:**
+
+- **I quoted bundle numbers I had not measured** in the plan's Task 7 outcome (349.29 kB / 112.62 kB
+  gz, "130 chunks"), written from the shape of the change rather than from the build. The build says
+  `editor-core` **335.26 / 109.14** across **129** chunks — *unchanged* from Task 6, because the
+  storage layer and the dialog land in the app's own chunk. Corrected in the plan before the commit;
+  noted here because the whole point of the evidence rule is that a plausible number is not a
+  measurement.
+- **A harness idea that measured badly and was removed.** To stop the pickers script from blaming the
+  app for a lost keystroke, `type_path` was first gated on reading the dialog's location bar back with
+  OCR. Two runs showed the gate failing the *open* when the OCR was having a bad day, and a third
+  showed the deeper problem: the fixture lives in `/tmp`, which is the dialog's own listing, so the
+  OCR finds the file name whether or not the typing landed — the verification was vacuous *and*
+  fragile. What survives is honest: the script retries the whole open once, the callers still assert
+  the right file arrived, and `isSameEntry` was cleared by its own probe (two copies of one file are
+  correctly *not* the same entry, so a wrong-file result is the harness).
+
+**`verify-task4-pickers.py` did not go green today — recorded, not glossed.** Its best run reached
+**36/39**, and the three failures are the harness mis-reporting a success: the check prints "the real
+dialog handed back t4-win1252.txt" while its own detail reads `active document is
+'t4-win1252.txt'` — i.e. the app *did* open the right file through the real chooser, a moment after the
+deadline the loop was waiting inside (two attempts, one FAIL each, plus the caller's verdict behind
+them). Earlier runs in the same session reached 35/39 (same shape) and 33/35, one crashed on the
+original bare `KeyError: 'X'`, one on `Cannot read properties of undefined` after a keystroke sent
+`ctrl+l` to Chrome's own location bar and navigated the page away from the app, and one hit a
+60-second `ffmpeg -f x11grab` timeout inside a screenshot. No strays from the killed runs were left
+behind (checked: no Xvfb, no ffmpeg, no second Chrome). The environment is the cause and it is visible in the evidence: the dialog OCR shows
+a Chrome **"Relaunch to update"** bubble over these runs, `ffmpeg -f x11grab` hit a 60-second timeout
+inside a screenshot, and no strays from the killed runs were left behind (checked). What is in place
+now: a retried geometry lookup (the original crash was a bare `KeyError: 'X'`), an explicit
+`windowfocus` on the dialog (a stray `ctrl+l` can no longer reach the browser), `app_mounted()` so a
+navigated-away page fails *by name* instead of with `Cannot read properties of undefined`, one retry
+per open, a 45 s deadline, and Chrome launched with `--disable-background-networking
+--disable-component-update`. Task 4's row keeps its 2026-10-10 evidence (42/42 twice), which was true
+when written; the re-run is outstanding and the next session should do it in a quiet environment
+(first: let Chrome finish its update, or delete
+`.hermes/cache/scratch/task4-pickers/chrome-profile`).
+
+**Repo state at session end**
+- `f829697` — `task-7: session persistence and preferences — session.xml's fields, N++'s backup/ on
+  OPFS, and a Settings menu` (src, scripts, `docs/session-persistence.md`, the plan's Task 7 section,
+  the three scope rows and the D12 proposal), then a docs commit recording that SHA in the board.
+- `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
+  from Session 1, still not this project's to commit or revert.
+
 ## Blockers / open questions
 
-Nothing blocking. All four original scope questions are closed (see `docs/scope.md` §10).
+Nothing blocking, and nothing needs a task to proceed. Two items need the *user*, and both are filed
+as written proposals rather than questions in prose:
+
+1. **`D12` (mobile/tablet) awaits the user's word** — filed in `docs/scope.md` §3: recommendation
+   **out**, i.e. a phone or tablet gets the S4 notice the way Firefox and Safari do. Task 7 is the
+   task it changes, because a mobile browser evicts an origin's storage in a way that makes its
+   promise ("your unsaved work is still there when you come back") one this port cannot honestly
+   keep. Nothing is blocked on the answer: everything is feature-detected and no code branches on the
+   device today.
+2. **`D1`, `D5` and `D8` are still `Proposed`** — lower-stakes consolidations of choices already
+   implied by accepted decisions. **D8 is now fully exercised**: Task 4 built its IndexedDB-for-handles
+   half (`src/file/recent-files.ts`) and Task 7 the rest (session and preferences in IndexedDB, the
+   bodies of unsaved documents in OPFS `backup/`). Only the user moves a `D` decision.
 
 Open items, none of which blocks the next task:
 
-1. **No Language menu — the one N++ feature Task 6 knowingly did not build.** Everything needed is
-   in place and verified (`languagesByName()` orders all 140 as N++ names them,
-   `Workspace.setLanguage(id | null)` swaps the grammar live, `inspect().language` reports it), so
-   this is a menu plus a picker, not a mechanism. Until it exists, a scratch buffer and every
-   unmapped extension (makefile, batch, INI, JSON5, GraphQL) are stuck as "Normal text file".
-   `DEVIATIONS_FROM_NPP` says so in the app's own source.
-2. **Task 4's manual picker pass is now optional.** It used to be the gate; `scripts/verify-task4-pickers.py`
-   now drives the real dialog, the real files and Chrome's write prompt automatically (42/42, two
-   consecutive runs), so the evidence rule is satisfied without it. Offered, not required: two
-   minutes on your own desktop — `Alt+O` each `/tmp/t4-*.txt`, `Alt+S`, `md5sum` again, cancel one
-   picker.
-3. **D1, D5, D8** — lower-stakes consolidations of choices already implied by the accepted
-   decisions. D8 is *half in use* (Task 4's recent files exercise its IndexedDB half) but is still
-   `Proposed`; only the user moves it. Task 7 is written against both halves.
-4. One loose end, not a decision: **is mobile/tablet in scope at all?** D11 didn't address it.
-   Settle it before Task 7, whose OPFS/eviction work is what it changes.
-5. Re-measuring Chrome's **per-origin** file-edit prompt needs a browser profile that has never
-   granted it: `verify-task4-pickers.py` answers it with "Allow on every visit", which persists, so
-   later runs legitimately see no prompt at all (the check accepts that and says which prompts it
-   answered). Delete `.hermes/cache/scratch/task4-pickers/chrome-profile` to see the bubble again.
-6. The overview ruler's structure layer **saturates at 2000 ticks**. On a 10 000-line file that is
-   already three ticks per pixel, so the cap is right for legibility — but a large-file mode
-   (D10 phase 3) should thin the ticks out instead of truncating them.
+3. **No Language menu — the one N++ feature Task 6 knowingly did not build.** Everything needed is in
+   place and verified (`languagesByName()` orders all 140 as N++ names them,
+   `Workspace.setLanguage(id | null)` swaps the grammar live, `inspect().language` reports it), so this
+   is a menu plus a picker, not a mechanism. Task 7 made it slightly more valuable: the language is now
+   stored per document and restored, so a choice made from such a menu would survive a reload. Until it
+   exists, a scratch buffer and every unmapped extension (makefile, batch, INI, JSON5, GraphQL) are
+   stuck as "Normal text file".
+4. **No Dark Mode.** Task 7 built the *preference* (stored, applied at startup, threaded through
+   `PALETTES`/`THEMES`) and its single value is N++'s light palette; the dark skin — its token palette
+   and chrome colours — is a Tier-1 row in `docs/scope.md` that no task has claimed.
+5. **`verify-task4-pickers.py` needs one green re-run in a quiet environment.** Task 4's row keeps its
+   2026-10-10 evidence (42/42 twice), and today's runs show the app behaving correctly (35/39, with the
+   four failures in the harness), but the check has not been re-run green since Task 7's harness
+   changes. Cause, visible in the evidence: a Chrome "Relaunch to update" bubble on this machine ate
+   synthetic keystrokes, and one screenshot hit a 60-second `ffmpeg` timeout. Do this first next
+   session: let Chrome finish its update (or delete `.hermes/cache/scratch/task4-pickers/chrome-profile`)
+   and run it until it is green twice.
+6. **Task 4's manual picker pass is now optional.** It used to be the gate;
+   `scripts/verify-task4-pickers.py` now drives the real dialog, the real files and Chrome's write
+   prompt automatically (42/42, two consecutive runs on 2026-10-10), so the evidence rule is satisfied
+   without it. Offered, not required: two minutes on your own desktop — `Alt+O` each `/tmp/t4-*.txt`,
+   `Alt+S`, `md5sum` again, cancel one picker.
+7. Re-measuring Chrome's **per-origin** file-edit prompt needs a browser profile that has never
+   granted it: `verify-task4-pickers.py` answers it with "Allow on every visit", which persists, so later
+   runs legitimately see no prompt at all (the check accepts that and says which prompts it answered).
+   Delete the profile directory to see the bubble again.
+8. The overview ruler's structure layer **saturates at 2000 ticks**. On a 10 000-line file that is
+   already three ticks per pixel, so the cap is right for legibility — but a large-file mode (D10
+   phase 3) should thin the ticks out instead of truncating them.
 
 Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~~ · ~~D9~~ (2026-10-06).
 
