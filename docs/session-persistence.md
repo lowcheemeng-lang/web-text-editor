@@ -201,6 +201,29 @@ Dark Mode, the unbound zoom keys and the icon-set-free toolbar value.
 
 ---
 
+## The assumed encoding survives a reload (D4)
+
+N++'s session records the encoding a file was opened with, and this port does too — `encoding`, `bom`
+and `eol` per entry — because §6's round-trip rule has to write back exactly what was read. What the
+session also records is `assumedEncoding`: D4's promise is that an uncertain decode is never silent,
+and a reload must not turn a stated assumption into an unstated one.
+
+It did, for one release of this task. `RestoreState.assumedEncoding` was built from the session entry
+(`#planRestore`), passed to the document factory, and then **never read**: the factory took the flag
+only from a *fresh* file read, so a restored document reported an identified encoding to `inspect()`
+and to the status bar while its format was still `windows-1252` and a save still wrote windows-1252
+back. Measured on a restored document through the app's own handle — `encoding: "windows-1252",
+assumedEncoding: false` — and after the fix, on the same state, `assumedEncoding: true`.
+
+Two limits worth stating rather than discovering later:
+
+- **A save clears the flag** (`document.assumedEncoding = false`). Once the port has written the file
+  it knows what it wrote, so the assumption is settled for this session; the notice is a load-time
+  one, as N++'s own is. The session then records the cleared value, so a document saved and reloaded
+  reports `windows-1252` without "(assumed)" until it is read from disk again.
+- **A placeholder is never "assumed"**: it has no content and cannot be typed into, so the flag is
+  `false` by construction (`#createPlaceholder`).
+
 ## 4. Evidence
 
 | What | Where | Result |

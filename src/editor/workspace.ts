@@ -811,6 +811,13 @@ export class Workspace {
       document.handle = file.handle;
       document.assumedEncoding = file.assumedEncoding;
       document.originalFileLastModifTimestamp = file.lastModified;
+    } else if (restore) {
+      // D4: the encoding was *assumed* when this file was first read — nothing in the file
+      // identifies it — and a reload must not turn that into a silent guess. The session records
+      // the flag (session-store.ts) and the restore carries it as far as `RestoreState`; without
+      // this line it went no further, so a restored windows-1252 document reported an identified
+      // encoding to `inspect()` and to the status bar while still writing windows-1252 back.
+      document.assumedEncoding = restore.assumedEncoding;
     }
     // The grammar is already in the state, so nothing needs to be loaded for it (and
     // `#loadLanguage` returns early for it, which is what keeps the lazy path and this one apart).
