@@ -42,7 +42,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 3 | Editor core with N++ defaults | DONE | `python3 scripts/verify-task3.py` → **PASS (56/56)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS** (12/12); `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** (down from 382.37 kB — `basicSetup` carried autocompletion/search that Tasks 5–6 own) | `1c548ae` |
 | 4 | File operations without backend | DONE | `python3 scripts/verify-task4-pickers.py` → **PASS (42/42)**, twice in a row — the **real** OS file chooser, driven end to end: headed Chrome under Xvfb, the GTK dialog screenshotted and driven by xdotool, real files in `/tmp` opened, edited and saved, md5 compared on disk. Includes the write that the manual checklist existed to prove: Chrome's "Save changes to …?" permission prompt is answered, and the save is confirmed by the file's inode/mtime moving rather than by "no error appeared". `python3 scripts/verify-task4.py` → **PASS (44/44)** — OPFS-stubbed pickers, byte-level (CRLF+BOM and windows-1252 round trips, UTF-32 refusal, cancel-is-not-an-error, Save As, recent files surviving a page reload, unsupported-browser notice); `node --experimental-strip-types scripts/test-file-io.mjs` → **PASS (45/45)**; `python3 scripts/verify-task3.py` → **PASS (58/58)**; `python3 scripts/spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **296.81 kB / 96.16 kB gz** | `f79477c` · `e0a74c3` |
 | 5 | Search, replace, navigation | DONE | `python3 scripts/verify-task5.py` → **PASS (105/105)**, twice in a row — N++'s Search dialog driven through its own controls (Normal / Extended / Regular-expression modes, Match case, Match whole word only, Wrap around, Backward direction, In selection, and N++'s per-mode gating of them), find next/previous with wrap-around and N++'s own status wording, Count, Mark All, Clear all marks, Replace and Replace All (`$1` back-references, `\t` in a replacement), Go To (line and offset) and the bookmark family (Ctrl+F2 / F2 / Shift+F2 / Clear All Bookmarks / the margin toggle). Over a **10 000-line** document: regex Count **2.4 ms**, Mark All **4.8 ms**, Replace All **46.5 ms**; `no request left the machine (D1)` green. `python3 scripts/probe-reserved-keys.py` → the keymap measurement behind decision **S6**. Regressions at HEAD: `verify-task3.py` → **PASS (58/58)**; `verify-task4.py` → **PASS (44/44)**; `verify-task4-pickers.py` → **PASS (42/42)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **305.27 kB / 98.72 kB gz** (was 296.81 / 96.16 — `@codemirror/search` 6.7.2) | `d22f0d8` |
-| 6 | Syntax highlighting & language modes | TODO | - | - |
+| 6 | Syntax highlighting & language modes | DONE | **`python3 scripts/verify-task6.py` → PASS (67/67)** — `.js`, `.py`, `.html`, `.md` (plus `.cs`, `Dockerfile`, a shebang file and two of D9's gaps) opened through the real File ▸ Open path against OPFS handles, with every token read back as **computed colour on rendered spans** and every ruler tick read back from **canvas pixels**. `node --experimental-strip-types scripts/test-languages.mjs` → **PASS (238/238)** — all **140** loaders resolve in Node (`27` first-class + `113` legacy), every detection rule, the named extension collisions, and the gaps. `node --experimental-strip-types scripts/gen-language-registry.mjs --check` → **152 of 152** parsers the package exports are accounted for (113 catalogued, 32 superseded by a first-class grammar, 7 not languages). Over a 10 000-line JavaScript file the ruler's structure walk returns its **2000-tick** cap in **8.5 ms**. Regressions at HEAD: `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task4-pickers.py` → **PASS (42/42)**, real OS chooser included; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.24 kB / 109.13 kB gz** across **129 chunks** (was 305.27 / 98.72 — the ruler, the highlight style and the registry; a naive `manualChunks` would have made it **1 591.85 kB / 565.20 kB gz**, see S3's cousin in the plan) | `c4e3c9e` |
 | 7 | Session persistence & preferences | TODO | - | - |
 | 8 | PWA / offline packaging | TODO | - | - |
 
@@ -55,25 +55,35 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**Task 5 is DONE (2026-10-10).** Its acceptance check is re-runnable and needs nothing but the
-dev server: `python3 scripts/verify-task5.py` → **PASS (105/105)**. The keymap it ships was
-measured, not guessed (`scripts/probe-reserved-keys.py`, decision S6): **Find is Alt+F** because
-Chrome never delivers Ctrl+F to a page, while Ctrl+H, Ctrl+G, Ctrl+M, F3 / Shift+F3 and
-F2 / Shift+F2 / Ctrl+F2 keep N++'s own bindings.
+**Task 6 is DONE (2026-10-11).** Its acceptance check is re-runnable and needs nothing but the
+dev server: `python3 scripts/verify-task6.py` → **PASS (67/67)**, plus
+`node --experimental-strip-types scripts/test-languages.mjs` → **PASS (238/238)** and
+`node --experimental-strip-types scripts/gen-language-registry.mjs --check` for the coverage
+claim. The 140 languages, the detection rules and the ruler are described in
+`src/languages/registry.ts` and `src/editor/overview-ruler.ts`, and what is deliberately *not*
+Notepad++'s is in `DEVIATIONS_FROM_NPP`.
 
-**Then: Task 6 — syntax highlighting & language modes** (`src/languages/registry.ts`, plus
-`src/editor/notepadpp-config.ts`), which is ungated:
+**Then: Task 7 — session persistence and preferences** (`src/storage/session-store.ts`,
+`src/storage/preferences.ts`), which is ungated:
 
-1. Register D9's accepted language set — all 22 official `@codemirror/lang-*` packages plus the
-   103 `@codemirror/legacy-modes` ports — each lazily imported so an unopened language costs
-   nothing.
-2. Detect a language by file extension and, where that cannot decide, by content.
-3. Add the overview ruler as the language-aware navigation aid.
+1. Save open tabs, caret positions and scroll positions in IndexedDB — the second half of **D8**,
+   whose OPFS-for-document-bodies half is still unbuilt (D8 stays `Proposed` until the user says
+   otherwise; Task 4 already used its IndexedDB half for recent files).
+2. Persist UI preferences: theme, font size, word wrap, and now the **language per document**
+   (Task 6 kept it on `OpenDocument` for exactly this).
+3. Restore on startup.
 
-Verified by opening `.js`, `.py`, `.html` and `.md` files and watching the highlighting and the
-overview ruler, plus a `scripts/verify-task6.py` (S2). Two things the plan flags as unproven and
-worth measuring rather than assuming: makefile / batch / INI have no CM6 mode anywhere, and
-C#-via-`clike` is unconfirmed.
+Verified by reloading the app after editing and watching the tabs and positions come back.
+
+**Two things Task 6 deliberately left open for Task 7 to pick up or leave:**
+
+- **No Language menu.** N++ has one; this port names a language from the extension, the file name
+  or the content and offers no way to *override* it, so a scratch buffer and every file with an
+  unmapped extension (makefile, batch, INI, JSON5, GraphQL) stay "Normal text file". The registry
+  already exposes what a menu needs (`languagesByName()`, `Workspace.setLanguage(id)`, both
+  verified through `inspect()`), and `DEVIATIONS_FROM_NPP` says the menu is missing.
+- **Mobile/tablet is still unanswered** (open item 3 below) — settle it before Task 7, whose
+  OPFS/eviction work is what it changes.
 
 ### Scope settled at sign-off (2026-09-25)
 
@@ -94,6 +104,14 @@ C#-via-`clike` is unconfirmed.
 - One check needs more than Chrome: `scripts/verify-task4-pickers.py` drives a **real** OS file
   chooser, so it needs `Xvfb`, `xdotool`, `ffmpeg` (x11grab), `tesseract` and `dbus-run-session`.
   It starts its own Xvfb on `:99` and never touches the desktop; run it with `npm run dev` up.
+- **Two checks run in Node, with no browser at all** (they need
+  `node --experimental-strip-types`, because they import the `.ts` sources directly):
+  `scripts/test-languages.mjs` (all 140 language loaders + every detection rule) and
+  `scripts/gen-language-registry.mjs --check` (the generated mode table vs the installed
+  package). `scripts/test-file-io.mjs` is the third of this kind.
+- **Use `npm run typecheck`, or `./node_modules/.bin/tsc`, not `npx tsc`** — in this environment
+  `npx` stalls resolving the local binary (measured: a bare `npx tsc --noEmit` hung past a
+  7-minute timeout while the local binary finished in 0.2 s).
 
 ## Conventions
 
@@ -129,6 +147,8 @@ C#-via-`clike` is unconfirmed.
 | S5 | 2026-10-06 | Split view shows the **active document** in two panes — Notepad++'s *clone to other view*. Notepad++'s other flavour, each pane carrying its own independent tab set, stays Tier 2 / phase 2 | R2 proved the plan's wording wrong in a load-bearing way: two views on one `EditorState` do not diverge *loudly*, they diverge silently. Two states plus annotation forwarding gives one document, one undo history, per-view caret and scroll (`docs/r2-shared-state-spike.md`). Per-pane tab membership would add a second tab strip with no document behind it and change nothing Task 3 verifies | Accepted |
 | S6 | 2026-10-10 | **Find is `Alt+F`**; every other search key keeps N++'s binding (Ctrl+H, Ctrl+G, Ctrl+M, F3, Shift+F3, Ctrl+F2, F2, Shift+F2) | Measured, not assumed: `scripts/probe-reserved-keys.py` drives a headed Chrome under Xvfb with real X input and shows the page never receives Ctrl+F while Chrome's find bar opens anyway (`preventDefault` cannot suppress it), whereas the other seven do reach the page and *are* suppressible. Same instrument and same rule as the Ctrl+N/O/S/W substitutions of Task 4 | Accepted |
 | S7 | 2026-10-10 | Search marks and bookmarks live in **per-view state** (`StateField`), and `workspace.ts` reconciles the views of one document — a clone copies them at mount, and bookmark changes are mirrored to the peers | The split dispatcher forwards document *changes* only. Without the reconciliation a bookmark set in the clone's margin would be invisible in the primary pane and silently lost when the split closed, because a clone's state is rebuilt on every mount | Accepted |
+| S8 | 2026-10-11 | The **overview ruler** is a per-view 13 px strip on the pane's right edge: structure ticks from the language's own fold regions (`foldNodeProp`), search marks in N++'s Mark Style 1, bookmarks in N++'s bookmark colour, a viewport band, and click/drag to scroll — **never** moving the caret. **Not a Notepad++ element.** | The plan's Task 6 step 3 asks for "the overview ruler as the language-aware navigation aid" and names no shape; N++ has nothing like it (its Document Map is a minimap, Tier 2/3, unscheduled). Rejected alternatives: the minimap itself (out of scope, D10 phase 3), and per-line `foldable()` calls for the structure (a `foldNodeProp` tree walk is O(nodes), measured at **8.5 ms for a 10 000-line file**, and returns the same fold regions the gutter shows). The language-awareness is real and also shows D9's trade-off in public: a Lezer grammar has fold regions, a legacy `StreamLanguage` has none, so the skeleton appears only for the 27 first-class languages. Capped at 2000 ticks — beyond that the strip is a solid block | Accepted |
+| S9 | 2026-10-11 | A contested file extension is resolved by the **order of `LANGUAGES`** (first-class rows first, then the legacy table in N++-name order); the collisions are named and asserted in `scripts/test-languages.mjs` rather than left to chance | N++ resolves the same collisions by walking its own language table *backwards* (`Parameters.cpp:4464`), which is an accident of its enum order and not something a port can copy without copying the enum. The collisions are few and real (`.m` MATLAB vs Objective-C, `.s` R vs GNU assembly, `.pp` Pascal vs Puppet, `.mm` Objective-C, `.pyx` Python vs Cython), and each one's winner is now a test | Accepted |
 
 ## Session log
 
@@ -747,26 +767,134 @@ Each is now written so its assertion has exactly one possible answer.
 - `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
   from Session 1, still not this project's to commit or revert.
 
+#### Session 5 (2026-10-11) — Task 6: syntax highlighting, language modes and the overview ruler
+
+**User input received**
+- "task 6" — the Next action the ledger carried.
+
+**What was read first, before any code.** Task 6's spec is three sentences; what made it
+concrete was Notepad++'s own source again, and two of its tables decided the whole design:
+`ScintillaEditView.cpp:99`'s `_langNameInfoArray` (every language's short *and* long name, plus
+the column saying which lexer N++ renders it with) and `langs.model.xml` (every `ext=` list).
+Two more were found by looking rather than guessing:
+- `Notepad_plus::setLangStatus()` (`Notepad_plus.cpp:3174`) writes `getLangDesc(langType)` — the
+  **long** name — into `STATUSBAR_DOC_TYPE`, and `Notepad_plus_msgs.h:185` shows that field is
+  part **0**: the language is the *leftmost* thing in N++'s status bar, ahead of the size, the
+  caret, the EOL format and the encoding. The port now puts it there.
+- `FileManager::detectLanguageFromTextBeginning` (`Buffer.cpp:1805`) is N++'s whole
+  content-detection rule, gated by `DocumentFillPolicy::_detectLanguageFromContent = true`
+  (`Buffer.h:82`) and applied only when the extension decided nothing. It is ported line by line,
+  quirks included — the 40-character window ("shebangs can be large"), the first-line cut, the
+  shebang table searched as *substrings in N++'s order* (so `#!/usr/bin/fish` is "Shell"), and
+  `<?` deliberately last.
+
+**Built**
+- `src/languages/registry.ts` — **140 languages**. 27 first-class rows over the 22 packages
+  (`lang-javascript` covers JavaScript/JSX/TypeScript/TSX, `lang-cpp` covers N++'s separate C and
+  C++, `lang-sql` covers SQL and mssql, and `lang-angular` carries no extension because an
+  Angular template is an `.html` file) plus 113 legacy parsers, each named and grouped as N++
+  names it. Detection: extension, then exact file name (an addition — N++ uses extensions only),
+  then N++'s content rule. `SUPERSEDED_BY_FIRST_CLASS` and `NOT_A_LANGUAGE` record the other 39
+  parser exports with a reason each.
+- `scripts/gen-language-registry.mjs` → `src/languages/legacy-modes.generated.ts`: **145 lazy
+  loaders generated from the installed package**, because hand-typing 145 symbols is 145 chances
+  to break a language that only fails when a user opens that file. `--check` fails if any export
+  of the package is neither catalogued nor explained, and if the generated file is stale.
+- `src/languages/highlight.ts` — N++'s token palette as a `HighlightStyle`. The spine is the
+  **C lexer**, which `_langNameInfoArray`'s `_lexerID` column shows is what N++ uses for
+  C/C++/C#/Java/JavaScript/TypeScript/Go/Swift/ActionScript/RC; HTML/XML, JSON, CSS and the
+  preinstalled markdown UDL supply what C has no opinion about (tags, attributes, property names,
+  headings). Function names are deliberately left black: the C lexer has no style for them and
+  the lexers that do disagree with each other (Ruby `DEF NAME` 8080FF, Python FF00FF).
+- `src/editor/overview-ruler.ts` — the ruler (**S8**), with `codeFolding()` added to the core
+  extensions: `foldGutter()` only *draws* markers, and without the fold state nothing could be
+  folded even though the gutter had been there since Task 3.
+
+**The trap, and it was the build that caught it.** The first `npm run build` after wiring the
+languages produced a single `editor-core` chunk of **1 591.85 kB / 565.20 kB gzip** — all 140
+languages in the first load. `manualChunks` in `vite.config.ts` matched *every* `@codemirror/*`
+module, and `manualChunks` wins over code splitting. The function now exempts
+`@codemirror/lang-*` and `@codemirror/legacy-modes/*`: `editor-core` **335.24 kB / 109.13 kB gz**
+plus **129 lazy chunks**. The exemption is asserted by the numbers in the plan, because the
+failure mode is silence.
+
+**Verified at HEAD**
+- `python3 scripts/verify-task6.py` → **PASS (67/67)**. The four files the plan names are opened
+  through the real File ▸ Open path against OPFS handles; every token is read back as computed
+  colour **on rendered spans** (`def` `#0000ff` bold, comments `#008000`, strings `#808080`,
+  numbers `#ff8000`, operators `#000080` bold, tags `#0000ff`, attributes `#ff0000`, markdown
+  headings `#ff8000` bold) and every ruler tick as **canvas pixels** — the mark ticks in
+  `00ffff`, the bookmark tick in `5f7bd7`. Over a 10 000-line JavaScript file the structure walk
+  returns its 2000-tick cap in **8.5 ms**. No console errors, no page errors, no request off the
+  machine, and OCR of the rendered status bar still finds the caret field.
+- `node --experimental-strip-types scripts/test-languages.mjs` → **PASS (238/238)** — all 140
+  loaders resolve in Node, plus the detection table (extension, file name, the six shebang cases,
+  the first-line cases, the 40-character window), the named extension collisions, and D9's gaps
+  asserted rather than assumed.
+- `scripts/gen-language-registry.mjs --check` → **152 of 152** parsers accounted for.
+- Regressions: `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**;
+  `verify-task4-pickers.py` → **PASS (42/42)** with the real OS chooser; `verify-task3.py` →
+  **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE:
+  PASS**; `npm run typecheck` → exit 0.
+
+**Three of this session's own mistakes, recorded rather than tidied away**
+1. **`npx tsc` hung** for the full tool timeout while `./node_modules/.bin/tsc --noEmit` ran in
+   0.2 s. Use `npm run typecheck` or the local binary in this repo.
+2. **Fold mirroring did not happen at mount.** The first version reconciled folds only from
+   `#onUpdate` (a transaction), so a document folded *before* the split opened with `[1, 0]` —
+   the clone inherited nothing. It now hands the fold ranges over at mount, the way it already
+   did for marks and bookmarks; `[1, 1]` after the split, `[0, 0]` after unfolding in the clone.
+3. **Two of the acceptance check's own assertions were wrong**, not the app: it looked for the
+   first `span[title]` in the fold gutter and found CM's hidden `initialSpacer` (whose marker
+   carries the *other* title), and it clicked that marker by dispatching a synthetic event at
+   (0, 0) — which CM resolves to a *line* by its y coordinate, so it appeared to work for the
+   wrong reason. Both are now real mouse clicks at real coordinates on a visibly-laid-out marker.
+
+**Carried forward**
+- **No Language menu** (open item 1 below): detection names a language, nothing overrides it.
+- `makefile`, `batch`, `INI`, `JSON5`, `GraphQL` have no CM6 mode; they open as "Normal text
+  file". Hand-writing a `StreamLanguage` for the first three is still an option nobody has taken
+  — the plan left it open and D9 does not require it.
+- The ruler caps its structure ticks at 2000: on a very large file the strip saturates rather
+  than thinning out. Fine at 10 000 lines (measured); worth revisiting with D10's large-file work.
+
+**Repo state at session end**
+- `c4e3c9e` — `task-6: syntax highlighting, language modes and the overview ruler — 140 languages,
+  lazily loaded, in N++'s own colours` (src, scripts, the generator, `vite.config.ts` /
+  `tsconfig.json`, the plan's Task 6 section, the scope rows), then a docs commit recording that
+  SHA in the board.
+- `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
+  from Session 1, still not this project's to commit or revert.
+
 ## Blockers / open questions
 
 Nothing blocking. All four original scope questions are closed (see `docs/scope.md` §10).
 
 Open items, none of which blocks the next task:
 
-1. **Task 4's manual picker pass is now optional.** It used to be the gate; `scripts/verify-task4-pickers.py`
+1. **No Language menu — the one N++ feature Task 6 knowingly did not build.** Everything needed is
+   in place and verified (`languagesByName()` orders all 140 as N++ names them,
+   `Workspace.setLanguage(id | null)` swaps the grammar live, `inspect().language` reports it), so
+   this is a menu plus a picker, not a mechanism. Until it exists, a scratch buffer and every
+   unmapped extension (makefile, batch, INI, JSON5, GraphQL) are stuck as "Normal text file".
+   `DEVIATIONS_FROM_NPP` says so in the app's own source.
+2. **Task 4's manual picker pass is now optional.** It used to be the gate; `scripts/verify-task4-pickers.py`
    now drives the real dialog, the real files and Chrome's write prompt automatically (42/42, two
    consecutive runs), so the evidence rule is satisfied without it. Offered, not required: two
    minutes on your own desktop — `Alt+O` each `/tmp/t4-*.txt`, `Alt+S`, `md5sum` again, cancel one
    picker.
-2. **D1, D5, D8** — lower-stakes consolidations of choices already implied by the accepted
+3. **D1, D5, D8** — lower-stakes consolidations of choices already implied by the accepted
    decisions. D8 is *half in use* (Task 4's recent files exercise its IndexedDB half) but is still
-   `Proposed`; only the user moves it.
-3. One loose end, not a decision: **is mobile/tablet in scope at all?** D11 didn't address it.
+   `Proposed`; only the user moves it. Task 7 is written against both halves.
+4. One loose end, not a decision: **is mobile/tablet in scope at all?** D11 didn't address it.
    Settle it before Task 7, whose OPFS/eviction work is what it changes.
-4. Re-measuring Chrome's **per-origin** file-edit prompt needs a browser profile that has never
+5. Re-measuring Chrome's **per-origin** file-edit prompt needs a browser profile that has never
    granted it: `verify-task4-pickers.py` answers it with "Allow on every visit", which persists, so
    later runs legitimately see no prompt at all (the check accepts that and says which prompts it
    answered). Delete `.hermes/cache/scratch/task4-pickers/chrome-profile` to see the bubble again.
+6. The overview ruler's structure layer **saturates at 2000 ticks**. On a 10 000-line file that is
+   already three ticks per pixel, so the cap is right for legibility — but a large-file mode
+   (D10 phase 3) should thin the ticks out instead of truncating them.
 
 Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~~ · ~~D9~~ (2026-10-06).
 
