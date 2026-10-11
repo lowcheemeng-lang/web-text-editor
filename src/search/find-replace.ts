@@ -402,6 +402,19 @@ export function markCount(state: EditorState): number {
   return state.field(markField, false)?.size ?? 0;
 }
 
+/**
+ * Where the marks are, as document positions — what the overview ruler (Task 6) draws ticks
+ * from. A mark is a range, so its start is the tick: the ruler is a 1-pixel-per-thousand-lines
+ * affair and the end position adds nothing.
+ */
+export function markPositions(state: EditorState): number[] {
+  const positions: number[] = [];
+  state.field(markField, false)?.between(0, state.doc.length, (from) => {
+    positions.push(from);
+  });
+  return positions;
+}
+
 /** Bring a freshly mounted view of the same document in line with the marks already painted. */
 export function copyMarks(from: EditorState, to: EditorView): void {
   const ranges: SearchMatch[] = [];

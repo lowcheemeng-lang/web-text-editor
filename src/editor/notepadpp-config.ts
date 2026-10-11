@@ -36,14 +36,17 @@ import {
 } from "@codemirror/commands";
 import {
   bracketMatching,
+  codeFolding,
   foldGutter,
   foldKeymap,
   indentOnInput,
   indentUnit,
 } from "@codemirror/language";
 
+import { nppHighlighting } from "../languages/highlight";
 import { bookmarkField, bookmarkMarginCompartment, bookmarkMarginExtension } from "../search/bookmarks";
 import { markField } from "../search/find-replace";
+import { overviewRuler } from "./overview-ruler";
 
 /* ------------------------------------------------------------------ defaults */
 
@@ -299,6 +302,13 @@ export function cloneHistoryKeymap(owner: () => EditorView | undefined): KeyBind
 
 export const wordWrapCompartment = new Compartment();
 
+/**
+ * Task 6. The language's extension, swapped with `reconfigure` when a document's language is
+ * known — including *after* the document is mounted, because loading a language is async and
+ * a file must open immediately.
+ */
+export const languageCompartment = new Compartment();
+
 export function wordWrapExtension(on: boolean): Extension {
   return on ? EditorView.lineWrapping : [];
 }
@@ -307,6 +317,8 @@ export interface EditorCoreOptions {
   wordWrap?: boolean;
   /** N++ shows the bookmark margin by default (Parameters.h:902 `_bookMarkMarginShow = true`). */
   bookmarkMargin?: boolean;
+  /** The document's loaded language support, if it has one and it has arrived. */
+  language?: Extension;
 }
 
 /**
@@ -314,7 +326,6 @@ export interface EditorCoreOptions {
  * editor actually wants, each one corresponding to an N++ default.
  *
  * Deliberately absent, with the reason:
- *   - `syntaxHighlighting` — Task 6 owns highlighting and language modes;
  *   - `autocompletion` / `closeBrackets` — N++ opens word completion on demand
  *     (Ctrl+Space), it is not automatic; unassigned task, see docs/scope.md tiers;
  *   - `@codemirror/search`'s panel and keymap — Task 5 brings the N++-style dialog and its
@@ -331,8 +342,12 @@ export function editorCoreExtensions(options: EditorCoreOptions = {}): Extension
     highlightActiveLine(),
     // N++ renders non-printables; whitespace symbols stay off by default (_wrapSymbolShow = false).
     highlightSpecialChars(),
-    // N++ has a fold margin in the default style.
+    // N++ has a fold margin in the default style. `codeFolding()` supplies the fold *state*
+    // (foldGutter only draws markers): Task 3 wired the gutter, but nothing could be folded
+    // until there were languages to fold — which is now (fold state is a per-view StateField,
+    // so `workspace.ts` also mirrors it across the panes, the way it does bookmarks).
     foldGutter(),
+    codeFolding(),
     history(),
     drawSelection(),
     dropCursor(),
@@ -345,6 +360,11 @@ export function editorCoreExtensions(options: EditorCoreOptions = {}): Extension
     EditorState.tabSize.of(NPP_TAB_SIZE),
     indentUnit.of(NPP_INDENT_UNIT),
     nppTheme,
+    // Task 6: N++'s token colours, plus the document's own language (empty until it loads).
+    nppHighlighting,
+    languageCompartment.of(options.language ?? []),
+    // Task 6: the overview ruler, per view like the marks it draws from.
+    overviewRuler,
     wordWrapCompartment.of(wordWrapExtension(wordWrap)),
     // Task 5: search marks and the bookmark margin. Both are per-view state — the split
     // dispatcher forwards document changes only — so `workspace.ts` keeps the views of one
@@ -406,4 +426,11 @@ export const DEVIATIONS_FROM_NPP: readonly string[] = [
   "INS/OVR: N++ has an overwrite mode; CM6 has no overwrite state, so the status bar carries no INS/OVR field.",
   "Bracket matching: N++ colours a matched pair red+bold (`Brace highlight style`) and an unmatched one dark red (`Bad brace colour`); both are themed to those colours, but the rendering is not pixel-identical.",
   "Mixed per-line EOL: CM6 normalises to one line separator (risk R3 in docs/scope.md) — the status bar reports the document's single separator, as designed there.",
+  // ── Task 6 (languages) ────────────────────────────────────────────────────────────────
+  "The overview ruler is not a Notepad++ feature. N++'s equivalent is the Document Map (a minimap, Tier 2/3 and unscheduled — docs/editor-core-decision.md B1); this strip instead maps the whole document onto the pane height and marks the language's fold regions, the search marks and the bookmarks. Clicking it scrolls; it never moves the caret.",
+  "The language is chosen by extension, by a few well-known file names and, failing both, by N++'s own content rule (`FileManager::detectLanguageFromTextBeginning`). N++'s Language menu is not built yet, so there is no way to *override* the choice from the UI: an extensionless scratch buffer stays \"Normal text file\" until it is saved with a name.",
+  "makefile, batch/.bat, INI, JSON5, GraphQL, Kotlin-in-N++-terms and MATLAB-in-N++-terms have no CM6 mode anywhere. They open as \"Normal text file\" — highlighting them would mean writing a StreamLanguage by hand, which D9 did not require and the plan left as an open question. (C#, Kotlin, Scala and Objective-C *are* covered: `legacy-modes/mode/clike.js` exports parsers for them.)",
+  "The 113 legacy `StreamLanguage` ports highlight but do not fold: a stream parser produces tokens, not a syntax tree, so `foldable()` reports nothing and the overview ruler shows no structure ticks for them. That is the trade D9 accepted in exchange for the long tail.",
+  "N++ renders a `.vue` file with its JavaScript lexer (`langs.model.xml`: ext=\"js jsm jsx mjs vue\"); this port uses the Vue grammar, which is strictly better, and hands `.jsx`/`.tsx` to the JSX/TSX variants of the JavaScript grammar for the same reason.",
+  "Extension and file-name detection is a deliberate addition to N++'s rule — N++ decides by extension alone, so a `Makefile` or a `Dockerfile` is \"Normal text file\" there unless the user picks the language. The recognised names are in `src/languages/registry.ts` (FILENAMES).",
 ];

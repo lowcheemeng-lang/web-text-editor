@@ -20,9 +20,10 @@
  * authority and `state` trails it by one transaction; the workspace never reads
  * text from anywhere else.
  */
-import type { EditorState, Text } from "@codemirror/state";
+import type { EditorState, Extension, Text } from "@codemirror/state";
 
 import type { DocumentFormat } from "../file/types";
+import type { LanguageDefinition } from "../languages/registry";
 import type { DocumentRuntime } from "./split-view";
 
 export interface OpenDocument {
@@ -59,6 +60,16 @@ export interface OpenDocument {
    * showing it agree, and so Task 7 has an obvious place to persist it from.
    */
   wordWrap: boolean;
+  /**
+   * The language this document was opened as, from the name and (when that failed) the
+   * content — Task 6. `null` is N++'s "Normal text file", not an error.
+   */
+  language: LanguageDefinition | null;
+  /**
+   * Its loaded CodeMirror extension, once the lazy import has resolved. Absent while the
+   * load is in flight, and what `languageCompartment` is reconfigured with.
+   */
+  languageExtension?: Extension;
   /** Live views of this document (owner first) — see split-view.ts. */
   runtime: DocumentRuntime;
 }

@@ -27,9 +27,15 @@ export default defineConfig({
     // NOTE: Vite 8 bundles with Rolldown, where `manualChunks` accepts ONLY a
     // function — the Rollup object form (`{ "editor-core": [...] }`) fails to
     // type-check. Do not "simplify" this back to an object.
+    //
+    // Task 6 / decision D9: the language packages are **lazily** imported and must stay out
+    // of `editor-core`, because `manualChunks` wins over code splitting — assigning them to
+    // that bucket silently puts all 140 languages in the first load. Measured before and
+    // after this exemption; the numbers are in PROGRESS.md.
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (/node_modules\/@codemirror\/(?:lang-|legacy-modes\/)/.test(id)) return undefined;
           return /node_modules\/(?:@codemirror|codemirror)\//.test(id)
             ? "editor-core"
             : undefined;

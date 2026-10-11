@@ -6,9 +6,11 @@
 > spec (what to build, which files, how to verify). Start any new session by reading
 > `PROGRESS.md` → `docs/scope.md` → this plan, in that order.
 
-**Status:** Tasks 1–5 ✅ done · Task 6 ⬜ next · see `PROGRESS.md` for live state
-(`npm run status`). Task 5 was accepted 2026-10-10: `scripts/verify-task5.py` → **PASS
-(105/105)**, twice in a row, over a 10k-line file as the task asked.
+**Status:** Tasks 1–6 ✅ done · Task 7 ⬜ next · see `PROGRESS.md` for live state
+(`npm run status`). Task 6 was accepted 2026-10-11: `scripts/verify-task6.py` → **PASS (67/67)**,
+`scripts/test-languages.mjs` → **238/238**. Task 5 was accepted 2026-10-10:
+`scripts/verify-task5.py` → **PASS (105/105)**, twice in a row, over a 10k-line file as the task
+asked.
 
 **Scope settled 2026-09-25:** CodeMirror 6 (D2) · no Run/exec or native plugins (D7) ·
 phase-3 priority = encoding fidelity + large-file mode (D10) · **MVP is Chromium-only (D11)**.
@@ -252,28 +254,72 @@ so in the app's own source. The regex engine is JavaScript's, not Boost's — al
 
 ---
 
-### Task 6: Implement basic syntax highlighting and language modes
+### Task 6: Implement basic syntax highlighting and language modes — ✅ DONE (2026-10-11)
 
 **Objective:** Provide language-aware editing using the CM6 language packages (D9).
 
 **Files:**
-- Create: `src/languages/registry.ts`
-- Modify: `src/editor/notepadpp-config.ts`
+- Create: `src/languages/registry.ts` ✅ (the catalogue: 140 languages, detection, resolution)
+- Create: `src/languages/legacy-modes.generated.ts` ✅ *(added — the 145 lazy loaders, generated
+  from the installed package by `scripts/gen-language-registry.mjs`, which fails if any parser
+  the package exports is unaccounted for)*
+- Create: `src/languages/highlight.ts` ✅ *(added — N++'s token colours as a `HighlightStyle`,
+  each colour cited to the lexer in `stylers.model.xml` it comes from)*
+- Create: `src/editor/overview-ruler.ts` ✅ *(added — the ruler: fold regions, marks, bookmarks,
+  the viewport band, and click/drag scrolling)*
+- Modify: `src/editor/notepadpp-config.ts` ✅ (`syntaxHighlighting`, `languageCompartment`,
+  `codeFolding()`, the ruler, six more `DEVIATIONS_FROM_NPP` entries)
+- Modify: `src/editor/workspace.ts`, `src/editor/tabs.ts` ✅ (language per document, the async
+  load, the status-bar field, fold reconciliation across panes)
+- Modify: `vite.config.ts` ✅ *(the `manualChunks` trap below)*, `tsconfig.json` ✅
+- Create: `scripts/test-languages.mjs` ✅ (238 checks in Node: every loader, every detection rule)
+- Create: `scripts/verify-task6.py` ✅ (S2 acceptance check, 67 checks in real Chrome)
 
 **Steps:**
-1. Register supported languages per **D9 (accepted 2026-10-06)**: all 22 official CM6 packages
-   as first-class Lezer grammars, plus all 103 `@codemirror/legacy-modes` ports as the long
-   tail, each lazily imported (so an unopened language costs 0 bytes). Open sub-question for
-   this task: whether to *also* hand-write `makefile` / `batch` / `INI` modes — nothing exists
-   for those three anywhere, and C# coverage via `clike` is unverified.
-2. Implement language detection by content and extension.
-3. Add the overview ruler as the language-aware navigation aid.
+1. Register supported languages per **D9**. ✅ **140 languages**: 27 first-class rows over the 22
+   packages (`lang-javascript` alone covers JavaScript/JSX/TypeScript/TSX, `lang-cpp` covers N++'s
+   separate C and C++, `lang-sql` covers SQL and mssql) plus 113 legacy parsers. The package
+   exports 152 parsers; 32 are superseded by a first-class grammar and 7 are factories or a
+   keyword list — every one of the 152 is accounted for, and the generator fails if that stops
+   being true. **C# is confirmed**: `clike.js` exports `csharp` (a real StreamLanguage), which
+   closes the ledger's open question; Kotlin, Scala and Objective-C come from the same file.
+   makefile / batch / INI remain genuinely absent — **not hand-written**, as the plan allowed.
+2. Implement language detection by content and extension. ✅ Extension first, then the exact file
+   name (a deliberate addition — N++ decides by extension alone), then N++'s own
+   `FileManager::detectLanguageFromTextBeginning` ported line by line (BOM skip, whitespace skip,
+   the 40-character window, the first-line cut, the six-entry shebang table in N++'s order with
+   its substring semantics, and the ordered first-line patterns with `<?` last).
+3. Add the overview ruler as the language-aware navigation aid. ✅ Recorded as **S8**: N++ has no
+   such element (its Document Map is Tier 2/3 and unscheduled), so the shape is this port's
+   decision. Structure ticks come from the language's own fold regions, so a first-class grammar
+   shows a document's skeleton and a legacy stream mode shows none — the D9 trade-off, visible.
 
 **Note:** the **Document Map / minimap is not in this task.** It is Tier 2/3 with no MVP promise
 (`docs/editor-core-decision.md` B1); a canvas minimap is part of the D10 large-file/phase-3 work.
 
 **Verification:** Open `.js`, `.py`, `.html`, `.md` files; confirm highlighting and the overview
-ruler update correctly.
+ruler update correctly. ✅ `python3 scripts/verify-task6.py` → **PASS (67/67)**: the four files are
+opened through the real File ▸ Open path (only the OS dialog is stubbed, with OPFS handles), and
+each one's tokens are read back as **computed colour on rendered spans** — `def` `#0000ff` bold,
+comments `#008000`, strings `#808080`, numbers `#ff8000`, operators `#000080` bold, tags
+`#0000ff`, attributes `#ff0000`, markdown headings `#ff8000` bold — and the ruler's ticks are read
+back from its **canvas pixels**. Over a 10 000-line JavaScript file the structure walk produces
+its 2000-tick cap in **8.5 ms**.
+
+**Outcome:** Complete. `python3 scripts/test-languages.mjs` (via
+`node --experimental-strip-types`) → **238/238**; `scripts/gen-language-registry.mjs --check` →
+all 152 parsers accounted for. Bundle: `editor-core` **335.24 kB / 109.13 kB gzip** plus **129
+lazy chunks**, down from a **naive 1 591.85 kB / 565.20 kB gzip** — see the trap below. Fold state
+now crosses the panes (Task 3's carried-forward item), the language sits in the status bar where
+N++ puts it (part 0, leftmost), and six new `DEVIATIONS_FROM_NPP` entries record what is not
+Notepad++'s: the ruler, the missing Language menu, the absent modes, the no-fold contract for
+legacy modes, `.vue`/`.jsx`, and file-name detection.
+
+**The trap worth keeping (`S3`'s cousin):** `vite.config.ts`'s `manualChunks` put **every**
+`@codemirror/*` module into `editor-core`, and `manualChunks` wins over code splitting — so 140
+lazily-imported languages all landed in the first load and the build output was the only place it
+showed. The function now exempts `@codemirror/lang-*` and `@codemirror/legacy-modes/*`, and both
+numbers are recorded here because the failure is silent.
 
 ---
 
@@ -323,7 +369,10 @@ ruler update correctly.
 - `src/platform/capabilities.ts`
 - `src/file/fallbacks.ts` — phase 2 (deferred by D11)
 - `src/search/find-replace.ts`
-- `src/languages/registry.ts`
+- `src/languages/registry.ts` *(Task 6)*
+- `src/languages/legacy-modes.generated.ts` *(Task 6 — generated)*
+- `src/languages/highlight.ts` *(Task 6)*
+- `src/editor/overview-ruler.ts` *(Task 6)*
 - `src/storage/session-store.ts`
 - `src/storage/preferences.ts`
 - `docs/scope.md`
@@ -369,5 +418,10 @@ All of the original three are closed; kept for the audit trail.
 
 ---
 
-Plan complete and saved. Tasks 1–5 are done; Task 6 is the next unit of work and is ungated —
-see `PROGRESS.md` for the live next action.
+Plan complete and saved. Tasks 1–6 are done; Task 7 (session persistence and preferences) is the
+next unit of work and is ungated — see `PROGRESS.md` for the live next action.
+
+**One item from Task 6 is deliberately open**, for Task 7 to pick up or leave: `src/languages/`
+names a language for every file it can, but there is still **no Language menu**, so a scratch
+buffer or an extension nothing claims (makefile, batch, INI) cannot be told what it is. N++ has
+that menu; this port does not yet.

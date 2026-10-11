@@ -31,7 +31,13 @@
  * and no page can intercept them (recorded in `DEVIATIONS_FROM_NPP`).
  */
 import { EditorView } from "@codemirror/view";
-import { indentUnit } from "@codemirror/language";
+import type { EditorState } from "@codemirror/state";
+import {
+  foldEffect,
+  foldedRanges,
+  indentUnit,
+  unfoldEffect,
+} from "@codemirror/language";
 
 import {
   canEncode,
@@ -46,6 +52,8 @@ import {
 import { ensureAccess, forgetRecent, listRecent, rememberRecent } from "../file/recent-files";
 import type { RecentFile } from "../file/recent-files";
 import type { DocumentFormat } from "../file/types";
+import { detectLanguage, languageStats, PLAIN_TEXT, byId } from "../languages/registry";
+import type { LanguageDefinition } from "../languages/registry";
 import { detectCapabilities, unsupportedNotice } from "../platform/capabilities";
 
 import { Chrome, type MenuEntry, type PaneElements, type TabDescriptor } from "./chrome";
@@ -76,10 +84,12 @@ import {
   WEB_PORT_KEYS,
   createCloneState,
   createDocumentState,
+  languageCompartment,
   wordWrapCompartment,
   wordWrapExtension,
   type NppCommandHandlers,
 } from "./notepadpp-config";
+import { refreshStructure, rulerCounts, type RulerCounts } from "./overview-ruler";
 import {
   createDocumentRuntime,
   makeSyncDispatcher,
@@ -93,10 +103,11 @@ import { backAtSavePoint, newDocumentName, tabLabel, type OpenDocument } from ".
 const DEFAULT_FORMAT: DocumentFormat = { encoding: "utf-8", bom: "none", eol: "LF" };
 
 /** Shown in the first document so a fresh clone explains what it can do. */
-const WELCOME = `Notepad++ Web — Task 5
+const WELCOME = `Notepad++ Web — Task 6
 
-Multi-document tabs, Notepad++'s editor defaults, split view, real files, and
-search: find / replace / mark, Go to line, bookmarks.
+Multi-document tabs, Notepad++'s editor defaults, split view, real files,
+search, and languages: 140 of them, highlighted as Notepad++ highlights them,
+with an overview ruler down the right-hand edge.
 
 Keys (the N++ ones are deliberately different — see below):
   Alt+N          new document          Alt+O   open a file
@@ -481,6 +492,22 @@ export class Workspace {
     /** Bookmarked line numbers, 1-based (N++'s margin marks lines, not positions). */
     bookmarks: number[];
     bookmarkMargin: boolean;
+    /** Task 6 — what `scripts/verify-task6.py` asserts on. */
+    language: {
+      id: string;
+      name: string;
+      label: string;
+      firstClass: boolean;
+      origin: string;
+      /** true once the lazy import has resolved and the grammar is in the state. */
+      loaded: boolean;
+    } | null;
+    /** The registry's own counts, measured from it rather than asserted. */
+    languages: ReturnType<typeof languageStats>;
+    /** The overview ruler's tick counts for the active view. */
+    ruler: RulerCounts | null;
+    /** Folded ranges per live view, in creation order — the panes must agree (Task 6). */
+    viewFolds: number[];
   } {
     const document = this.#active();
     const owner = document ? ownerView(document.runtime) : undefined;
@@ -522,7 +549,33 @@ export class Workspace {
       },
       bookmarks: state ? bookmarkedLines(state) : [],
       bookmarkMargin: this.#bookmarkMargin,
+      language: document?.language
+        ? {
+            id: document.language.id,
+            name: document.language.name,
+            label: document.language.label,
+            firstClass: document.language.firstClass,
+            origin: document.language.origin,
+            loaded: document.languageExtension !== undefined,
+          }
+        : null,
+      languages: languageStats(),
+      ruler: owner ? rulerCounts(owner) : null,
+      viewFolds: (document?.runtime.views ?? []).map((view) => foldRanges(view.state).length),
     };
+  }
+
+  /**
+   * Recompute the active view's ruler structure now, bypassing its typing debounce, and
+   * report how long the tree walk took. Dev/verification only — `scripts/verify-task6.py`
+   * needs the ruler's cost over a large document to be a measured number, not a hope.
+   */
+  refreshRuler(): { structure: number; ms: number } {
+    const owner = this.activeView;
+    if (!owner) return { structure: 0, ms: 0 };
+    const started = performance.now();
+    const structure = refreshStructure(owner);
+    return { structure, ms: performance.now() - started };
   }
 
   #createDocument(
@@ -531,6 +584,11 @@ export class Workspace {
     file?: { handle: FileSystemFileHandle; format: DocumentFormat; assumedEncoding: boolean },
   ): OpenDocument {
     const runtime = createDocumentRuntime();
+    // Task 6: the language comes from the file name, and — only when that says nothing —
+    // from the content, exactly the order N++ uses (extension, then
+    // `FileManager::detectLanguageFromTextBeginning`). A scratch buffer has neither, which
+    // is N++'s "Normal text file" rather than a failure.
+    const language = detectLanguage(name, content);
     const state = createDocumentState(content, {
       handlers: this.#handlers,
       wordWrap: NPP_WORD_WRAP,
@@ -545,6 +603,7 @@ export class Workspace {
       runtime,
       state,
       format: file?.format ?? { ...DEFAULT_FORMAT },
+      language,
     };
     if (file) {
       document.handle = file.handle;
@@ -552,7 +611,59 @@ export class Workspace {
     }
     // Fired by split-view's dispatcher, once per transaction, for every view.
     runtime.onUpdate = (view) => this.#onUpdate(document, view);
+    // The import is lazy and the document must appear now, so the language arrives after
+    // the fact and is swapped in through `languageCompartment`.
+    if (language) void this.#loadLanguage(document);
     return document;
+  }
+
+  /**
+   * Load a document's language and reconfigure every view that shows it.
+   *
+   * Two guards matter: the document may have been closed while the import was in flight
+   * (so the result is dropped, not dispatched into a destroyed view), and a language whose
+   * chunk fails to load must say so loudly — a silent failure would leave the status bar
+   * naming a language that is not actually applied.
+   */
+  async #loadLanguage(document: OpenDocument): Promise<void> {
+    const language = document.language;
+    if (!language || document.languageExtension) return;
+    let extension;
+    try {
+      extension = await language.load();
+    } catch (error) {
+      console.error(`[task 6] ${language.id} (${language.origin}) failed to load`, error);
+      return;
+    }
+    if (!this.#documents.includes(document)) return; // closed while loading
+    document.languageExtension = extension;
+    const effect = languageCompartment.reconfigure(extension);
+    for (const view of [...document.runtime.views]) view.dispatch({ effects: effect });
+    this.#render();
+  }
+
+  /**
+   * Set a document's language by id — N++'s Language menu, minus the menu for now (the
+   * `DEVIATIONS_FROM_NPP` entry says so). `null` is "Normal text file".
+   *
+   * Everything already on screen is replaced in the same order a fresh open would use:
+   * drop the old extension first so a failed load cannot leave the previous grammar in
+   * place under the new name.
+   */
+  async setLanguage(id: string | null): Promise<boolean> {
+    const document = this.#active();
+    if (!document) return false;
+    const wanted: LanguageDefinition | null = id === null ? null : (byId(id) ?? null);
+    if (id !== null && !wanted) return false;
+    if (document.language?.id === wanted?.id && document.languageExtension) return true;
+
+    document.language = wanted;
+    document.languageExtension = undefined;
+    const empty = languageCompartment.reconfigure([]);
+    for (const view of [...document.runtime.views]) view.dispatch({ effects: empty });
+    this.#render();
+    if (wanted) await this.#loadLanguage(document);
+    return true;
   }
 
   #onUpdate(document: OpenDocument, view: EditorView): void {
@@ -568,6 +679,7 @@ export class Workspace {
     if (dirty !== document.dirty) document.dirty = dirty;
 
     this.#mirrorBookmarks(document, view);
+    this.#mirrorFolds(document, view);
     this.#render();
   }
 
@@ -791,15 +903,22 @@ export class Workspace {
         handlers: this.#handlers,
         wordWrap: document.wordWrap,
         bookmarkMargin: this.#bookmarkMargin,
+        // Task 6: the clone highlights with the same language, and — because the language
+        // is loaded per view — needs the extension at construction time.
+        language: document.languageExtension,
       }),
       parent: this.#secondary.editorHost,
       dispatch: makeSyncDispatcher(document.runtime),
     });
     registerView(document.runtime, view);
     // A clone's state is built from the owner's *text*, so state-held annotations — search
-    // marks and bookmarks — have to be handed over explicitly.
+    // marks, bookmarks and (Task 6) folds — have to be handed over explicitly.
     copyBookmarks(document.state, view);
     copyMarks(document.state, view);
+    applyFolds(view, foldRanges(document.state));
+    // Mounted before its extension could be applied (the clone of a document whose language
+    // was still loading): the compartment catches up through the same path a load uses.
+    if (document.language && !document.languageExtension) void this.#loadLanguage(document);
   }
 
   #activateRelative(delta: number): void {
@@ -980,6 +1099,37 @@ export class Workspace {
     }
   }
 
+  /* ---------------------------------------------------------------- folding */
+
+  /**
+   * Keep every pane's folds in step — the same problem as bookmarks, and the same shape of
+   * answer (S7).
+   *
+   * Fold state is a per-view `StateField` (`@codemirror/language`'s `foldState`), and the
+   * split dispatcher forwards *document changes* only, so a function folded in the clone
+   * would silently reappear in the primary pane, and would be lost when the split closed
+   * (the clone's state is rebuilt from the text on every mount). Task 3 deferred this to
+   * Task 6 with the note "which is when there will be languages to fold" — this is that.
+   *
+   * The two sets are compared as a whole and, when they differ, the peer is reset to the
+   * source view's folds. Folding is a user action, not a hot path, and a wholesale reset
+   * cannot drift the way an incremental diff could.
+   */
+  #mirrorFolds(document: OpenDocument, view: EditorView): void {
+    const mine = foldRanges(view.state);
+    for (const peer of [...document.runtime.views]) {
+      if (peer === view) continue;
+      const theirs = foldRanges(peer.state);
+      if (sameRanges(mine, theirs)) continue;
+      peer.dispatch({
+        effects: [
+          ...theirs.map((range) => unfoldEffect.of(range)),
+          ...mine.map((range) => foldEffect.of(range)),
+        ],
+      });
+    }
+  }
+
   /* ---------------------------------------------------------------- closing */
 
   #closeActive(): void {
@@ -1063,6 +1213,13 @@ export class Workspace {
    * N++'s status bar fields. The encoding and line-ending columns only appear for
    * a document that has a file: a scratch buffer has no encoding on disk, and
    * stating one would be a guess (which is exactly what D4 forbids).
+   *
+   * Task 6 puts the **language first**, because that is where N++ puts it:
+   * `NPPM_SETSTATUSBAR`'s part list (`Notepad_plus_msgs.h:185`) numbers the language
+   * `STATUSBAR_DOC_TYPE = 0`, ahead of the document size, the caret position, the EOL format
+   * and the encoding — and `setLangStatus()` (`Notepad_plus.cpp:3174`) is what writes it.
+   * The wording is N++'s long name ("C++ source file"), which is what `getLangDesc()` hands
+   * the status bar (`getName = false`); "Normal text file" is its `L_TEXT` row.
    */
   #status(document: OpenDocument | null): string[] {
     if (!document) return ["No document"];
@@ -1071,6 +1228,7 @@ export class Workspace {
     const range = selection.main;
     const line = document.state.doc.lineAt(range.head);
     const parts = [
+      document.language?.label ?? PLAIN_TEXT.label,
       `Ln ${line.number}, Col ${range.head - line.from + 1}`,
       `Sel: ${range.empty ? 0 : range.to - range.from}`,
       "Text",
@@ -1095,4 +1253,32 @@ export class Workspace {
 /** Error text for a dialog — never a raw object dump. */
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** A folded range, as `foldEffect`/`unfoldEffect` want it. */
+interface FoldRange {
+  from: number;
+  to: number;
+}
+
+/** The ranges a view currently has folded. */
+function foldRanges(state: EditorState): FoldRange[] {
+  const ranges: FoldRange[] = [];
+  foldedRanges(state).between(0, state.doc.length, (from, to) => {
+    ranges.push({ from, to });
+  });
+  return ranges;
+}
+
+/** Fold these ranges in a view — used to hand a document's folds to a freshly mounted clone. */
+function applyFolds(target: EditorView, ranges: readonly FoldRange[]): void {
+  if (ranges.length === 0) return;
+  target.dispatch({ effects: ranges.map((range) => foldEffect.of(range)) });
+}
+
+function sameRanges(left: readonly FoldRange[], right: readonly FoldRange[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((range, index) => range.from === right[index]?.from && range.to === right[index]?.to)
+  );
 }
