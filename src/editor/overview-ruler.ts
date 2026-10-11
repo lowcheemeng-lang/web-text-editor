@@ -105,6 +105,14 @@ class RulerPlugin {
     view.dom.appendChild(this.dom);
 
     this.#disposeDrag = installDrag(this);
+    // The tree may already be parsed before this view exists — a document whose grammar was
+    // applied at creation (Task 7's restored documents) or one that is re-activated rather than
+    // re-opened (N++'s "we don't open the existing doc", NppIO.cpp:316). In that case no later
+    // transaction moves the tree either, so a structure computed only from `update` would stay
+    // empty for the whole life of the view and the strip would show no skeleton at all. The walk
+    // is capped (`STRUCTURE_LIMIT`) and measured at 8.5 ms for a 10 000-line file.
+    this.#structure = structurePositions(view.state);
+    this.#structureAt = performance.now();
     this.#recount();
     this.#paint();
   }

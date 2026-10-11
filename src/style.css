@@ -109,6 +109,21 @@ body {
   border-bottom: 1px solid var(--chrome-border);
 }
 
+/* `display: flex` above beats the user-agent's `[hidden]` rule, so hide it explicitly
+   (Task 7's Toolbar preference). */
+.npp-toolbar[hidden] {
+  display: none;
+}
+
+/*
+ * Task 7 — the Toolbar preference's layout value. N++ spends this on icon sizes; a text toolbar
+ * spends it on the button box, which is the same intent (a denser strip) for the material here.
+ */
+.npp-toolbar[data-layout="small"] .npp-tool {
+  font-size: 11px;
+  padding: 3px 7px;
+}
+
 .npp-tool {
   font: 12px/1 var(--shell-font);
   padding: 6px 10px;
@@ -598,4 +613,67 @@ body {
 
 .npp-goto-limit {
   color: #555;
+}
+
+/* ------------------------------------------------------- preferences (Task 7) */
+
+.npp-pref-dialog {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+}
+
+.npp-pref-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--chrome-text);
+}
+
+.npp-pref-group {
+  margin: 10px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #666;
+}
+
+.npp-pref-group:first-child {
+  margin-top: 0;
+}
+
+.npp-pref-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.npp-pref-row input[type="number"] {
+  width: 90px;
+  padding: 3px 6px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  font: 13px/1 var(--shell-font);
+}
+
+.npp-pref-row select {
+  padding: 3px 6px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  font: 13px/1 var(--shell-font);
+}
+
+.npp-pref-label {
+  font-size: 13px;
+}
+
+/* Notes carry the "why" a preference cannot: what N++ does differently, or what is missing. */
+.npp-pref-note {
+  flex-basis: 100%;
+  margin: 0 0 2px 24px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #6a6a6a;
 }

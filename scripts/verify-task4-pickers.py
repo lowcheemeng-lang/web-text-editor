@@ -370,22 +370,78 @@ def click_or_alert(page, selector: str, timeout: int = 8000) -> bool:
         return True
 
 
-def type_path(wid: str, path: Path) -> None:
-    """Drive the GTK chooser: location bar, the path, Return."""
-    geometry = x(["getwindowgeometry", "--shell", wid])
-    geom = dict(line.split("=", 1) for line in geometry.splitlines() if "=" in line)
-    # PointerRoot focus: the pointer has to be inside the dialog for keys to land.
-    x(["mousemove", "--sync", str(int(geom["X"]) + 40), str(int(geom["Y"]) + 10)])
-    time.sleep(0.3)
-    x(["key", "--clearmodifiers", "ctrl+l"])
-    time.sleep(0.5)
-    x(["type", "--clearmodifiers", "--delay", "25", str(path)])
-    time.sleep(0.5)
+def geometry(wid: str, attempts: int = 6) -> dict[str, str]:
+    """`xdotool getwindowgeometry --shell` as a dict, retried.
+
+    The chooser is a separate X window driven from outside the page, and a transient round trip
+    that returns nothing usable used to take the whole run down with a `KeyError: 'X'` — a crash
+    hides every check behind it, which is the one failure mode this script must not have.
+    """
+    last = ""
+    for attempt in range(attempts):
+        last = x(["getwindowgeometry", "--shell", wid])
+        parsed = dict(line.split("=", 1) for line in last.splitlines() if "=" in line)
+        if "X" in parsed and "Y" in parsed:
+            return parsed
+        time.sleep(0.3 * (attempt + 1))
+    raise RuntimeError(f"xdotool reported no geometry for window {wid}: {last!r}")
+
+
+def type_path(wid: str, path: Path, attempts: int = 3) -> bool:
+    """Drive the GTK chooser: focus it, location bar, the path, Return.
+
+    Two of the environment traps this script documents, both handled here: with no window manager
+    X focus is `PointerRoot` (keys follow the pointer, so the pointer is moved inside the dialog
+    first) and Chromium never considers itself focused without a WM (hence the explicit
+    `windowfocus`, the same fix trap 3 needed for the Chrome window). The `windowfocus` on the
+    *dialog* is what keeps a stray `ctrl+l` from reaching the browser's own location bar — which
+    navigates the page away from the app and takes every later check down with it.
+
+    The path is read back from the screen (OCR) after each attempt and retyped if it is not there,
+    because a lost keystroke leaves the dialog on whatever was selected and Return then opens the
+    *previous* file — which reads as "the app opened the wrong file". Measured the hard way: two
+    copies of one file are correctly *not* the same entry, so a wrong-file result is the harness,
+    not the app. Return is pressed **regardless** after the last attempt: the OCR can fail to read a
+    screen it should, and blocking the open on that would fail the run for a reason the app had no
+    part in. Returns whether the path could be read back.
+    """
+    verified = False
+    for attempt in range(attempts):
+        geom = geometry(wid)
+        # PointerRoot focus: the pointer has to be inside the dialog for keys to land.
+        x(["mousemove", "--sync", str(int(geom["X"]) + 40), str(int(geom["Y"]) + 10)])
+        time.sleep(0.2)
+        # ...and an explicit focus, so the dialog keeps them even if the pointer drifts.
+        x(["windowfocus", "--sync", wid])
+        time.sleep(0.3)
+        x(["key", "--clearmodifiers", "ctrl+l"])
+        time.sleep(0.5)
+        x(["type", "--clearmodifiers", "--delay", "25", str(path)])
+        time.sleep(0.6)
+        if alnum(path.name) in alnum(ocr(screenshot(f"task4-pickers-typed-path-{attempt}.png"))):
+            verified = True
+            break
+        # The bar did not show the path: clear it and type again rather than pressing Return on
+        # whatever is in it.
+        x(["key", "--clearmodifiers", "ctrl+a"])
+        x(["key", "--clearmodifiers", "BackSpace"])
+        time.sleep(0.4)
     x(["key", "--clearmodifiers", "Return"])
+    return verified
 
 
 def info(page) -> dict:
     return page.evaluate("() => window.__workspace.inspect()")
+
+
+def app_mounted(page) -> bool:
+    """Is this page still hosting the app? A keystroke that reaches Chrome's location bar navigates
+    the page away, and then every `inspect()` throws `Cannot read properties of undefined` — a
+    traceback that hides every check behind it and says nothing about the cause."""
+    try:
+        return bool(page.evaluate("() => typeof window.__workspace !== 'undefined'"))
+    except Exception:
+        return False
 
 
 # Wraps the real picker so every Open can be traced: was the picker called, and how
@@ -425,12 +481,29 @@ def picker_log(page) -> str:
 
 
 # ── the one route every open takes: the real dialog, or a loud failure ───────
-def open_via_dialog(page, path: Path, expect: str, warn: bool = False) -> bool:
+def open_via_dialog(page, path: Path, expect: str, warn: bool = False, attempts: int = 2) -> bool:
     """Click Open, drive the real chooser, wait for the file to arrive.
 
     Returns False (and records a FAIL) if the dialog never appears, so no later
     assertion can pass vacuously against whatever document happened to be open.
+
+    Retried once when the wrong file comes back. Measured reason: the path is typed into the
+    chooser with synthetic X keystrokes, and a keystroke that goes missing leaves the dialog on
+    whatever was selected — so Return opens the *previous* file. Left alone, that reads as "the app
+    opened the wrong file", which is exactly the sort of app-side suspicion this script's own
+    `isSameEntry` probe had to clear (two copies of one file are correctly *not* the same entry).
+    The checks below still assert the right file was opened; this only gives the typing a second go.
     """
+    for attempt in range(attempts):
+        if _open_via_dialog_once(page, path, expect, warn):
+            return True
+        if attempt + 1 < attempts:
+            check(f"the dialog for {expect} needed a second attempt", True,
+                  "the first attempt's keystrokes did not select it — retrying")
+    return False
+
+
+def _open_via_dialog_once(page, path: Path, expect: str, warn: bool = False) -> bool:
     focus_main()
     click_or_alert(page, "button[data-tool='open']")
     found = wait_for_window("select a file", timeout=20)
@@ -447,6 +520,11 @@ def open_via_dialog(page, path: Path, expect: str, warn: bool = False) -> bool:
         # warning is raised *after* the document is adopted, so it can still be
         # arriving when the filename is already there. Wait for it rather than
         # racing it: a warning left open blocks every later click in the page.
+        if not app_mounted(page):
+            check(f"the page still hosts the app after driving the dialog for {expect}", False,
+                  "the page navigated away — a keystroke reached the browser's location bar "
+                  "instead of the dialog")
+            return False
         if alert_open(page):
             dismiss_alert(page)
             warned = True
@@ -507,6 +585,11 @@ def main() -> int:
                 "--window-position=0,0",
                 "--no-first-run", "--no-default-browser-check",
                 "--disable-gpu", "--disable-dev-shm-usage",
+                # No background networking: a Chrome "Relaunch to update" bubble appeared over a
+                # run (visible in the dialog OCR) and a bubble that takes focus is a lost keystroke
+                # from the dialog — the one thing that makes this script's synthetic typing fail.
+                "--disable-background-networking", "--disable-component-update",
+                "--disable-features=Translate,OptimizationHints,MediaRouter",
                 URL,
             ],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
@@ -552,13 +635,15 @@ def main() -> int:
                   "cancel" in text.lower() and "open" in text.lower(),
                   " ".join(text.split())[:70])
 
-            type_path(wid, CRLF_BOM)
-            shot = screenshot("task4-pickers-typed-path.png")
-            typed = alnum(ocr(shot))
-            check("the path typed into the real dialog renders in its location bar",
-                  "t4" in typed and "bom" in typed and "txt" in typed, str(shot.name))
-            page.wait_for_function("() => window.__workspace.inspect().documents > 1",
-                                   timeout=20000)
+            typed_ok = type_path(wid, CRLF_BOM)
+            check("the path typed into the real dialog renders in its location bar", typed_ok,
+                  "the location bar could not be read back after typing (the fixture is also in the"
+                  " dialog's own /tmp listing, so a pass here is weak evidence — the checks after"
+                  " Return are the ones that matter)")
+            page.wait_for_function(
+                "() => window.__workspace.inspect().activeFileName === 't4-crlf-bom.txt'",
+                timeout=20000,
+            )
             check("the dialog closes once a file is chosen",
                   wait_for_window("select a file", timeout=2) is None)
 

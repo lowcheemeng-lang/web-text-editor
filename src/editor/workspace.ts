@@ -31,9 +31,10 @@
  * and no page can intercept them (recorded in `DEVIATIONS_FROM_NPP`).
  */
 import { EditorView } from "@codemirror/view";
-import type { EditorState } from "@codemirror/state";
+import { Text, type EditorState, type Extension } from "@codemirror/state";
 import {
   foldEffect,
+  foldable,
   foldedRanges,
   indentUnit,
   unfoldEffect,
@@ -49,12 +50,42 @@ import {
   toFileLineEndings,
   writeHandle,
 } from "../file/file-io";
-import { ensureAccess, forgetRecent, listRecent, rememberRecent } from "../file/recent-files";
+import { ensureAccess, forgetRecent, hasAccessWithoutAsking, listRecent, rememberRecent } from "../file/recent-files";
 import type { RecentFile } from "../file/recent-files";
 import type { DocumentFormat } from "../file/types";
 import { detectLanguage, languageStats, PLAIN_TEXT, byId } from "../languages/registry";
 import type { LanguageDefinition } from "../languages/registry";
 import { detectCapabilities, unsupportedNotice } from "../platform/capabilities";
+import {
+  deleteBackup,
+  listBackups,
+  pruneBackups,
+  readBackup,
+  writeBackup,
+} from "../storage/backup-store";
+import { requestPersistentStorage, type PersistenceStatus } from "../storage/persistent-storage";
+import {
+  NPP_PREFERENCES,
+  clampZoom,
+  loadPreferences,
+  savePreferences,
+  type Preferences,
+} from "../storage/preferences";
+import {
+  emptySession,
+  lineNumbersToOffsets,
+  lineStartOffset,
+  loadSessionRecord,
+  nextUntitledNumber,
+  offsetToLine,
+  offsetsToLineNumbers,
+  restoreOutcome,
+  saveSessionRecord,
+  type SessionFile,
+  type SessionPosition,
+  type SessionRecord,
+  type SessionSelection,
+} from "../storage/session-store";
 
 import { Chrome, type MenuEntry, type PaneElements, type TabDescriptor } from "./chrome";
 import {
@@ -84,12 +115,15 @@ import {
   WEB_PORT_KEYS,
   createCloneState,
   createDocumentState,
+  editorLookCompartment,
   languageCompartment,
+  nppEditorLook,
   wordWrapCompartment,
   wordWrapExtension,
   type NppCommandHandlers,
 } from "./notepadpp-config";
 import { refreshStructure, rulerCounts, type RulerCounts } from "./overview-ruler";
+import { openPreferencesDialog } from "./preferences-dialog";
 import {
   createDocumentRuntime,
   makeSyncDispatcher,
@@ -103,11 +137,11 @@ import { backAtSavePoint, newDocumentName, tabLabel, type OpenDocument } from ".
 const DEFAULT_FORMAT: DocumentFormat = { encoding: "utf-8", bom: "none", eol: "LF" };
 
 /** Shown in the first document so a fresh clone explains what it can do. */
-const WELCOME = `Notepad++ Web — Task 6
+const WELCOME = `Notepad++ Web — Task 7
 
 Multi-document tabs, Notepad++'s editor defaults, split view, real files,
-search, and languages: 140 of them, highlighted as Notepad++ highlights them,
-with an overview ruler down the right-hand edge.
+search, 140 languages, and now a session: tabs, carets, bookmarks and folds come
+back the way you left them, unsaved work included.
 
 Keys (the N++ ones are deliberately different — see below):
   Alt+N          new document          Alt+O   open a file
@@ -130,6 +164,11 @@ Files are read and written with the File System Access API, which is what makes
 a byte-identical round-trip possible: the encoding, byte-order mark and line
 endings a file arrives with are the ones it is saved with, unless you change
 them. Nothing here talks to a server — there is no backend at all (decision D1).
+
+Settings ▸ Preferences holds what N++ keeps in config.xml: the session and
+snapshot behaviour, the toolbar, the theme and the zoom. Reload this page and the
+session comes back — including documents you never saved, which are snapshotted
+into backup/ while they are dirty, exactly as Notepad++ does.
 `;
 
 export class Workspace {
@@ -207,6 +246,15 @@ export class Workspace {
   readonly #documents: OpenDocument[] = [];
   #activeId: string | null = null;
   #nextDocumentNumber = 0;
+  /**
+   * Document ids come from one monotonic counter, and nothing else. They used to be built from the
+   * document count and the `new N` number, which is not unique: a document that is *removed* — the
+   * welcome buffer a restore discards, or any closed tab — puts the count back where it was, and the
+   * `new N` counter does not move when a file is opened. Task 7's restore made that reachable, and
+   * the collision showed up exactly as it would in use: `#show()` saw an id it was already showing,
+   * returned early, and the file that had just been opened never came to the front.
+   */
+  #nextDocumentId = 0;
   #split = false;
   #lastStatusSignature = "";
   /**
@@ -216,6 +264,55 @@ export class Workspace {
    * instantly — an acceptable lag for a convenience list.
    */
   #recent: RecentFile[] = [];
+
+  /* ─────────────────────────────── Task 7: what the app remembers between reloads ── */
+
+  /** N++'s `config.xml` GUIConfigs, as this port's preferences (`src/storage/preferences.ts`). */
+  #preferences: Preferences = { ...NPP_PREFERENCES };
+  /**
+   * Whether the origin's storage is exempt from eviction — risk R6's recorded mitigation. Read
+   * by the acceptance check through `inspect()`, never assumed.
+   */
+  #persistence: PersistenceStatus = { supported: false, persisted: false, usage: null, quota: null };
+  /**
+   * One session write per burst of change, like N++ writing session.xml once rather than on every
+   * keystroke. Flushed immediately on a tab switch, a close and `pagehide`.
+   */
+  #sessionTimer: number | null = null;
+  /** The record last written (or restored), for `debugSession()` and the check's assertions. */
+  #lastSession: SessionRecord | null = null;
+  /** What the last restore did — the numbers the acceptance check asserts on. */
+  #restore: RestoreReport = { complete: false, restored: 0, dropped: 0, placeholders: 0, unsavedLost: 0 };
+  /** Pending snapshot writes, one per document, cleared when a document is closed. */
+  #snapshotTimers = new Map<string, number>();
+  /**
+   * Restored positions waiting for a view to exist. A document that is not on screen has no view,
+   * so its caret, marks and folds are applied when it is first mounted.
+   */
+  #pendingRestore = new Map<string, RestoreState>();
+  /**
+   * The last fold/bookmark set each live view was asked about — the signature a reconciliation
+   * compares against, so that "changed" is what propagates rather than "differs". Keyed by view
+   * (and weak, so a view that is destroyed is not held on to) because a freshly mounted clone
+   * legitimately starts empty, and starting empty is not news for the other pane.
+   */
+  readonly #foldSignatures = new WeakMap<EditorView, string>();
+  readonly #bookmarkSignatures = new WeakMap<EditorView, string>();
+  /** A restore is in flight: document mutations must not race it. */
+  #restoring = false;
+  /**
+   * Set when the user does something — opens a file, makes a document, closes one, turns the split
+   * on — while a restore is still assembling the session. N++ never has this problem because it
+   * restores before its window accepts input; a page cannot block, so the session puts the *tabs*
+   * back and leaves the *front tab* to whoever got there first.
+   */
+  #userActedDuringRestore = false;
+  #preferencesOpen = false;
+
+  /** Record that something happened outside the restore — see `#userActedDuringRestore`. */
+  #noteUserAction(): void {
+    if (this.#restoring) this.#userActedDuringRestore = true;
+  }
 
   constructor(host: HTMLElement) {
     this.#chrome = new Chrome(host);
@@ -276,12 +373,35 @@ export class Workspace {
     });
   }
 
-  /** Create the first document, load the recent list, and report a browser we cannot use. */
+  /**
+   * Create the first document, restore the previous session over it, load the recent list, and
+   * report a browser we cannot use.
+   *
+   * The first document is created **synchronously** on purpose. N++ opens an empty window and
+   * fills it from `session.xml`; a page cannot afford the same blank beat — every acceptance
+   * check since Task 2 reads the app the moment it loads. So the welcome buffer exists at once
+   * and is discarded when the session turns out to have something to put in its place.
+   */
   start(): void {
-    this.newDocument(WELCOME);
+    const startup = this.newDocument(WELCOME);
+    void this.#restoreSession(startup);
     void this.#refreshRecent();
+    this.#installLifecycleHooks();
     const notice = unsupportedNotice(this.#capabilities);
     if (notice) this.#chrome.showNotice(notice.title, notice.body);
+  }
+
+  /**
+   * A page is not a process: there is no "exit", only the tab going away. N++ flushes the session
+   * when it closes (`WM_ENDSESSION`); the browser equivalent is `pagehide` plus the tab becoming
+   * hidden, which is also the last moment a write is likely to land (`visibilitychange` fires on
+   * a mobile tab switch, where `pagehide` may not).
+   */
+  #installLifecycleHooks(): void {
+    window.addEventListener("pagehide", () => void this.#flushSession());
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") void this.#flushSession();
+    });
   }
 
   #addMenus(): void {
@@ -367,11 +487,34 @@ export class Workspace {
             onClick: () => this.toggleSplit(),
           },
           {
-            // N++ keeps this in Settings ▸ Preferences ▸ Margins ("Display bookmark margin");
-            // this app has no Settings menu yet, so it sits with the other display toggles.
+            // N++ keeps this in Settings ▸ Preferences ▸ Margins ("Display bookmark margin"), and
+            // Task 5 put it here because there was no Settings menu yet. It stays: the toggle and
+            // the preference dialog are two views of one setting, and the menu is the shorter path.
             id: "bookmark-margin",
             label: "Bookmark Margin",
             onClick: () => this.toggleBookmarkMargin(),
+          },
+          { id: "zoom-rule", separator: true },
+          // N++ groups these in a View ▸ Zoom submenu and spells the binding in the label
+          // ("Zoom In (Ctrl+Mouse Wheel Up)", Notepad_plus.rc:773-780). This menu bar has no
+          // submenus yet, so they sit flat — and carry no binding, because Ctrl+wheel is the
+          // browser's page zoom unless a page cancels the gesture, and that has not been measured
+          // here. Measuring first is this project's rule (S6 is the standing example).
+          { id: "zoom-in", label: "Zoom In", onClick: () => void this.zoomBy(1) },
+          { id: "zoom-out", label: "Zoom Out", onClick: () => void this.zoomBy(-1) },
+          { id: "zoom-restore", label: "Restore Default Zoom", onClick: () => void this.setZoom(0) },
+        ],
+      },
+      {
+        // N++'s Settings menu holds Preferences, Style Configurator, Shortcut Mapper and Import.
+        // Only the first has anything behind it here: the other three exist in N++ because it has
+        // style files and a Win32 shortcut table, neither of which this port has.
+        label: "Settings",
+        items: [
+          {
+            id: "preferences",
+            label: "Preferences…",
+            onClick: () => void this.openPreferences(),
           },
         ],
       },
@@ -415,6 +558,7 @@ export class Workspace {
 
   /** Open a new document and switch to it (N++ File ▸ New). */
   newDocument(content = ""): OpenDocument {
+    this.#noteUserAction();
     this.#nextDocumentNumber += 1;
     const document = this.#createDocument(newDocumentName(this.#nextDocumentNumber), content);
     this.#documents.push(document);
@@ -508,8 +652,30 @@ export class Workspace {
     ruler: RulerCounts | null;
     /** Folded ranges per live view, in creation order — the panes must agree (Task 6). */
     viewFolds: number[];
+    /** Task 7 — the preferences in force, and what `scripts/verify-task7.py` asserts on. */
+    preferences: Preferences;
+    /** The restore's own report: how many documents came back, and how they came back. */
+    session: RestoreReport & {
+      /** Files in the record last written this run (0 = nothing written yet). */
+      written: number;
+      /** The tab the session says was in front. */
+      activeIndex: number;
+      /** True when the split is part of the session. */
+      split: boolean;
+    };
+    /** Risk R6's mitigation, as the browser answered it — never assumed. */
+    persistence: PersistenceStatus;
+    zoom: number;
+    toolbar: { visible: boolean; layout: string };
+    /** The active document: N++'s `userReadOnly`, its placeholder state, and its backup. */
+    readOnly: boolean;
+    inaccessible: boolean;
+    backupPath: string | null;
+    /** Which pane has the focus: 0 = primary, 1 = the clone (N++'s `Session activeView`). */
+    focusedPane: number;
   } {
     const document = this.#active();
+    const views = document?.runtime.views ?? [];
     const owner = document ? ownerView(document.runtime) : undefined;
     // Marks and bookmarks live in a view's state; with nothing mounted the document still
     // carries the state it was last left in, so the numbers stay truthful either way.
@@ -562,6 +728,23 @@ export class Workspace {
       languages: languageStats(),
       ruler: owner ? rulerCounts(owner) : null,
       viewFolds: (document?.runtime.views ?? []).map((view) => foldRanges(view.state).length),
+      preferences: { ...this.#preferences },
+      session: {
+        ...this.#restore,
+        written: this.#lastSession?.mainView.files.length ?? 0,
+        activeIndex: this.#lastSession?.mainView.activeIndex ?? 0,
+        split: (this.#lastSession?.subView.files.length ?? 0) > 0,
+      },
+      persistence: { ...this.#persistence },
+      zoom: this.#preferences.zoom,
+      toolbar: {
+        visible: this.#preferences.toolbarVisible,
+        layout: this.#preferences.toolbarLayout,
+      },
+      readOnly: document?.readOnly ?? false,
+      inaccessible: document?.inaccessible ?? false,
+      backupPath: document?.backupPath ?? null,
+      focusedPane: views.length > 1 && views[1]?.hasFocus ? 1 : 0,
     };
   }
 
@@ -581,34 +764,57 @@ export class Workspace {
   #createDocument(
     name: string,
     content: string,
-    file?: { handle: FileSystemFileHandle; format: DocumentFormat; assumedEncoding: boolean },
+    file?: {
+      handle: FileSystemFileHandle;
+      format: DocumentFormat;
+      assumedEncoding: boolean;
+      /** The file's mtime when it was read — N++'s `originalFileLastModifTimestamp`. */
+      lastModified?: number;
+    },
+    restore?: RestoreState,
   ): OpenDocument {
     const runtime = createDocumentRuntime();
-    // Task 6: the language comes from the file name, and — only when that says nothing —
-    // from the content, exactly the order N++ uses (extension, then
-    // `FileManager::detectLanguageFromTextBeginning`). A scratch buffer has neither, which
-    // is N++'s "Normal text file" rather than a failure.
-    const language = detectLanguage(name, content);
+    // Task 6: the language comes from the file name, and — only when that says nothing — from the
+    // content (extension, then `FileManager::detectLanguageFromTextBeginning`). A restored
+    // document keeps the language the session recorded instead of asking again (N++ sets it from
+    // the session's `lang`), which is what makes an override survive a reload once one exists.
+    const language = restore ? restore.language : detectLanguage(name, content);
+    const wordWrap = restore?.wordWrap ?? NPP_WORD_WRAP;
     const state = createDocumentState(content, {
       handlers: this.#handlers,
-      wordWrap: NPP_WORD_WRAP,
+      wordWrap,
       bookmarkMargin: this.#bookmarkMargin,
+      zoom: this.#preferences.zoom,
+      theme: this.#preferences.theme,
+      readOnly: restore?.readOnly ?? false,
+      // A restored document whose grammar the restore already waited for carries it in the state
+      // from the start; anything else loads lazily and is swapped in through the compartment.
+      language: restore?.languageExtension,
     });
     const document: OpenDocument = {
-      id: `d${this.#documents.length + 1}-${this.#nextDocumentNumber}`,
+      id: `d${(this.#nextDocumentId += 1)}`,
       name,
       savedText: state.doc,
       dirty: false,
-      wordWrap: NPP_WORD_WRAP,
+      wordWrap,
       runtime,
       state,
-      format: file?.format ?? { ...DEFAULT_FORMAT },
+      // The session's own format wins: it is what the file was read as, which is what §6's
+      // round-trip rule has to reproduce on the next save.
+      format: restore?.format ?? file?.format ?? { ...DEFAULT_FORMAT },
       language,
+      readOnly: restore?.readOnly ?? false,
+      position: restore?.position ?? { firstVisibleLine: 1, xOffset: 0 },
+      selection: restore?.selection ?? { anchor: 0, head: 0, mode: "stream" },
     };
     if (file) {
       document.handle = file.handle;
       document.assumedEncoding = file.assumedEncoding;
+      document.originalFileLastModifTimestamp = file.lastModified;
     }
+    // The grammar is already in the state, so nothing needs to be loaded for it (and
+    // `#loadLanguage` returns early for it, which is what keeps the lazy path and this one apart).
+    if (restore?.languageExtension) document.languageExtension = restore.languageExtension;
     // Fired by split-view's dispatcher, once per transaction, for every view.
     runtime.onUpdate = (view) => this.#onUpdate(document, view);
     // The import is lazy and the document must appear now, so the language arrives after
@@ -680,6 +886,11 @@ export class Workspace {
 
     this.#mirrorBookmarks(document, view);
     this.#mirrorFolds(document, view);
+    // Task 7: a change is a reason to remember. The session follows in a moment, and the body
+    // follows on N++'s own interval — "sync: (every N seconds) the backup file will be saved if
+    // the buffer is dirty and modifications are present" (`Buffer.cpp:1247`).
+    this.#scheduleSessionWrite();
+    this.#scheduleSnapshot(document);
     this.#render();
   }
 
@@ -740,8 +951,24 @@ export class Workspace {
   /**
    * Decode a handle and adopt it as a document, applying D4's honesty rules.
    * Returns false when nothing was opened, so the caller can react.
+   *
+   * Task 7 gave this a rule it did not need before: N++ does not open a second copy of a file it
+   * already has — "If we found the document, then we don't open the existing doc. We return the
+   * found buffer ID instead" (`NppIO.cpp:306-330`, which compares names; the browser's equivalent
+   * of a path is the handle's own identity). The session restore makes this the common case: a
+   * `File ▸ Recent` click after a reload now finds the file already open, and activating that tab
+   * is both what N++ does and the only safe answer — the open copy may hold edits the file on disk
+   * does not, so re-reading the file would discard them silently.
    */
   async #adopt(handle: FileSystemFileHandle): Promise<boolean> {
+    this.#noteUserAction();
+    const open = await this.#findOpenDocument(handle);
+    if (open) {
+      this.#show(open.id);
+      this.#render();
+      return true;
+    }
+
     let decoded;
     try {
       decoded = await readHandle(handle);
@@ -760,12 +987,16 @@ export class Workspace {
       handle,
       format: { encoding: decoded.encoding, bom: decoded.bom, eol: decoded.eol },
       assumedEncoding: decoded.assumed,
+      // N++ tracks the file's mtime so a later session can tell whether another program changed
+      // it while this window was closed (`originalFileLastModifTimestamp`, Buffer.cpp:1241).
+      lastModified: await fileTimestamp(handle),
     });
     this.#documents.push(document);
     this.#show(document.id);
 
     await rememberRecent(handle);
     await this.#refreshRecent();
+    this.#scheduleSessionWrite(0);
 
     // D4: never let an uncertain decode pass silently.
     if (decoded.assumed) {
@@ -838,11 +1069,31 @@ export class Workspace {
     document.savedText = document.state.doc;
     document.dirty = false;
     document.assumedEncoding = false;
+    // Back at the save point, so the backup has nothing left to protect: N++ deletes it in the
+    // same pass that clears the modified flag ("each save file … the backup file will be deleted
+    // (if buffer is not dirty)", Buffer.cpp:1248).
+    this.#forgetBackup(document);
+    document.originalFileLastModifTimestamp = await fileTimestamp(handle);
     // Save As can land on a file that was not in the list before.
     await rememberRecent(handle);
     await this.#refreshRecent();
     this.#render();
+    this.#scheduleSessionWrite(0);
     return true;
+  }
+
+  /** The open document behind a handle, if there is one — see `#adopt` for why it matters. */
+  async #findOpenDocument(handle: FileSystemFileHandle): Promise<OpenDocument | null> {
+    for (const document of this.#documents) {
+      const open = document.handle;
+      if (!open || typeof open.isSameEntry !== "function") continue;
+      try {
+        if (await open.isSameEntry(handle)) return document;
+      } catch {
+        // A handle that cannot answer (a permission that was revoked) is simply not a match.
+      }
+    }
+    return null;
   }
 
   async #showUnsupported(): Promise<void> {
@@ -854,10 +1105,17 @@ export class Workspace {
 
   #show(id: string): void {
     if (this.#activeId === id) return;
+    const leaving = this.#active();
+    // N++ records the position of the file you are leaving as you leave it; a document that is
+    // not mounted has no view to read a caret out of.
+    if (leaving) this.#captureViewState(leaving);
     this.#teardownActive();
     this.#activeId = id;
     this.#mountActive();
     this.#render();
+    // "before switch off to another tab (or close files on exit), check 1 & 2" — N++ syncs the
+    // buffer being left behind, not only the one being opened (`Buffer.cpp:1249`).
+    if (leaving) void this.#flushSession();
   }
 
   /** Unmount every view of the active document, saving its live state first. */
@@ -881,6 +1139,13 @@ export class Workspace {
     // next keystroke — a real failure the acceptance check caught.
     owner.focus();
     if (this.#split) this.#mountClone(document);
+    // Task 7: the clone is mounted first so that a restored document's marks and folds reach both
+    // panes through the same path the rest of the app uses (S7).
+    const pending = this.#pendingRestore.get(document.id);
+    if (pending) {
+      this.#pendingRestore.delete(document.id);
+      this.#applyRestoredViewState(document, pending);
+    }
   }
 
   #mountOwner(document: OpenDocument, pane: PaneElements): EditorView {
@@ -932,6 +1197,7 @@ export class Workspace {
   /* ----------------------------------------------------------------- split */
 
   toggleSplit(): void {
+    this.#noteUserAction();
     if (this.#split) this.#closeSplit();
     else this.#openSplit();
     this.#render();
@@ -1086,9 +1352,21 @@ export class Workspace {
    * pane and would vanish when the split closed (the clone's state is built fresh each time).
    * Reconciling here means every path — keymap, menu, dialog, margin click — agrees, without
    * `split-view.ts` having to know that bookmarks exist.
+   *
+   * What is compared is a *change*, not a state: a view reconciles its peers only when the
+   * bookmarks it holds moved since the last transaction it was asked about. Comparing states
+   * instead is what Task 7 found to be wrong — a freshly mounted clone has no bookmarks yet and
+   * its first transaction (the mount-time handover, or a language load) would read as "this
+   * document has no bookmarks", silently clearing the other pane's. `verify-task7.py` covers the
+   * sequence that exposed it: bookmark line 1, fold a function, then open the split.
    */
   #mirrorBookmarks(document: OpenDocument, view: EditorView): void {
     const mine = bookmarkPositions(view.state);
+    const signature = mine.join(",");
+    const previous = this.#bookmarkSignatures.get(view);
+    this.#bookmarkSignatures.set(view, signature);
+    if (previous === undefined || previous === signature) return;
+
     for (const peer of [...document.runtime.views]) {
       if (peer === view) continue;
       const theirs = bookmarkPositions(peer.state);
@@ -1117,6 +1395,14 @@ export class Workspace {
    */
   #mirrorFolds(document: OpenDocument, view: EditorView): void {
     const mine = foldRanges(view.state);
+    // Same rule as bookmarks above, and it is the fix for the bug this task found: a freshly
+    // mounted clone's first transaction must not be read as "the document has no folds". Only a
+    // view whose own fold set actually moved says anything to its peers.
+    const signature = mine.map((range) => `${range.from}:${range.to}`).join(",");
+    const previous = this.#foldSignatures.get(view);
+    this.#foldSignatures.set(view, signature);
+    if (previous === undefined || previous === signature) return;
+
     for (const peer of [...document.runtime.views]) {
       if (peer === view) continue;
       const theirs = foldRanges(peer.state);
@@ -1139,6 +1425,7 @@ export class Workspace {
   }
 
   async #close(document: OpenDocument): Promise<void> {
+    this.#noteUserAction();
     if (document.dirty) {
       // N++'s three-way prompt. Task 4 made Save real, so offering only
       // Discard/Cancel here would hide the safe option.
@@ -1158,8 +1445,13 @@ export class Workspace {
     const index = this.#documents.indexOf(document);
     if (index === -1) return;
     const wasActive = document.id === this.#activeId;
+    if (wasActive) this.#captureViewState(document);
     if (wasActive) this.#teardownActive();
     this.#documents.splice(index, 1);
+    // N++ deletes a closed document's backup (`FileManager::deleteBufferBackup`, Buffer.cpp:1409),
+    // whatever the close did with its edits: a discarded change must not come back on the next
+    // restore, and a saved one has nothing left to protect.
+    this.#forgetBackup(document);
 
     if (wasActive) {
       this.#activeId = null;
@@ -1168,6 +1460,641 @@ export class Workspace {
       if (next) this.#show(next.id);
     }
     this.#render();
+    this.#scheduleSessionWrite(0);
+  }
+
+  /* ──────────────────────────────────────────────── Task 7: preferences & session ── */
+
+  /** The preferences in force. Exposed for the verification handle and for callers that need them. */
+  get preferences(): Preferences {
+    return { ...this.#preferences };
+  }
+
+  /**
+   * Make the preferences *do* something, as opposed to merely storing them. Called once at startup
+   * before the session is put back (so a hidden toolbar never flashes on screen) and again whenever
+   * the dialog or a Zoom command writes.
+   */
+  #applyPreferences(): void {
+    this.#chrome.setToolbarVisible(this.#preferences.toolbarVisible);
+    this.#chrome.setToolbarLayout(this.#preferences.toolbarLayout);
+    const look = editorLookCompartment.reconfigure(
+      nppEditorLook({ zoom: this.#preferences.zoom, theme: this.#preferences.theme }),
+    );
+    for (const document of this.#documents) {
+      this.#eachView(document, (view) => view.dispatch({ effects: look }));
+    }
+  }
+
+  /** Settings ▸ Preferences… Nothing is applied until OK, which is what Cancel promises. */
+  async openPreferences(): Promise<Preferences | null> {
+    if (this.#preferencesOpen) return null;
+    this.#preferencesOpen = true;
+    try {
+      return await openPreferencesDialog({
+        current: this.#preferences,
+        apply: (patch) => this.applyPreferences(patch),
+      });
+    } finally {
+      this.#preferencesOpen = false;
+    }
+  }
+
+  /** Store a preference change and make it take effect; returns what is now in force. */
+  async applyPreferences(patch: Partial<Preferences>): Promise<Preferences> {
+    this.#preferences = await savePreferences(patch);
+    this.#applyPreferences();
+    // A changed backup interval applies to the documents already open, not only to the next edit.
+    for (const document of this.#documents) {
+      if (document.dirty) this.#scheduleSnapshot(document);
+    }
+    this.#render();
+    return { ...this.#preferences };
+  }
+
+  /** View ▸ Zoom ▸ Zoom In / Zoom Out — N++'s `IDM_VIEW_ZOOMIN` / `IDM_VIEW_ZOOMOUT`. */
+  async zoomBy(delta: number): Promise<number> {
+    return this.setZoom(this.#preferences.zoom + delta);
+  }
+
+  /** View ▸ Zoom ▸ Restore Default Zoom — N++'s `IDM_VIEW_ZOOMRESTORE`. */
+  async setZoom(zoom: number): Promise<number> {
+    this.#preferences = await savePreferences({ zoom: clampZoom(zoom) });
+    this.#applyPreferences();
+    return this.#preferences.zoom;
+  }
+
+  /* ------------------------------------------------------------- the session */
+
+  /** How long a burst of changes settles before the session (not the bodies) is written. */
+  #scheduleSessionWrite(delay: number = SESSION_WRITE_DELAY_MS): void {
+    if (this.#restoring) return; // a restore is still assembling the truth; do not write over it
+    if (this.#sessionTimer !== null) window.clearTimeout(this.#sessionTimer);
+    this.#sessionTimer = window.setTimeout(() => {
+      this.#sessionTimer = null;
+      void this.#writeSession();
+    }, delay);
+  }
+
+  /**
+   * The session as N++ shapes it: one `mainView` holding every open file and the index of the
+   * active one, a `subView` that carries the split, and per file everything
+   * `getSessionFromXmlTree` reads back out (`Parameters.cpp:3408-3533`).
+   *
+   * The active document's caret and viewport are read live from its view; every other document
+   * carries the values captured when it was last left — reading a caret out of a view that does
+   * not exist is not possible, which is why N++ asks each buffer as it is switched away from.
+   */
+  #sessionRecord(): SessionRecord {
+    const record = emptySession();
+    for (const document of this.#documents) {
+      const view = document.id === this.#activeId ? ownerView(document.runtime) : undefined;
+      if (view) {
+        document.selection = selectionOf(view);
+        document.position = positionOf(view);
+      }
+      const state = view?.state ?? document.state;
+      record.mainView.files.push({
+        name: document.name,
+        handle: document.handle,
+        backupPath: document.backupPath,
+        originalFileLastModifTimestamp: document.originalFileLastModifTimestamp,
+        format: { ...document.format },
+        assumedEncoding: document.assumedEncoding ?? false,
+        language: document.language?.id ?? null,
+        selection: { ...document.selection },
+        position: { ...document.position },
+        wordWrap: document.wordWrap,
+        readOnly: document.readOnly,
+        marks: offsetsToLineNumbers(state.doc, bookmarkPositions(state)),
+        folds: offsetsToLineNumbers(
+          state.doc,
+          foldRanges(state).map((range) => range.from),
+        ),
+        dirty: document.dirty,
+        untitled: document.handle === undefined,
+      });
+      if (document.id === this.#activeId) {
+        record.mainView.activeIndex = record.mainView.files.length - 1;
+      }
+    }
+
+    // The split (S5) shows the active document in both panes, so the sub view carries that one
+    // file and nothing else — a restored split is "the sub view is not empty".
+    const views = this.#documents.find((document) => document.id === this.#activeId)?.runtime.views ?? [];
+    if (this.#split && views.length > 1) {
+      const active = record.mainView.files[record.mainView.activeIndex];
+      if (active) record.subView.files.push({ ...active });
+      record.activeView = views[1]?.hasFocus ? 1 : 0;
+    }
+    return record;
+  }
+
+  async #writeSession(): Promise<void> {
+    if (!this.#preferences.rememberLastSession) return;
+    const record = this.#sessionRecord();
+    if (await saveSessionRecord(record)) this.#lastSession = record;
+  }
+
+  /**
+   * Write everything now: the session, and the body of every dirty document. Called when a tab is
+   * switched or closed, when the tab is hidden and when it is going away — the moments a page
+   * cannot afford to wait for a timer, and exactly when N++ syncs ("before switch off to another
+   * tab (or close files on exit), check 1 & 2").
+   */
+  async #flushSession(): Promise<void> {
+    if (this.#sessionTimer !== null) {
+      window.clearTimeout(this.#sessionTimer);
+      this.#sessionTimer = null;
+    }
+    for (const document of this.#documents) {
+      if (this.#snapshotTimers.get(document.id) !== undefined) {
+        window.clearTimeout(this.#snapshotTimers.get(document.id));
+        this.#snapshotTimers.delete(document.id);
+        await this.#syncBackup(document);
+      }
+    }
+    await this.#writeSession();
+  }
+
+  /** Dev/verification handle: flush the session and the backups, and wait for them to land. */
+  async flushSession(): Promise<void> {
+    await this.#flushSession();
+  }
+
+  /* -------------------------------------------------------------- snapshots */
+
+  /**
+   * N++'s periodic sync: while a document is dirty its body belongs in `backup/`, and it is written
+   * every `snapshotBackupTiming` ms (7000 by default — `Parameters.h:869`) rather than on every
+   * keystroke. A document that is not dirty has no timer at all.
+   */
+  #scheduleSnapshot(document: OpenDocument): void {
+    if (!this.#snapshotMode()) return;
+    const pending = this.#snapshotTimers.get(document.id);
+    if (pending !== undefined) window.clearTimeout(pending);
+    this.#snapshotTimers.set(
+      document.id,
+      window.setTimeout(() => {
+        this.#snapshotTimers.delete(document.id);
+        void this.#syncBackup(document);
+      }, this.#preferences.snapshotBackupTiming),
+    );
+  }
+
+  /**
+   * N++'s own condition, `Parameters.h:867`:
+   * `_isSnapshotMode && _rememberLastSession && !_isCmdlineNosessionActivated`. Snapshotting while
+   * "remember the session" is off would write bodies nothing is ever going to read back.
+   */
+  #snapshotMode(): boolean {
+    return this.#preferences.snapshotMode && this.#preferences.rememberLastSession;
+  }
+
+  /** Write a dirty document's body, or delete the backup of one that is back at its save point. */
+  async #syncBackup(document: OpenDocument): Promise<void> {
+    if (!this.#snapshotMode()) return;
+
+    if (document.dirty) {
+      const path = await writeBackup(document.name, this.#documentText(document), {
+        path: document.backupPath ?? null,
+      });
+      // The record has to name the file it points at, so a fresh backup schedules a session write.
+      if (path && path !== document.backupPath) {
+        document.backupPath = path;
+        this.#scheduleSessionWrite(0);
+      }
+    } else if (document.backupPath) {
+      const path = document.backupPath;
+      document.backupPath = undefined;
+      await deleteBackup(path);
+      this.#scheduleSessionWrite(0);
+    }
+  }
+
+  /**
+   * Drop a document's backup: cancel the pending write and delete the body. N++'s
+   * `FileManager::deleteBufferBackup` (`Buffer.cpp:1409`), called when a buffer is closed and when
+   * a save leaves it clean.
+   */
+  #forgetBackup(document: OpenDocument): void {
+    const timer = this.#snapshotTimers.get(document.id);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      this.#snapshotTimers.delete(document.id);
+    }
+    const path = document.backupPath;
+    document.backupPath = undefined;
+    if (path) void deleteBackup(path);
+  }
+
+  /** The document's current text — its owner view when it is mounted, its own state otherwise. */
+  #documentText(document: OpenDocument): string {
+    return (ownerView(document.runtime)?.state.doc ?? document.state.doc).toString();
+  }
+
+  /**
+   * Read a mounted document's caret and viewport back into the document, where the session writer
+   * finds them. Called as a tab is left and as it is closed — the two moments N++ asks a buffer for
+   * its position (`buf->getPosition(editView)`, `Notepad_plus.cpp:6572`).
+   */
+  #captureViewState(document: OpenDocument): void {
+    const view = ownerView(document.runtime);
+    if (!view) return;
+    document.selection = selectionOf(view);
+    document.position = positionOf(view);
+  }
+
+  /* ---------------------------------------------------------------- restore */
+
+  /**
+   * Put the last session back — N++'s `Notepad_plus::loadSession` (`NppIO.cpp:2494`) with its order
+   * of business intact: preferences first (they decide whether there is a session at all), then
+   * every recorded file in order, then the active tab, then the split.
+   *
+   * The two questions N++ asks at this point are both asked here, word for word: whether to make
+   * placeholders for files it cannot reach, and whether a file that changed behind our back should
+   * be reloaded over the edits the backup holds.
+   */
+  async #restoreSession(startup: OpenDocument): Promise<void> {
+    this.#restoring = true;
+    const report: RestoreReport = {
+      complete: false,
+      restored: 0,
+      dropped: 0,
+      placeholders: 0,
+      unsavedLost: 0,
+    };
+    /** True once a session was actually read — the condition for pruning at the end. */
+    let sawSession = false;
+    try {
+      this.#preferences = await loadPreferences();
+      this.#applyPreferences();
+      this.#persistence = await requestPersistentStorage();
+
+      if (!this.#preferences.rememberLastSession) {
+        // "Don't load session.xml if not required in order to speed up!!" — Parameters.cpp:1827.
+        return;
+      }
+
+      const record = await loadSessionRecord();
+      if (!record || record.mainView.files.length === 0) return; // nothing stored: welcome stays
+      sawSession = true;
+
+      const plans = await Promise.all(record.mainView.files.map((entry) => this.#planSessionFile(entry)));
+
+      // N++ asks *once* per session whether it may make placeholders, and remembers the answer
+      // (`newPlaceholderDocument`'s `theWarningHasBeenGiven`, Buffer.cpp:1723-1749). It drops the
+      // entries if the answer is no, which is also what `keepSessionAbsentFileEntries=false` does
+      // without asking.
+      const absent = plans.filter((plan) => plan.outcome === "placeholder");
+      if (absent.length > 0) {
+        const keep = await this.#chrome.confirm({
+          title: "File inaccessible",
+          body:
+            "Some files from your past session are inaccessible. They can be opened as empty and " +
+            "read-only documents as placeholders.\n\nWould you like to create those placeholders?",
+          confirmLabel: "Yes",
+          cancelLabel: "No",
+        });
+        for (const plan of absent) if (!keep) plan.outcome = "drop";
+      }
+
+      const names = record.mainView.files.map((entry) => entry.name);
+      // N++ numbers the next scratch buffer past every one it restored (`nextUntitledNewNumber`),
+      // so a restored "new 3" cannot collide with the next document the user creates.
+      this.#nextDocumentNumber = Math.max(
+        this.#nextDocumentNumber,
+        nextUntitledNumber(names),
+      );
+
+      const adopted: OpenDocument[] = [];
+      /** Documents whose unsaved edits could not be brought back — named in the alert below. */
+      const lostWork: string[] = [];
+      for (const plan of plans) {
+        if (plan.outcome === "drop") {
+          report.dropped += 1;
+          // A dirty entry that is dropped loses whatever was typed into it, and scope §8 criterion
+          // 6 says nothing may be lost *silently*. With snapshot mode off there is no body to
+          // restore, so the honest answer is to say so rather than open the file and hope nobody
+          // notices the edits are gone.
+          if (plan.entry.dirty && !plan.fromBackup) lostWork.push(plan.entry.name);
+          continue;
+        }
+        if (plan.outcome === "placeholder") {
+          const placeholder = this.#createPlaceholder(plan.entry);
+          this.#documents.push(placeholder);
+          adopted.push(placeholder);
+          report.placeholders += 1;
+          continue;
+        }
+
+        const state: RestoreState = {
+          wordWrap: plan.entry.wordWrap,
+          readOnly: plan.entry.readOnly,
+          language: plan.language,
+          languageExtension: plan.languageExtension,
+          format: { ...plan.format },
+          assumedEncoding: plan.assumedEncoding,
+          selection: { ...plan.entry.selection },
+          position: { ...plan.entry.position },
+          marks: plan.entry.marks,
+          folds: plan.entry.folds,
+        };
+        const document = this.#createDocument(plan.entry.name, plan.text, undefined, state);
+        if (plan.entry.handle) {
+          document.handle = plan.entry.handle;
+          document.originalFileLastModifTimestamp = plan.lastModified ?? plan.entry.originalFileLastModifTimestamp;
+        }
+        document.backupPath = plan.entry.backupPath;
+        document.dirty = plan.fromBackup;
+        // The save point is the *file's* text, not the body we opened: that is what makes a
+        // document restored from a backup dirty exactly until the user saves it, which is N++'s
+        // "if backup … is loaded, set it dirty (red)" (Buffer.cpp:1240). Where the file could not
+        // be read at all there is no baseline, so the document is dirty against nothing — N++
+        // keeps such a document dirty too.
+        document.savedText =
+          plan.fileText !== undefined ? Text.of(plan.fileText.split("\n")) : Text.empty;
+        this.#documents.push(document);
+        this.#pendingRestore.set(document.id, state);
+        adopted.push(document);
+        report.restored += 1;
+        if (plan.entry.dirty && !plan.fromBackup && !plan.discardedByUser) lostWork.push(plan.entry.name);
+      }
+
+      report.unsavedLost = lostWork.length;
+
+      // Said before anything else, and on every path out — including the one where nothing at all
+      // could be restored. A document whose edits are gone is the one thing a restore must never
+      // do quietly (scope §8 criterion 6).
+      if (lostWork.length > 0) {
+        const named = lostWork.slice(0, 5).join(", ");
+        await this.#chrome.alert({
+          title: "Some unsaved changes could not be restored",
+          body:
+            `${lostWork.length} document(s) had unsaved changes and no backup, because "Enable ` +
+            `session snapshot and periodic backup" is off: ${named}. ` +
+            "A file-backed document has been reopened from its file, so the edits made in it are " +
+            "gone; an untitled document is gone with them. Notepad++ cannot lose work this way " +
+            "because it asks before closing — a web page has no way to stop a reload, which is " +
+            "exactly what the snapshot setting above exists to prevent.",
+        });
+      }
+
+      if (adopted.length === 0) return; // everything was dropped: the welcome document stays
+
+      // The welcome buffer only exists for the no-session case (see `start()`).
+      this.#discardStartup(startup);
+
+      const active = adopted[Math.min(record.mainView.activeIndex, adopted.length - 1)] ?? adopted[0];
+      if (!active) return;
+      // `#show` mounts it, and the mount applies the restored caret, marks and folds — but only if
+      // the user has not already made a choice of their own while this was in flight. A restore that
+      // lands late must not switch the tab out from under them; the tabs themselves are still right.
+      if (!this.#userActedDuringRestore) this.#show(active.id);
+      if (record.subView.files.length > 0 && !this.#split) {
+        this.#openSplit();
+        // N++ restores which view was in front (`Session activeView`).
+        if (!this.#userActedDuringRestore && record.activeView === 1) {
+          active.runtime.views[1]?.focus();
+        }
+      }
+      this.#render();
+    } finally {
+      this.#restoring = false;
+      report.complete = true;
+      this.#restore = report;
+      // In the `finally` on purpose: every path out of the try — including the early ones for "no
+      // session" — has to leave the record describing what is actually open. The session is
+      // rewritten from what actually opened (a dropped entry, a placeholder, a file that turned out
+      // to be missing are all the truth now); N++ does the same on its way out ("your session WILL
+      // BE MODIFIED ON EXIT!").
+      await this.#writeSession();
+      if (sawSession) {
+        // A backup nobody claims is stale by definition — N++ deletes one as its document closes —
+        // and this is the only quiet moment to look, before any document can be dirty again.
+        await pruneBackups(
+          this.#documents
+            .map((document) => document.backupPath)
+            .filter((path): path is string => typeof path === "string"),
+        );
+      }
+    }
+  }
+
+  /**
+   * Ask storage and the file system what one recorded entry is worth, without opening anything
+   * yet — the questions N++'s `loadSession` asks (`NppIO.cpp:2538-2553`), asked before any
+   * document exists so that the order of the tabs is the order it recorded.
+   */
+  async #planSessionFile(entry: SessionFile): Promise<RestorePlan> {
+    const backupText =
+      this.#snapshotMode() && entry.backupPath ? await readBackup(entry.backupPath) : null;
+
+    let fileText: string | undefined;
+    let accessible = false;
+    let lastModified: number | undefined;
+
+    if (entry.handle) {
+      // A restore is not a click, and the browser only lets a page *ask* for permission during
+      // one. A handle whose permission is merely "prompt" is therefore inaccessible this time
+      // round — which is N++'s missing-file case, with the same two answers.
+      if (await hasAccessWithoutAsking(entry.handle)) {
+        try {
+          const decoded = await readHandle(entry.handle);
+          if (!decoded.unsupported) {
+            fileText = toEditorLineEndings(decoded.text);
+            accessible = true;
+            lastModified = await fileTimestamp(entry.handle);
+          }
+        } catch {
+          accessible = false; // the file is gone, or unreadable
+        }
+      }
+    }
+
+    const outcome = restoreOutcome({
+      untitled: entry.untitled,
+      accessible,
+      hasBackup: backupText !== null,
+      keepAbsentFileEntries: this.#preferences.keepSessionAbsentFileEntries,
+    });
+
+    // N++ prefers the backup over the file: "load backup\FILENAME@CREATION_TIMESTAMP if exist,
+    // otherwise load FILENAME" (Buffer.cpp:1239).
+    let text = backupText ?? fileText ?? "";
+    let fromBackup = backupText !== null;
+    let discardedByUser = false;
+
+    // "if backup … is loaded, last modif timestamp of FILENAME … compare with tracked timestamp.
+    // in the case of unequal result, tell user the FILENAME was modified. ask user if he want to
+    // reload FILENAME" (Buffer.cpp:1241-1242) — with N++'s own wording from `doReloadOrNot`
+    // (Notepad_plus.cpp:2593,2601).
+    if (
+      fromBackup &&
+      accessible &&
+      fileText !== undefined &&
+      entry.originalFileLastModifTimestamp !== undefined &&
+      lastModified !== undefined &&
+      lastModified !== entry.originalFileLastModifTimestamp
+    ) {
+      const reload = await this.#chrome.confirm({
+        title: "Reload",
+        body:
+          `"${entry.name}"\n\nThis file has been modified by another program.\n` +
+          "Do you want to reload it and lose the changes made in Notepad++?",
+        confirmLabel: "Yes",
+        cancelLabel: "No",
+      });
+      if (reload) {
+        text = fileText;
+        fromBackup = false;
+        discardedByUser = true;
+      }
+    }
+
+    const language = entry.language ? (byId(entry.language) ?? null) : null;
+    // The grammar is loaded here, while there is still nothing on screen to reconfigure — see
+    // `RestoreState.languageExtension`. A language that fails to load leaves the document as
+    // "Normal text file" in effect, but says so in the console exactly as the lazy path does.
+    let languageExtension: Extension | undefined;
+    if (language) {
+      try {
+        languageExtension = await language.load();
+      } catch (error) {
+        console.error(`[task 7] ${language.id} (${language.origin}) failed to load on restore`, error);
+      }
+    }
+
+    return {
+      entry,
+      outcome,
+      text,
+      fromBackup,
+      fileText,
+      format: { ...entry.format },
+      assumedEncoding: entry.assumedEncoding,
+      lastModified,
+      language,
+      languageExtension,
+      discardedByUser,
+    };
+  }
+
+  /**
+   * An empty, read-only document standing in for a file that could not be opened — N++'s
+   * placeholder (`FileManager::newPlaceholderDocument`, `Buffer.cpp:1754-1760`): the *name* is
+   * kept, the content is empty, and `DOC_INACCESSIBLE` is what `inaccessible` records here.
+   */
+  #createPlaceholder(entry: SessionFile): OpenDocument {
+    const document = this.#createDocument(entry.name, "", undefined, {
+      wordWrap: false,
+      readOnly: true,
+      language: null,
+      format: { ...entry.format },
+      assumedEncoding: false,
+      selection: { anchor: 0, head: 0, mode: "stream" },
+      position: { firstVisibleLine: 1, xOffset: 0 },
+      marks: [],
+      folds: [],
+    });
+    document.inaccessible = true;
+    return document;
+  }
+
+  /**
+   * Close the welcome buffer a restore has made redundant. It is only ever the document this
+   * run's `start()` created, and only while it is untouched, so nothing can be lost by it.
+   */
+  #discardStartup(document: OpenDocument): void {
+    if (document.dirty) return;
+    if (this.#documents[0] !== document) return;
+    if (document.id === this.#activeId) this.#teardownActive();
+    this.#documents.shift();
+    if (document.id === this.#activeId) this.#activeId = null;
+  }
+
+  /**
+   * Put a restored document's caret, viewport, bookmarks and folds back — once it has a view to
+   * put them in. Called from the mount path, because a document that is not on screen has no view
+   * and N++'s `setPosition`/`setHeaderLineState` also run against the view a buffer was opened in.
+   */
+  #applyRestoredViewState(document: OpenDocument, restore: RestoreState): void {
+    const owner = ownerView(document.runtime);
+    if (!owner) return;
+    const doc = owner.state.doc;
+
+    // Caret first, explicitly without scrolling: `scrollIntoView` would fight the viewport
+    // position below, which N++ records separately (`startPos`/`endPos` vs `firstVisibleLine`).
+    owner.dispatch({
+      selection: {
+        anchor: Math.min(restore.selection.anchor, doc.length),
+        head: Math.min(restore.selection.head, doc.length),
+      },
+      scrollIntoView: false,
+    });
+
+    const marks = lineNumbersToOffsets(doc, restore.marks);
+    if (marks.length > 0) {
+      this.#eachView(document, (view) => view.dispatch({ effects: setBookmarksEffect.of(marks) }));
+    }
+
+    // Folds are recorded as header lines (N++'s `<Fold line="…"/>`), so each one is turned back
+    // into the range the language folds for that line — the same range a click on the gutter makes.
+    const foldRangesToApply: FoldRange[] = [];
+    for (const line of restore.folds) {
+      const start = lineStartOffset(doc, line);
+      const end = doc.line(line).to;
+      const range = foldable(owner.state, start, end);
+      if (range) foldRangesToApply.push({ from: range.from, to: range.to });
+    }
+    if (foldRangesToApply.length > 0) {
+      this.#eachView(document, (view) =>
+        view.dispatch({ effects: foldRangesToApply.map((range) => foldEffect.of(range)) }),
+      );
+    }
+
+    const top = lineStartOffset(doc, restore.position.firstVisibleLine);
+    owner.dispatch({ effects: EditorView.scrollIntoView(top, { y: "start" }) });
+    owner.scrollDOM.scrollLeft = restore.position.xOffset;
+  }
+
+  /** The stored session, with handles replaced by names so it can be read and asserted on. */
+  async debugSession(): Promise<unknown> {
+    const record = this.#lastSession ?? (await loadSessionRecord());
+    if (!record) return null;
+    return {
+      activeView: record.activeView,
+      writtenAt: record.writtenAt,
+      mainView: {
+        activeIndex: record.mainView.activeIndex,
+        files: record.mainView.files.map((file) => ({
+          name: file.name,
+          file: file.handle?.name ?? null,
+          backupPath: file.backupPath ?? null,
+          language: file.language,
+          encoding: file.format.encoding,
+          eol: file.format.eol,
+          bom: file.format.bom,
+          wordWrap: file.wordWrap,
+          readOnly: file.readOnly,
+          dirty: file.dirty,
+          untitled: file.untitled,
+          caret: file.selection.head,
+          anchor: file.selection.anchor,
+          firstVisibleLine: file.position.firstVisibleLine,
+          xOffset: file.position.xOffset,
+          marks: file.marks,
+          folds: file.folds,
+        })),
+      },
+      subView: { activeIndex: record.subView.activeIndex, files: record.subView.files.length },
+    };
+  }
+
+  /** The files in `backup/`, for the acceptance check and for anyone debugging lost work. */
+  async debugBackups(): Promise<string[]> {
+    return listBackups();
   }
 
   /* --------------------------------------------------------------- rendering */
@@ -1180,7 +2107,10 @@ export class Workspace {
     const document = this.#active();
 
     this.#chrome.renderTabs(this.#primary, this.#tabDescriptors(), {
-      activate: (id) => this.#show(id),
+      activate: (id) => {
+        this.#noteUserAction();
+        this.#show(id);
+      },
       close: (id) => {
         const target = this.#documents.find((candidate) => candidate.id === id);
         if (target) void this.#close(target);
@@ -1253,6 +2183,101 @@ export class Workspace {
 /** Error text for a dialog — never a raw object dump. */
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * How long a burst of edits settles before the session is written. The *bodies* follow N++'s own
+ * interval (`snapshotBackupTiming`); the record itself is small and is what a reload reads first,
+ * so it is written far sooner than 7 s — the point of the delay is only to keep a burst of
+ * keystrokes from being one IndexedDB transaction each.
+ */
+const SESSION_WRITE_DELAY_MS = 500;
+
+/** What a restored document brings back with it — N++'s per-`File` session attributes. */
+interface RestoreState {
+  wordWrap: boolean;
+  readOnly: boolean;
+  language: LanguageDefinition | null;
+  /**
+   * The language's loaded extension, when the restore could wait for it. A restored document
+   * loads its grammar *before* it is created rather than after it is mounted: `#loadLanguage`
+   * reconfigures the views that exist at the time it resolves, and during a restore none exist
+   * yet — so a lazy load here would leave the document unhighlighted (and unfoldable, since
+   * `foldable()` needs a grammar) until the next reload happened to win the race.
+   */
+  languageExtension?: Extension;
+  format: DocumentFormat;
+  assumedEncoding: boolean;
+  selection: SessionSelection;
+  position: SessionPosition;
+  marks: number[];
+  folds: number[];
+}
+
+/** One session entry, after storage and the file system have been asked about it. */
+interface RestorePlan {
+  entry: SessionFile;
+  outcome: "restore" | "placeholder" | "drop";
+  /** The body to open with: a backup when there is one, otherwise the file's own text. */
+  text: string;
+  /** True when `text` came from `backup/` — which is what makes the document dirty. */
+  fromBackup: boolean;
+  /** The file's text, read anyway so the "modified by another program" question can be answered. */
+  fileText: string | undefined;
+  format: DocumentFormat;
+  assumedEncoding: boolean;
+  lastModified: number | undefined;
+  language: LanguageDefinition | null;
+  /** The grammar, already loaded — see `RestoreState.languageExtension` for why it is awaited. */
+  languageExtension?: Extension;
+  /**
+   * True when the user answered N++'s reload question with *yes* — "reload it and lose the changes
+   * made in Notepad++". That answer **is** the warning, so such a document must not also be counted
+   * as work the restore failed to bring back.
+   */
+  discardedByUser: boolean;
+}
+
+/** What the last restore did. Read by `inspect()`, so the acceptance check asserts on numbers. */
+interface RestoreReport {
+  complete: boolean;
+  restored: number;
+  dropped: number;
+  placeholders: number;
+  unsavedLost: number;
+}
+
+/** The caret and selection as session numbers — N++'s `startPos`/`endPos`/`selMode`. */
+function selectionOf(view: EditorView): SessionSelection {
+  const range = view.state.selection.main;
+  return {
+    anchor: range.anchor,
+    head: range.head,
+    // N++ records the selection *mode*; a rectangular selection is the one worth distinguishing,
+    // because restoring it as a plain range would silently change what is selected.
+    mode: view.state.selection.ranges.length > 1 ? "column" : "stream",
+  };
+}
+
+/** The viewport's top line and horizontal offset — N++'s `firstVisibleLine` and `xOffset`. */
+function positionOf(view: EditorView): SessionPosition {
+  const top = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
+  return {
+    firstVisibleLine: offsetToLine(view.state.doc, top.from),
+    xOffset: Math.round(view.scrollDOM.scrollLeft),
+  };
+}
+
+/**
+ * A handle's file mtime, or `undefined` when it cannot be read. N++ tracks this to notice a file
+ * that another program changed while the session was closed (`originalFileLastModifTimestamp`).
+ */
+async function fileTimestamp(handle: FileSystemFileHandle): Promise<number | undefined> {
+  try {
+    return (await handle.getFile()).lastModified;
+  } catch {
+    return undefined;
+  }
 }
 
 /** A folded range, as `foldEffect`/`unfoldEffect` want it. */

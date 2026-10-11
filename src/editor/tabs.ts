@@ -24,6 +24,7 @@ import type { EditorState, Extension, Text } from "@codemirror/state";
 
 import type { DocumentFormat } from "../file/types";
 import type { LanguageDefinition } from "../languages/registry";
+import type { SessionPosition, SessionSelection } from "../storage/session-store";
 import type { DocumentRuntime } from "./split-view";
 
 export interface OpenDocument {
@@ -72,6 +73,24 @@ export interface OpenDocument {
   languageExtension?: Extension;
   /** Live views of this document (owner first) — see split-view.ts. */
   runtime: DocumentRuntime;
+  /**
+   * Task 7 — where the caret and the viewport were, so a reload can put them back. Kept on the
+   * document rather than read from a view because a document that is not mounted has no view,
+   * and N++ records the position of every file in the session, shown or not.
+   */
+  position: SessionPosition;
+  selection: SessionSelection;
+  /**
+   * Task 7 — the document's body in `backup/` while it is dirty, and the file's mtime when it was
+   * last read or written. Both are N++ session fields (`backupFilePath`,
+   * `originalFileLastModifTimestamp`); both exist only for a document that can lose work.
+   */
+  backupPath?: string;
+  originalFileLastModifTimestamp?: number;
+  /** Task 7 — N++'s `userReadOnly`: the editor refuses edits. Set for an inaccessible file. */
+  readOnly: boolean;
+  /** Task 7 — this tab stands in for a file that could not be opened, and is empty. */
+  inaccessible?: boolean;
 }
 
 /** N++ calls the first unsaved buffer "new 1". */

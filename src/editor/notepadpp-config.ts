@@ -46,6 +46,7 @@ import {
 import { nppHighlighting } from "../languages/highlight";
 import { bookmarkField, bookmarkMarginCompartment, bookmarkMarginExtension } from "../search/bookmarks";
 import { markField } from "../search/find-replace";
+import { fontSizeForZoom, type ThemeName } from "../storage/preferences";
 import { overviewRuler } from "./overview-ruler";
 
 /* ------------------------------------------------------------------ defaults */
@@ -53,7 +54,8 @@ import { overviewRuler } from "./overview-ruler";
 /** stylers.model.xml → GlobalStyles/"Default Style": fontName="Courier New" fontSize="10". */
 export const NPP_FONT_FAMILY =
   '"Courier New", Courier, "DejaVu Sans Mono", ui-monospace, monospace';
-export const NPP_FONT_SIZE = "10pt";
+/** The style's own size at zoom 0 — Scintilla's zoom is an increment *on top of* this. */
+export const NPP_FONT_SIZE = fontSizeForZoom(0);
 
 /** Parameters.h: `int _tabSize = 4;` and `bool _tabReplacedBySpace = false;` (NppGUI). */
 export const NPP_TAB_SIZE = 4;
@@ -91,65 +93,92 @@ export const NPP_COLORS = {
 
 /* -------------------------------------------------------------------- theme */
 
-export const nppTheme: Extension = EditorView.theme(
-  {
-    "&": {
-      color: NPP_COLORS.foreground,
-      backgroundColor: NPP_COLORS.background,
-      fontSize: NPP_FONT_SIZE,
-      height: "100%",
+/**
+ * A theme is a palette plus the two facts the rest of the app needs about it. There is one
+ * today (N++'s own stylers.model.xml colours, which is what the app has always drawn); the
+ * second — N++'s Dark Mode, a Tier-1 row in `docs/scope.md` that no task has built yet — is a
+ * palette here and one more entry in `THEMES`, which is why the shape is a map rather than a
+ * bare constant. Until then the theme preference is stored and applied, and its only value is
+ * the honest one. Recorded in `DEVIATIONS_FROM_NPP`.
+ */
+interface NppPalette {
+  readonly dark: boolean;
+  readonly colors: typeof NPP_COLORS;
+}
+
+export const PALETTES: Record<ThemeName, NppPalette> = {
+  notepadpp: { dark: false, colors: NPP_COLORS },
+};
+
+/** What a theme name this build does not know falls back to. */
+const DEFAULT_PALETTE: NppPalette = { dark: false, colors: NPP_COLORS };
+
+/** The editor's look at a given zoom and theme — what `editorLookCompartment` holds. */
+export function nppEditorLook(options: { zoom?: number; theme?: ThemeName } = {}): Extension {
+  const palette = (options.theme && PALETTES[options.theme]) || DEFAULT_PALETTE;
+  const colors = palette.colors;
+  return EditorView.theme(
+    {
+      "&": {
+        color: colors.foreground,
+        backgroundColor: colors.background,
+        // N++'s Default Style size (10 pt) plus the zoom level, in points — Scintilla's own
+        // model: a zoom level *is* a point count (`SCI_SETZOOM`).
+        fontSize: fontSizeForZoom(options.zoom ?? 0),
+        height: "100%",
+      },
+      ".cm-scroller": { fontFamily: NPP_FONT_FAMILY },
+      ".cm-content": { fontFamily: NPP_FONT_FAMILY, caretColor: colors.caret },
+      ".cm-cursor, .cm-dropCursor": {
+        borderLeftColor: colors.caret,
+        borderLeftWidth: `${NPP_CARET_WIDTH}px`,
+      },
+      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
+        backgroundColor: colors.selection,
+      },
+      ".cm-activeLine": { backgroundColor: colors.activeLine },
+      ".cm-gutters": {
+        backgroundColor: colors.gutterBackground,
+        color: colors.gutterForeground,
+        border: "none",
+      },
+      ".cm-activeLineGutter": {
+        backgroundColor: colors.activeLine,
+        color: colors.foreground,
+      },
+      ".cm-foldGutter": { backgroundColor: colors.foldMarginBackground },
+      ".cm-foldGutter .cm-gutterElement": { color: colors.gutterForeground },
+      ".cm-foldPlaceholder": {
+        backgroundColor: colors.gutterBackground,
+        border: "none",
+        color: colors.gutterForeground,
+      },
+      ".cm-matchingBracket": {
+        color: colors.braceHighlight,
+        backgroundColor: "transparent",
+        fontWeight: "bold",
+      },
+      ".cm-nonmatchingBracket": {
+        color: colors.badBrace,
+        backgroundColor: "transparent",
+      },
+      // Search marks — N++'s "Find Mark style", i.e. Mark Style 1 (bgColor 00FFFF).
+      ".cm-searchMark": { backgroundColor: colors.markStyle1 },
+      // The bookmark margin: N++'s own margins are the gutter grey, and the dot is its
+      // bitmap drawn with SCI_MARKERSETALPHA 70 (ScintillaEditView.cpp:412) — ≈27% opacity,
+      // which is why the marker looks pale on a real N++ bookmark margin.
+      ".cm-bookmarkGutter": { backgroundColor: colors.gutterBackground },
+      ".npp-bookmark-dot": {
+        width: "8px",
+        height: "8px",
+        marginTop: "2px",
+        borderRadius: "50%",
+        background: "rgba(95 123 215 / 27%)",
+      },
     },
-    ".cm-scroller": { fontFamily: NPP_FONT_FAMILY },
-    ".cm-content": { fontFamily: NPP_FONT_FAMILY, caretColor: NPP_COLORS.caret },
-    ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: NPP_COLORS.caret,
-      borderLeftWidth: `${NPP_CARET_WIDTH}px`,
-    },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-      backgroundColor: NPP_COLORS.selection,
-    },
-    ".cm-activeLine": { backgroundColor: NPP_COLORS.activeLine },
-    ".cm-gutters": {
-      backgroundColor: NPP_COLORS.gutterBackground,
-      color: NPP_COLORS.gutterForeground,
-      border: "none",
-    },
-    ".cm-activeLineGutter": {
-      backgroundColor: NPP_COLORS.activeLine,
-      color: NPP_COLORS.foreground,
-    },
-    ".cm-foldGutter": { backgroundColor: NPP_COLORS.foldMarginBackground },
-    ".cm-foldGutter .cm-gutterElement": { color: NPP_COLORS.gutterForeground },
-    ".cm-foldPlaceholder": {
-      backgroundColor: NPP_COLORS.gutterBackground,
-      border: "none",
-      color: NPP_COLORS.gutterForeground,
-    },
-    ".cm-matchingBracket": {
-      color: NPP_COLORS.braceHighlight,
-      backgroundColor: "transparent",
-      fontWeight: "bold",
-    },
-    ".cm-nonmatchingBracket": {
-      color: NPP_COLORS.badBrace,
-      backgroundColor: "transparent",
-    },
-    // Search marks — N++'s "Find Mark style", i.e. Mark Style 1 (bgColor 00FFFF).
-    ".cm-searchMark": { backgroundColor: NPP_COLORS.markStyle1 },
-    // The bookmark margin: N++'s own margins are the gutter grey, and the dot is its
-    // bitmap drawn with SCI_MARKERSETALPHA 70 (ScintillaEditView.cpp:412) — ≈27% opacity,
-    // which is why the marker looks pale on a real N++ bookmark margin.
-    ".cm-bookmarkGutter": { backgroundColor: NPP_COLORS.gutterBackground },
-    ".npp-bookmark-dot": {
-      width: "8px",
-      height: "8px",
-      marginTop: "2px",
-      borderRadius: "50%",
-      background: "rgba(95 123 215 / 27%)",
-    },
-  },
-  { dark: false },
-);
+    { dark: palette.dark },
+  );
+}
 
 /* ------------------------------------------------------------------ keymaps */
 
@@ -303,6 +332,13 @@ export function cloneHistoryKeymap(owner: () => EditorView | undefined): KeyBind
 export const wordWrapCompartment = new Compartment();
 
 /**
+ * Task 7. The editor's look — N++'s colours at the current zoom. A preference is not a
+ * preference until it changes something, so zoom and theme are applied through this compartment
+ * on every live view, the same way word wrap and the language are.
+ */
+export const editorLookCompartment = new Compartment();
+
+/**
  * Task 6. The language's extension, swapped with `reconfigure` when a document's language is
  * known — including *after* the document is mounted, because loading a language is async and
  * a file must open immediately.
@@ -319,6 +355,19 @@ export interface EditorCoreOptions {
   bookmarkMargin?: boolean;
   /** The document's loaded language support, if it has one and it has arrived. */
   language?: Extension;
+  /** Task 7 — the zoom preference (`<ScintillaViewParams zoom="0">`), in points. */
+  zoom?: number;
+  /** Task 7 — the theme preference; only N++'s own palette exists so far. */
+  theme?: ThemeName;
+  /**
+   * Task 7 — N++'s `userReadOnly`, which is what a *placeholder* for an inaccessible file is
+   * opened as (`Buffer.cpp:1754-1760`). Two facets are needed, not one: `EditorState.readOnly`
+   * stops transactions from changing the document (so commands and dispatches are refused) and
+   * `EditorView.editable` is what makes the DOM itself refuse typing — the CM6 docs are explicit
+   * that the first "doesn't affect API calls that change the editor content", i.e. on its own it
+   * would leave the page typable.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -353,13 +402,17 @@ export function editorCoreExtensions(options: EditorCoreOptions = {}): Extension
     dropCursor(),
     // N++ column/rectangular selection (Alt+drag) needs multiple selections.
     EditorState.allowMultipleSelections.of(true),
+    // Task 7: N++'s `userReadOnly` — a placeholder for an inaccessible file is opened read-only
+    // (`Buffer.cpp:1756-1760`). Both facets are needed; `EditorCoreOptions.readOnly` says why.
+    ...(options.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
     rectangularSelection(),
     crosshairCursor(),
     indentOnInput(),
     bracketMatching(),
     EditorState.tabSize.of(NPP_TAB_SIZE),
     indentUnit.of(NPP_INDENT_UNIT),
-    nppTheme,
+    // Task 7: N++'s colours at the current zoom, swappable when the preference changes.
+    editorLookCompartment.of(nppEditorLook({ zoom: options.zoom, theme: options.theme })),
     // Task 6: N++'s token colours, plus the document's own language (empty until it loads).
     nppHighlighting,
     languageCompartment.of(options.language ?? []),
@@ -433,4 +486,14 @@ export const DEVIATIONS_FROM_NPP: readonly string[] = [
   "The 113 legacy `StreamLanguage` ports highlight but do not fold: a stream parser produces tokens, not a syntax tree, so `foldable()` reports nothing and the overview ruler shows no structure ticks for them. That is the trade D9 accepted in exchange for the long tail.",
   "N++ renders a `.vue` file with its JavaScript lexer (`langs.model.xml`: ext=\"js jsm jsx mjs vue\"); this port uses the Vue grammar, which is strictly better, and hands `.jsx`/`.tsx` to the JSX/TSX variants of the JavaScript grammar for the same reason.",
   "Extension and file-name detection is a deliberate addition to N++'s rule — N++ decides by extension alone, so a `Makefile` or a `Dockerfile` is \"Normal text file\" there unless the user picks the language. The recognised names are in `src/languages/registry.ts` (FILENAMES).",
+  // ── Task 7 (session, backups, preferences) ────────────────────────────────────────────────
+  "The session lives in IndexedDB and the bodies of unsaved documents in an OPFS `backup/` directory, not in `%APPDATA%\\\\Notepad++\\\\session.xml` and `backup\\\\`. The *fields* and the *rules* are N++'s (including its `FILENAME@YYYY-MM-DD_HHMMSS` backup names); the storage is what a page has instead of a user directory. A consequence worth stating: N++ users can copy session.xml aside as a backup, and this port cannot hand out its storage — the protection it offers instead is `navigator.storage.persist()` plus the snapshot interval.",
+  "A reload is not a close. N++ can ask before quitting and therefore cannot lose unsaved edits by surprise; a page cannot stop a reload, and the browser may do it on its own (a crash, a mobile tab eviction). What this port does instead: it snapshots every dirty document on N++'s own interval, and when a reload happens with that protection switched off it says so, by name, rather than opening the file and letting the edits disappear quietly.",
+  "N++'s Preferences ▸ MISC is a page of checkboxes; this port's Settings ▸ Preferences… carries only the settings it actually has (the session and snapshot group, the toolbar, the theme and the zoom). Style Configurator, Shortcut Mapper and the Import submenu are not built — they exist in N++ because it has style files and a Win32 shortcut table, neither of which a page has.",
+  "The theme preference has exactly one value, Notepad++'s own light palette. N++'s Dark Mode (a Tier 1 row in docs/scope.md that no task has claimed) is not built: `PALETTES` in `notepadpp-config.ts` takes a second palette and `THEMES` a second name, and the store and the compartment are already theme-agnostic — but a dark skin is a feature, not a preference, and it is not in this task.",
+  "View ▸ Zoom In / Zoom Out / Restore Default Zoom are not bound to keys. N++ binds them to the numeric keypad's +/- (its `winKeyDefs[]` table) and documents Ctrl+mouse wheel in the menu label; a browser owns Ctrl+wheel for page zoom unless the page cancels the gesture, and whether this one can be claimed here has not been measured — measuring first is this project's rule (see S6). The commands and their persistence work; only the binding is missing.",
+  "N++ keeps a zoom per view (`zoom` and `zoom2`) plus a \"Synchronize Across Views\" switch, and groups the zoom commands in a `Zoom` submenu. This menu bar has no submenus, and one zoom for the whole app is what `zoomSync` means in N++ — the split's two panes are one document shown twice (S5), not two views with independent settings.",
+  "The Toolbar preference's layout value names icon sets in N++ (its `config.xml` carries `standard`, `small`, `fluent` and a fluent colour); this port's toolbar is text, so the value spends itself on the button box instead. `visible` means what it means in N++.",
+  "N++ opens a file it already has by activating the existing document — \"If we found the document, then we don't open the existing doc\" (`NppIO.cpp:306-330`) — but skips that check in snapshot mode. This port always activates: the backup belongs to the *document*, not to the file, so a second copy of the same file would have nothing to recover that the first one does not.",
+  "A restored clone pane's own caret and scroll are not put back. N++ records a position per file per view (`startPos`/`endPos`/`firstVisibleLine`/`xOffset` in `mainView` and `subView`); this port records one position per document, because its split is the active document in two panes (S5) — the pane you left is the one that comes back.",
 ];

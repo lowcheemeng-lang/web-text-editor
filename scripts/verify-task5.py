@@ -101,8 +101,12 @@ with sync_playwright() as p:
     # ── 1. boot, menus, the dialog exists and is closed ─────────────────────
     check("one pane and one editor at boot", page.locator(".npp-pane").count() == 1
           and page.locator(".cm-editor").count() == 1)
-    check("menu bar is File / Search / View (N++'s Search menu is here)",
-          info()["menuTitles"] == ["File", "Search", "View"], str(info()["menuTitles"]))
+    # Membership, not an exact list. The point of this check is that N++'s *Search* menu exists next
+    # to File and View; Task 7 adds Settings ▸ Preferences… (and Task 4 already hit this pattern
+    # when Task 5 added Search to what was then a two-menu bar). A later task adding a menu is not
+    # a Task 5 regression, and `verify-task7.py` owns the current shape.
+    check("File, Search and View menus are present (N++'s Search menu is here)",
+          {"File", "Search", "View"} <= set(info()["menuTitles"]), str(info()["menuTitles"]))
     check("the Find dialog starts closed", info()["search"]["open"] is False)
 
     page.click(".npp-pane[data-pane='primary'] .cm-content")

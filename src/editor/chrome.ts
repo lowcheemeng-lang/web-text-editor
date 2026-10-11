@@ -229,6 +229,20 @@ export class Chrome {
     button.setAttribute("aria-pressed", String(active));
   }
 
+  /**
+   * Task 7 — `<GUIConfig name="ToolBar" visible="…">`. The `hidden` attribute alone is not
+   * enough: `.npp-toolbar` sets `display: flex`, which beats the user-agent's `[hidden]` rule,
+   * so the stylesheet carries a `[hidden]` rule of its own.
+   */
+  setToolbarVisible(visible: boolean): void {
+    this.toolbar.hidden = !visible;
+  }
+
+  /** Task 7 — the same node's text value, spent on button size (see `preferences.ts`). */
+  setToolbarLayout(layout: string): void {
+    this.toolbar.dataset.layout = layout;
+  }
+
   /** Panes sit either side of the splitter; the primary pane goes before it. */
   addPane(id: string, position: "before-splitter" | "after-splitter"): PaneElements {
     const root = el("section", { className: "npp-pane", attrs: { "data-pane": id } });

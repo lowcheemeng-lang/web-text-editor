@@ -235,7 +235,14 @@ with sync_playwright() as p:
     entry = page.locator("[data-menu-item='recent:crlf-bom.txt']")
     check("recent: the File menu lists the file", entry.count() == 1)
     entry.click()
-    page.wait_for_function("() => window.__workspace.inspect().documents > 1", timeout=10000)
+    # Wait for what this check actually asserts, not for the document count. Opening a stored
+    # handle is asynchronous (a permission check, then a read) and Task 7's session restore has
+    # already put documents on screen by this point — so "documents > 1", which was this line's
+    # original proxy for "the click landed", no longer means that. The three assertions below are
+    # unchanged, and this is the sync they always implicitly needed.
+    page.wait_for_function(
+        "() => window.__workspace.inspect().activeFileName === 'crlf-bom.txt'", timeout=10000
+    )
 
     reopened = info(page)
     check("recent: clicking it reopens the file",

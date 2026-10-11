@@ -328,15 +328,94 @@ numbers are recorded here because the failure is silent.
 **Objective:** Maintain session state across reloads without backend.
 
 **Files:**
+- Create: `src/storage/idb.ts` *(added — one database, one version, one upgrade path; Task 4's
+  `recent-files.ts` was moved onto it so a profile written then upgrades in place)*
 - Create: `src/storage/session-store.ts`
 - Create: `src/storage/preferences.ts`
+- Create: `src/storage/backup-store.ts` *(added — N++'s `backup/` directory, on OPFS: D8's
+  document-body half, which Task 7 is the task that builds)*
+- Create: `src/storage/persistent-storage.ts` *(added — risk R6's recorded mitigation,
+  `navigator.storage.persist()`, reported rather than assumed)*
+- Create: `src/editor/preferences-dialog.ts` *(added — Settings ▸ Preferences…)*
+- Create: `docs/session-persistence.md` *(added — N++'s `session.xml`, `backup/` algorithm and
+  `config.xml` keys quoted, with the browser mapping and every deviation)*
+- Modify: `src/editor/workspace.ts`, `src/editor/notepadpp-config.ts`, `src/editor/tabs.ts`,
+  `src/editor/chrome.ts`, `src/editor/overview-ruler.ts`, `src/style.css`, `src/file/recent-files.ts`
 
 **Steps:**
-1. Save open tabs, caret positions, and scroll positions in IndexedDB.
-2. Persist UI preferences: theme, font size, word wrap, toolbar layout.
-3. Implement restore on startup.
+1. Save open tabs, caret positions and scroll positions in IndexedDB. ✅ The record is N++'s own
+   shape — `Session activeView` + `mainView.activeIndex`, and per file `filename`, `lang`,
+   `encoding`, `startPos`/`endPos`/`selMode`, `firstVisibleLine`/`xOffset`, `wrapCount`-carrying wrap,
+   `userReadOnly`, `backupFilePath`, `originalFileLastModifTimestamp` — plus N++'s `<Mark>` and
+   `<Fold>` children, so bookmarks (Task 5) and folds (Task 6) come back. Written 500 ms after a
+   change and immediately on a tab switch, a close, `visibilitychange` → hidden and `pagehide`;
+   N++ writes once on the way out, and a page cannot count on being told it is going away.
+2. Persist UI preferences: theme, font size, word wrap, toolbar layout. ✅ As N++ persists them:
+   `RememberLastSession` and `KeepSessionAbsentFileEntries` (`Parameters.h:755-756`), the snapshot
+   mode and its `snapshotBackupTiming` (`Parameters.h:867-869`, 7000 ms), the toolbar's
+   `visible`/layout node (`Parameters.cpp:6046`), the theme name, and **zoom** in points
+   (`ScintillaViewParams zoom`, `Parameters.cpp:7288`) — which is what "font size" is in N++:
+   Scintilla's zoom is an increment on the style's own 10 pt. Word wrap stays where N++ keeps it,
+   per document, and it is therefore persisted with the document rather than as a global preference.
+3. Implement restore on startup. ✅ N++'s `loadSession` order: preferences first (they gate
+   everything), then each file planned *before* anything opens — the backup body if there is one,
+   otherwise the file, with the two questions N++ asks (inaccessible files → read-only placeholders;
+   "This file has been modified by another program" → reload or keep the snapshot) — then the active
+   tab, then the split, then the session is rewritten from what actually opened and orphaned backups
+   are pruned.
+4. *(not in the plan, required by it)* **Keep unsaved work across a reload at all.** A body has to be
+   written somewhere or "restore on startup" cannot restore an untitled buffer: N++'s `backup/`
+   directory and its documented sync rules (`Buffer.cpp:1231-1272`) are implemented on OPFS, with
+   N++'s own file naming (`FILENAME@YYYY-MM-DD_HHMMSS`).
 
-**Verification:** Reload app after editing; confirm tabs and positions restore.
+**Verification:** Reload app after editing; confirm tabs and positions restore. ✅
+`python3 scripts/verify-task7.py` → **PASS (82/82)**, twice, everything asserted **after a real
+`page.reload()`** (which throws away every in-page stub, so only stored state can survive it): the
+Preferences dialog (Cancel applies nothing, OK applies and persists, and the effects are visible —
+toolbar hidden, 12 pt text), View ▸ Zoom, an unsaved scratch buffer returning dirty with its caret
+and its bookmark, a CRLF+BOM file returning dirty from its backup and saving back **byte-identical**
+(`EF BB BF` + `one\r\ntwo\r\nTHREE`), N++'s both modified-file answers, folds/bookmarks/wrap/split/
+language restored (folds as *rendered* `.cm-foldPlaceholder`s, not just counters), an inaccessible
+file dropped or offered as a read-only placeholder that refuses typing, and unsaved work that cannot
+be restored reported **by name** with snapshot mode off. `node --experimental-strip-types
+scripts/test-session.mjs` → **PASS (75/75)** — the storage logic in Node, where neither IndexedDB nor
+OPFS exists: N++'s backup naming, the preference defaults and ranges, the restore decision table, the
+line↔offset conversions, and the fail-soft contract.
+
+**Outcome:** Complete. The session, the backups and the preferences are described in
+`docs/session-persistence.md`; the app's own list of what is *not* N++'s is nine new
+`DEVIATIONS_FROM_NPP` entries (browser storage instead of `%APPDATA%`, a reload is not a close, the
+settings N++ has that this port does not, the single-value theme, unbound zoom keys, the icon-set-free
+toolbar value, always-activate-instead-of-duplicate, and the clone pane's own caret). Bundle:
+`editor-core` **335.26 kB / 109.14 kB gzip** across **129 chunks** — *unchanged* from Task 6
+(335.24 / 109.13), because the storage layer, the preferences dialog and the ruler's mount-time walk
+all land in the app's own chunk, which is now `index` **113.19 kB / 34.55 kB gzip**. That is the
+lazy-loading trade still holding: 140 languages cost nothing until a file is opened.
+
+**Four defects this task found and fixed — all of them pre-existing, none of them introduced here:**
+1. **The split erased folds** (and could erase bookmarks). `#mirrorFolds`/`#mirrorBookmarks` compared
+   *states*: a freshly mounted clone legitimately starts empty, so its first transaction — the
+   mount-time handover, or a bookmark copy — read as "the document has no folds" and cleared the
+   other pane's. They now compare *changes* (a per-view signature), which is the same rule the rest
+   of the app uses.
+2. **A restored document lost its grammar.** `#loadLanguage` reconfigures the views that exist when
+   its import resolves, and during a restore none exist yet, so the extension went nowhere: no
+   highlighting and, because `foldable()` needs a grammar, no folds. The restore now awaits the
+   grammar and puts it in the state when the document is created.
+3. **The overview ruler showed no structure for a view mounted on an already-parsed state** — Task
+   6's own check caught it, for the re-activated-document case. The plugin walks the tree at
+   construction now, capped by `STRUCTURE_LIMIT` (measured at 8.5 ms for a 10 000-line file).
+4. **A document id could repeat.** Ids were `d{documents.length+1}-{newNumber}`, which is not unique
+   when a document is *removed* — the welcome buffer a restore discards, or any closed tab — and the
+   `new N` counter does not move when a file is opened. The collision made `#show()` return early:
+   the file opened and never came to the front. One monotonic counter now.
+
+**Also changed for the same reason** (recorded because a later task will read these scripts):
+`verify-task4.py`'s recent-file wait moved from "documents > 1" to "the expected file is active",
+because a session restore satisfies the old proxy by itself; `verify-task5.py`'s menu assertion
+became membership rather than an exact list (Task 7 adds Settings); and
+`verify-task4-pickers.py` learned to *verify* the path it types into the real OS dialog before
+pressing Return, having spent an afternoon being blamed for opening the wrong file.
 
 ---
 

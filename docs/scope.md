@@ -33,8 +33,8 @@ Two questions drive almost every scoping call:
 
 ## 3. Decisions
 
-Proposed at Task 1; D2, D7, D10 and D11 have since been accepted by the user (see the
-decision log in `PROGRESS.md`, which is the authority on status).
+Proposed at Task 1; D2, D7, D10 and D11 have since been accepted by the user, and D12 was proposed by Task 7
+and is awaiting an answer (see the decision log in `PROGRESS.md`, which is the authority on status).
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
@@ -45,10 +45,11 @@ decision log in `PROGRESS.md`, which is the authority on status).
 | **D5** | **"Plugins" = runtime-loaded ES modules** against a documented host API, plus WASM. No native ABI. | The only backend-free option. Chromium can load them from a user-picked local folder; elsewhere, paste-source install. |
 | **D6** | **Macro recording = editor transaction recording**, not OS input replay. | CM6 exposes every change as a transaction, so record/replay/run-N-times is genuinely feasible without native hooks. |
 | **D7** | **Run/exec features (NppExec-style, external tools) are out of scope.** | Requires a process/shell. Impossible backend-free; would need a desktop wrapper. |
-| **D8** | **Persistence: OPFS for document bodies, IndexedDB for metadata/preferences.** Handles are also storable in IndexedDB, which is what makes Tier A "recent files" work. | OPFS is Baseline widely available (since March 2023) across Chromium/Firefox/Safari. |
+| **D8** | **Persistence: OPFS for document bodies, IndexedDB for metadata/preferences.** Handles are also storable in IndexedDB, which is what makes Tier A "recent files" work. | OPFS is Baseline widely available (since March 2023) across Chromium/Firefox/Safari. **Both halves are now built** — Task 4 exercised the IndexedDB-for-handles half (`src/file/recent-files.ts`) and Task 7 the rest: the session and the preferences in IndexedDB, the bodies of unsaved documents in OPFS `backup/` (`src/storage/`). Status stays **Proposed**: only the user moves a `D` decision |
 | **D9** | **MVP language set: all 22 official CM6 packages (first-class) + all 103 `@codemirror/legacy-modes` ports (long tail), each lazily imported.** UDL via `StreamLanguage` stays Tier 3. | **Counted and verified 2026-10-06 against the codemirror org and npm — all 22 install.** The "~20" above was written before anyone counted. First-class = Lezer grammar, so a real fold service *and* a syntax tree Function List can walk; legacy = CM5 stream parser, highlighting only, **no fold service**. Trimming the list saves nothing: `@codemirror/language-data` supplies one lazily-loaded description per language, so an unopened language costs 0 bytes. **Delivered in Task 6 (2026-10-11): 140 languages — 27 first-class rows over the 22 packages (JavaScript, JSX, TypeScript, TSX, C, C++ and two SQL dialects are separate N++ languages from shared packages) plus 113 legacy parsers out of the 152 the package exports; 281 distinct extensions.** The 39 others are 32 parsers a first-class grammar supersedes (each with its reason), and 7 exports that are factories or a keyword list, not languages — `scripts/gen-language-registry.mjs --check` fails if any export is unaccounted for. **The gap list, corrected by measurement:** makefile, batch/.bat, INI, JSON5, GraphQL, MATLAB-as-MATLAB (the Octave parser serves `.m`)… but **C#, Kotlin, Scala and Objective-C *are* covered** — `legacy-modes/mode/clike.js` exports parsers for them, which the 2026-10-06 note wrongly listed as gaps. `lang-angular@0.1.4` and `lang-vue@0.1.3` are pre-1.0. **D10 ranks UDL below encoding/large-file work**; the MVP language set is unaffected |
 | **D10** | **Phase-3 priority: encoding fidelity + large-file mode.** WASM decoding for UTF-32 and DOS/IBM codepages, plus our own large-file threshold. UDL parity ranks below it and stays unscheduled. | Correctness beats breadth: a mis-decoded legacy file or a stalled editor is silent data loss or a hard block (R1, R3, B7), whereas UDL is a visible missing feature with a documented workaround. |
 | **D11** | **MVP browser scope: Chromium only** (Chrome, Edge, Opera). Firefox/Safari fallback UX (§7 tiers B/C) moves to phase 2; §8 acceptance is Chrome-only. | User decision. Keeps the MVP on the single File System Access path and halves the file-I/O test matrix. Its cost is carried as risk R8 (retrofit risk). |
+| **D12** *(proposed by Task 7, awaiting the user)* | **Mobile/tablet: out of scope for the MVP** — a phone or tablet gets the S4 notice, the same way Firefox and Safari do. | D11 fixed the browser (Chromium) but never addressed the *device*, and Task 7 is the task whose work it changes: a mobile browser evicts an origin's storage far more aggressively than a desktop one (iOS in particular purges non-installed sites' storage after days without use), so the promise "unsaved work is still there when you come back" — the whole point of Task 7 — is not one this port can honestly make there. The alternative would be: (a) keep mobile in scope and treat `navigator.storage.persist()` as the mitigation, which on mobile is a best-effort request that iOS refuses for non-installed sites, or (b) **out of scope, with the notice** — which costs nothing to reverse later, since everything is already feature-detected (`src/platform/capabilities.ts`) and no code branches on the device today. **Recommend (b).** |
 
 ## 4. Feature tiers
 
@@ -64,16 +65,16 @@ decision log in `PROGRESS.md`, which is the authority on status).
 | Undo / redo, unlimited | `@codemirror/commands` history | High |
 | Line numbers, current-line highlight, active-line gutter | `@codemirror/view` | High |
 | Word wrap toggle, whitespace/special-char display, EOL display | `EditorView.lineWrapping`, `highlightSpecialChars` | High |
-| Zoom in/out (Ctrl+±, Ctrl+wheel) | Editor theme font-size facet | High |
+| Zoom in/out (Ctrl+±, Ctrl+wheel) | Editor theme font-size facet | High — **partly shipped in Task 7**: View ▸ Zoom In / Zoom Out / Restore Default Zoom (N++'s `IDM_VIEW_ZOOMIN`/`ZOOMOUT`/`ZOOMRESTORE`) and the zoom persisted as N++'s `ScintillaViewParams zoom`<br>the **key binding is deliberately not claimed**: N++ uses the numeric keypad's +/- and documents Ctrl+wheel in the menu label, and Ctrl+wheel is the browser's page zoom unless a page cancels the gesture — not measured here, and measuring first is S6's rule |
 | Syntax highlighting | CM6 language packages (D9) | High — **shipped in Task 6**: 140 languages, lazily imported, painted in N++'s token colours (`src/languages/`) |
 | Code folding | Fold gutter + language fold service | High — **shipped in Task 6**: `codeFolding()` supplies the fold state the gutter needed (Task 3 had wired the gutter only); folds follow a document into its cloned pane |
 | Multi-cursor & column/rectangular selection | CM6 core ships `rectangularSelection()` + `crosshairCursor()` | High |
 | Auto-indent, tab/space config, tab size | `indentUnit`, `indentOnInput`, language indent service | High |
 | EOL conversion (CRLF/LF/CR) | `EditorState.lineSeparator` + document-wide re-write | Medium — see R3 |
 | Case conversion (UPPER/lower/Title), duplicate/delete/move/sort lines, trim trailing whitespace, remove blank/duplicate lines | Pure JS line operations over the doc | High |
-| Session restore (open tabs, caret, scroll) | OPFS + IndexedDB (D8) | High |
+| Session restore (open tabs, caret, scroll) | OPFS + IndexedDB (D8) | High — **shipped in Task 7**: the session (`session.xml`'s fields, including N++'s `<Mark>`/`<Fold>` children, so bookmarks and folds come back), the bodies of unsaved documents in an OPFS `backup/` with N++'s `FILENAME@YYYY-MM-DD_HHMMSS` names, and the preferences (`config.xml`'s session/toolbar/zoom keys). `python3 scripts/verify-task7.py` → 82/82, everything asserted after a real reload; `docs/session-persistence.md` has the mapping and the deviations |
 | Recent files | Stored handles via File System Access (D11) | High |
-| Dark mode / themes | CM6 theme, N++-style palette | High |
+| Dark mode / themes | CM6 theme, N++-style palette | High — **the preference shipped in Task 7, the dark palette did not**: the theme name is stored, applied at startup and threaded through `PALETTES`/`THEMES`, but Notepad++'s Dark Mode itself (its dark token palette and chrome colours) is a skin, not a preference, and no task has claimed it |
 | Line ending + encoding + language indicator in status bar | Status bar component | High — **shipped in Task 6** for the language field, in N++'s own position: `STATUSBAR_DOC_TYPE` is part 0, the leftmost (`Notepad_plus_msgs.h:185`), and the wording is N++'s long name ("Python file", "Normal text file") |
 | Keyboard shortcuts matching N++ defaults | Custom keymap | High |
 
