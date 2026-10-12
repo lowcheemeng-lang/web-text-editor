@@ -6,7 +6,7 @@
 > spec (what to build, which files, how to verify). Start any new session by reading
 > `PROGRESS.md` → `docs/scope.md` → this plan, in that order.
 
-**Status:** Tasks 1–6 ✅ done · Task 7 ⬜ next · see `PROGRESS.md` for live state
+**Status:** Tasks 1–7 ✅ done · Task 8 ⬜ next · see `PROGRESS.md` for live state
 (`npm run status`). Task 6 was accepted 2026-10-11: `scripts/verify-task6.py` → **PASS (67/67)**,
 `scripts/test-languages.mjs` → **238/238**. Task 5 was accepted 2026-10-10:
 `scripts/verify-task5.py` → **PASS (105/105)**, twice in a row, over a 10k-line file as the task
@@ -17,6 +17,9 @@ phase-3 priority = encoding fidelity + large-file mode (D10) · **MVP is Chromiu
 Task 4 below already reflects D11.
 **Also settled 2026-10-06:** macros = transaction record/replay (D6) · MVP language set =
 22 official packages + 103 legacy modes (D9).
+**Also settled 2026-10-12:** mobile/tablet is out of the MVP (D12) — a phone or tablet gets the S4
+notice, the way Firefox and Safari do. No task changes: the notice follows from the pickers being
+absent, not from a device check.
 
 **Goal:** Produce a browser-based text editor inspired by Notepad++ that runs fully client-side with no backend dependency.
 
@@ -64,9 +67,10 @@ Task 4 below already reflects D11.
 3. Document fallback UX for unsupported browsers. ✅ (fallback tiers A/B/C + a fallback column on every ❌)
 
 **Verification:** `docs/scope.md` reviewed; each feature has a target API or a fallback entry.
-**Outcome:** Complete. Decisions ran D1–D11; all four questions that were open in §10 are now
-resolved (D2, D7, D10, D11). As of 2026-10-06 D6 and D9 are accepted too; **D1, D3, D4, D5 and
-D8 remain proposed, and only D3 + D4 gate a task (Task 4).**
+**Outcome:** Complete. Decisions ran D1–D12; all four questions that were open in §10 are now
+resolved (D2, D7, D10, D11). As of 2026-10-06 D6 and D9 are accepted too, and as of 2026-10-12 D12
+(mobile/tablet out) — **D1, D3, D4, D5 and D8 remain proposed, and none of them gates a task now**
+(D3 + D4 gated Task 4, which is done).**
 
 ---
 
@@ -323,7 +327,7 @@ numbers are recorded here because the failure is silent.
 
 ---
 
-### Task 7: Add session persistence and preferences
+### Task 7: Add session persistence and preferences — ✅ DONE (2026-10-11)
 
 **Objective:** Maintain session state across reloads without backend.
 
@@ -497,7 +501,7 @@ All of the original three are closed; kept for the audit trail.
 
 ---
 
-Plan complete and saved. Tasks 1–6 are done; Task 7 (session persistence and preferences) is the
+Plan complete and saved. Tasks 1–7 are done; Task 8 (installable, offline-capable web app) is the
 next unit of work and is ungated — see `PROGRESS.md` for the live next action.
 
 **One item from Task 6 is deliberately open**, for Task 7 to pick up or leave: `src/languages/`

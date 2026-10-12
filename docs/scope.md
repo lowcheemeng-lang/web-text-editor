@@ -4,7 +4,8 @@
 **Status:** Accepted — D2 (CodeMirror 6), D7 (no Run/exec), D10 (phase-3 priority), D11 (Chromium-only
 MVP), all user-confirmed 2026-09-25; **D6 (transaction record/replay macros)** and **D9 (22 official
 packages + 103 legacy-modes)** confirmed 2026-10-06; **D3 (Tier A file I/O only)** and **D4 (WHATWG
-encoding set, explicit warning for the rest)** also confirmed 2026-10-06.
+encoding set, explicit warning for the rest)** also confirmed 2026-10-06; **D12 (mobile/tablet out of
+the MVP)** confirmed 2026-10-12.
 D1, D5, D8 remain proposed.
 **Reference target:** Notepad++ 8.9.8 (Scintilla-based, C++/Win32, GPL).
 **Verified on:** 2026-09-25. Source links in [Sources](#sources).
@@ -33,8 +34,9 @@ Two questions drive almost every scoping call:
 
 ## 3. Decisions
 
-Proposed at Task 1; D2, D7, D10 and D11 have since been accepted by the user, and D12 was proposed by Task 7
-and is awaiting an answer (see the decision log in `PROGRESS.md`, which is the authority on status).
+Proposed at Task 1; D2, D3, D4, D6, D7, D9, D10 and D11 have since been accepted by the user.
+**D12 — proposed by Task 7 — was answered 2026-10-12: accepted, mobile/tablet is out of the MVP.**
+See the decision log in `PROGRESS.md`, which is the authority on status.
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
@@ -49,7 +51,7 @@ and is awaiting an answer (see the decision log in `PROGRESS.md`, which is the a
 | **D9** | **MVP language set: all 22 official CM6 packages (first-class) + all 103 `@codemirror/legacy-modes` ports (long tail), each lazily imported.** UDL via `StreamLanguage` stays Tier 3. | **Counted and verified 2026-10-06 against the codemirror org and npm — all 22 install.** The "~20" above was written before anyone counted. First-class = Lezer grammar, so a real fold service *and* a syntax tree Function List can walk; legacy = CM5 stream parser, highlighting only, **no fold service**. Trimming the list saves nothing: `@codemirror/language-data` supplies one lazily-loaded description per language, so an unopened language costs 0 bytes. **Delivered in Task 6 (2026-10-11): 140 languages — 27 first-class rows over the 22 packages (JavaScript, JSX, TypeScript, TSX, C, C++ and two SQL dialects are separate N++ languages from shared packages) plus 113 legacy parsers out of the 152 the package exports; 281 distinct extensions.** The 39 others are 32 parsers a first-class grammar supersedes (each with its reason), and 7 exports that are factories or a keyword list, not languages — `scripts/gen-language-registry.mjs --check` fails if any export is unaccounted for. **The gap list, corrected by measurement:** makefile, batch/.bat, INI, JSON5, GraphQL, MATLAB-as-MATLAB (the Octave parser serves `.m`)… but **C#, Kotlin, Scala and Objective-C *are* covered** — `legacy-modes/mode/clike.js` exports parsers for them, which the 2026-10-06 note wrongly listed as gaps. `lang-angular@0.1.4` and `lang-vue@0.1.3` are pre-1.0. **D10 ranks UDL below encoding/large-file work**; the MVP language set is unaffected |
 | **D10** | **Phase-3 priority: encoding fidelity + large-file mode.** WASM decoding for UTF-32 and DOS/IBM codepages, plus our own large-file threshold. UDL parity ranks below it and stays unscheduled. | Correctness beats breadth: a mis-decoded legacy file or a stalled editor is silent data loss or a hard block (R1, R3, B7), whereas UDL is a visible missing feature with a documented workaround. |
 | **D11** | **MVP browser scope: Chromium only** (Chrome, Edge, Opera). Firefox/Safari fallback UX (§7 tiers B/C) moves to phase 2; §8 acceptance is Chrome-only. | User decision. Keeps the MVP on the single File System Access path and halves the file-I/O test matrix. Its cost is carried as risk R8 (retrofit risk). |
-| **D12** *(proposed by Task 7, awaiting the user)* | **Mobile/tablet: out of scope for the MVP** — a phone or tablet gets the S4 notice, the same way Firefox and Safari do. | D11 fixed the browser (Chromium) but never addressed the *device*, and Task 7 is the task whose work it changes: a mobile browser evicts an origin's storage far more aggressively than a desktop one (iOS in particular purges non-installed sites' storage after days without use), so the promise "unsaved work is still there when you come back" — the whole point of Task 7 — is not one this port can honestly make there. The alternative would be: (a) keep mobile in scope and treat `navigator.storage.persist()` as the mitigation, which on mobile is a best-effort request that iOS refuses for non-installed sites, or (b) **out of scope, with the notice** — which costs nothing to reverse later, since everything is already feature-detected (`src/platform/capabilities.ts`) and no code branches on the device today. **Recommend (b).** |
+| **D12** *(proposed by Task 7, accepted 2026-10-12)* | **Mobile/tablet: out of scope for the MVP** — a phone or tablet gets the S4 notice, the same way Firefox and Safari do. | D11 fixed the browser (Chromium) but never addressed the *device*, and Task 7 is the task whose work it changes: a mobile browser evicts an origin's storage far more aggressively than a desktop one (iOS in particular purges non-installed sites' storage after days without use), so the promise "unsaved work is still there when you come back" — the whole point of Task 7 — is not one this port can honestly make there. The alternative would be: (a) keep mobile in scope and treat `navigator.storage.persist()` as the mitigation, which on mobile is a best-effort request that iOS refuses for non-installed sites, or (b) **out of scope, with the notice** — which costs nothing to reverse later, since everything is already feature-detected (`src/platform/capabilities.ts`) and no code branches on the device today. **Recommend (b).** **Accepted 2026-10-12** — the user's word was "D12 mobile/tablet is a no for now". Nothing needs building for it: the notice a phone receives is the one already shipped, because the check tests for the File System Access API itself rather than sniffing a device, and mobile Chromium has no pickers (`src/platform/capabilities.ts`, checked against caniuse 2026-10-06). **Measured 2026-10-12:** with the two pickers deleted before the app loaded, the notice renders and the editor still mounts, on a desktop-shaped and a phone-shaped (Pixel 5 emulation) session alike. "For now" is the cost of the decision, and it is small: nothing branches on the device, so re-opening it is a scope edit, not a retrofit. |
 
 ## 4. Feature tiers
 
@@ -147,6 +149,10 @@ because the phase-2 work will need them, and because they explain *why* tier A i
 loop *may* depend on Chromium-only capabilities — the File System Access pickers are the MVP
 file path, not an enhancement.
 
+**Device scope (D12, accepted 2026-10-12):** desktop. A phone or tablet is out of the MVP whatever
+browser it runs — **Chrome for Android included** — and gets the S4 notice, because the pickers are
+what the check tests for and mobile Chromium has none. Nothing in the code branches on the device.
+
 **Consequence for phase 2:** the retrofit must not require re-architecting. Keep file I/O
 behind a single module boundary (`src/file/file-io.ts`) so a tier-B implementation can be
 dropped in without touching the editor or the UI, and keep the thin capability check from
@@ -182,6 +188,7 @@ save back as windows-1252 unless the user explicitly converts.
 | **A — full** | Chrome, Edge, Opera | **MVP (D11)** | Native pickers; Save writes in place; recent files reopen by handle; directory workspaces; drop-to-open. |
 | **B — degraded but complete** | Firefox | Phase 2 | Open via file input, save via download, "Save" = re-download with a persistent OPFS working copy so nothing is lost between edits. Banner explains the difference once. |
 | **C — most degraded** | Safari, iOS, iPadOS | Phase 2 | Same as B; plus storage-eviction warning and an "Export backup" action. No file handling, no picker. |
+| **D — devices** | Phones and tablets, *any* browser (Chrome for Android included) | **Out of the MVP (D12)** | The S4 notice. Not a behaviour tier: it is a ruling about the device, and the reason is Task 7's — a mobile browser evicts an origin's storage aggressively enough that §8's "your unsaved work is still there when you come back" is not a promise this port can keep there. Phase 2 material if that story changes. |
 
 Capability detection stays a single module (`src/platform/capabilities.ts`, built in Task 4)
 that feature-tests rather than sniffs user-agent strings. In the MVP it only needs to answer
@@ -190,7 +197,7 @@ message instead of throwing (S4); the tier B/C behaviour arrives in phase 2.
 
 ## 8. Acceptance criteria for the MVP
 
-The MVP is done when, in **Chrome/Chromium** (D11):
+The MVP is done when, in **Chrome/Chromium on a desktop OS** (D11; devices are out — D12):
 
 1. A user can create, edit, and save a text file without any network request after first load.
 2. Open → edit → save round-trips a file byte-identically when no edits are made (CRLF and CRLF+BOM included).

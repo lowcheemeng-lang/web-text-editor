@@ -19,7 +19,7 @@ The plan is the *spec*; this ledger is the *state*. Keep them separate.
 A new session (human or agent) needs zero prior context if it reads these files **in this order**:
 
 1. `PROGRESS.md` — where we are, what is next (this file)
-2. `docs/scope.md` — what is in scope, what is impossible, decisions D1–D11
+2. `docs/scope.md` — what is in scope, what is impossible, decisions D1–D12
 3. `docs/editor-core-decision.md` — the D2 analysis (only if touching the editor core)
 4. `.hermes/plans/2026-09-24_notepadpp-web-plan.md` — the task-by-task spec
 
@@ -89,12 +89,16 @@ papered over:
   only value is N++'s light palette. The dark skin (its token palette and chrome colours) is a
   Tier-1 row in `docs/scope.md` that no task has claimed.
 
-**And one thing needs the user, not a task: `D12` (mobile/tablet) is filed as a proposal in
-`docs/scope.md` §3** — recommendation: out of scope for the MVP, with the S4 notice, because a mobile
-browser evicts origin storage in a way that makes Task 7's promise ("your unsaved work is still
-there") one this port cannot honestly keep. It needs a yes or a no; nothing is blocked on it.
+**`D12` (mobile/tablet) was answered by the user on 2026-10-12 — "D12 mobile/tablet is a no for now".
+Recorded as `Accepted` in `docs/scope.md` §3**, and with it §5, §7's new tier D and §8: mobile/tablet
+is out of the MVP, and a phone or tablet gets the S4 notice the way Firefox and Safari do. **Nothing
+was built for it and nothing had to be:** the capability check tests for the File System Access API
+rather than sniffing a device, and mobile Chromium has no pickers (`src/platform/capabilities.ts`,
+checked against caniuse 2026-10-06), so a phone already received that notice. The "for now" is the part
+that matters — nothing branches on the device, so re-opening the decision is a scope edit, not a
+retrofit.
 
-### Scope settled at sign-off (2026-09-25)
+### Scope settled at sign-off, and since (2026-09-25 → 2026-10-12)
 
 | Area | Ruling | Effect on the remaining tasks |
 |---|---|---|
@@ -102,6 +106,7 @@ there") one this port cannot honestly keep. It needs a yes or a no; nothing is b
 | Run/exec, native plugins | **D7 accepted** — permanently out | Nothing to build; keeps the impossible-list closed |
 | Phase-3 priority | **D10 accepted** — encoding fidelity (WASM) + large-file mode; UDL below it | Does not affect Tasks 3–8; defines what comes after |
 | Browser scope | **D11 accepted** — Chromium only for the MVP | Task 4 builds Tier A only; §7 tier B/C I/O moves to phase 2 (risk R8) |
+| Device scope | **D12 accepted 2026-10-12** — mobile/tablet out of the MVP | Nothing to build: the notice is already what a phone gets, because the check tests the pickers and mobile Chromium has none. Phase 2 material if the persistence story changes |
 
 ### Dev/verification environment (learned in Task 2)
 
@@ -159,6 +164,7 @@ there") one this port cannot honestly keep. It needs a yes or a no; nothing is b
 | D9 | 2026-09-25 (proposal refined 2026-10-06) | MVP language set: **all 22 official CM6 packages + all 103 legacy-modes ports**, lazily loaded per file; UDL stays Tier 3 | Counted and verified 2026-10-06: all 22 official `@codemirror/lang-*` packages and `legacy-modes@6.5.4` / `language-data@6.5.2` install from npm; the original "~20" was a guess. Lazily loaded per language, so extra languages cost 0 bytes until opened. Gaps vs N++: makefile, batch, INI, Kotlin, Scala, GraphQL, Objective-C, MATLAB (+ C# unconfirmed) | **Accepted — user-confirmed 2026-10-06** (proposal filed in `7e1de3a`). **D10 ranks UDL below encoding/large-file**; the MVP language set is unaffected. Gates Task 6 |
 | D10 | 2026-09-25 | Phase-3 priority: encoding fidelity (WASM for UTF-32/DOS codepages) + large-file mode. UDL parity ranks below it and stays unscheduled | Correctness beats breadth — a mis-decoded legacy file or a stalled editor is silent data loss or a hard block (R1, R3, B7); UDL is a visible missing feature with a documented workaround | **Accepted — user-confirmed 2026-09-25** |
 | D11 | 2026-09-25 | MVP browser scope: **Chromium only** (Chrome/Edge/Opera). Firefox/Safari tier B/C fallback UX moves to phase 2; §8 acceptance is Chrome-only | User decision. Keeps the MVP on the single File System Access path; halves the file-I/O test matrix | **Accepted — user-confirmed 2026-09-25** |
+| D12 | 2026-10-12 | **Mobile/tablet is out of the MVP** — a phone or tablet gets the S4 notice, the same way Firefox and Safari do | Proposed by Task 7 (2026-10-11), because Task 7 is the work it changes: a mobile browser evicts an origin's storage far more aggressively than a desktop one (iOS purges non-installed sites after days without use), so "your unsaved work is still there when you come back" is not a promise this port can keep there. Nothing branches on the device — the notice follows from the pickers being absent, not from a device test — so the decision costs nothing to reverse, which is what "for now" buys | **Accepted — user-confirmed 2026-10-12** ("D12 mobile/tablet is a no for now") |
 | S0 | 2026-09-25 | Progress tracked in this ledger + `scripts/status.mjs`, not in chat history | Chat transcripts do not survive into new sessions; a repo file does | Accepted |
 | S1 | 2026-09-25 | Scope doc is the authority for scope; plan for task sequencing; **this ledger for status** | Prevents drift between three files that could each claim to know the state | Accepted |
 | S2 | 2026-09-25 | Each browser-verified task ships an executable check in `scripts/` | A prose "verified" claim cannot be re-checked by the next session; a script can | Accepted |
@@ -1068,50 +1074,97 @@ when written; the re-run is outstanding and the next session should do it in a q
 - `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
   from Session 1, still not this project's to commit or revert.
 
+### 2026-10-12 — Session 7 (docs, plus one notice fix): D12 answered by the user
+
+**User input received**
+- "D12 mobile/tablet is a no for now" — recorded as **D12 accepted**: mobile/tablet is out of the MVP;
+  a phone or tablet gets the S4 notice; phase 2 material if the persistence story changes.
+
+**Done — the decision recorded everywhere it is named**
+- `docs/scope.md`: the status header, §3's intro line, §7's *new tier D* (devices), §5's consequence
+  paragraph, §8's opening line, and the D12 row itself (proposal cell → accepted, with the date, the
+  user's words and the measurement below).
+- `docs/editor-core-decision.md`: the post-decision note bullet that D11 had left as "the question is
+  still open" is answered; A2's weight is now *n/a for the MVP*; the head-to-head row and reversal
+  trigger #2 say the same.
+- The plan: its status header (still read "Task 7 ⬜ next" although Task 7 was DONE on 2026-10-11),
+  Task 7's heading, Task 1's outcome line (`D1–D11` → `D1–D12`), the scope-settled block, and the
+  closing "next unit of work" line — all corrected in the same pass.
+- `PROGRESS.md`: this entry, the decision log, the settled-scope table, the Next-action paragraph and
+  the blockers list.
+
+**One code change came out of it** (`src/platform/capabilities.ts`). The notice's mobile sentence read
+*"Desktop Chrome, Edge and Opera do — including Chrome on Android, which is Chromium but still has no
+file pickers"*: it put Chrome on Android inside the list of browsers that **do**, then contradicted
+itself in the next clause. It now reads "…Opera do. Chrome on Android does not — it is Chromium too,
+but mobile Chromium has no file pickers, and phones and tablets running anything else have none
+either." The file's header comment carries D12 as well.
+
+**Verified**
+- `python3 scripts/verify-task4.py` → **PASS (44/44)** with the new copy; the three S4 checks ("a
+  notice is shown", "the notice says nothing can be saved", "the editor still mounts") are green
+  against it.
+- `npm run typecheck` → exit 0. `npm run build` → exit 0, `index` **113.30 kB / 34.58 kB gzip** (was
+  113.19 / 34.55 — the longer sentence), `editor-core` unchanged at **335.26 kB / 109.14 kB gzip**.
+- D12's own claim, measured rather than asserted: a scratch probe deleted the two pickers before the
+  app loaded and read the notice back — **a desktop-shaped and a phone-shaped (Pixel 5 emulation)
+  session both render it, the editor mounts in both**, and OCR of the phone screenshot contains the
+  new sentence, so it is visible pixels and not only DOM text. One limit, stated in the probe:
+  Playwright's device emulation runs *desktop* Chrome, so it cannot remove the pickers by itself — that
+  mobile Chromium has none is caniuse's answer (`capabilities.ts`, 2026-10-06), not something measured
+  on a device here.
+
+**Also corrected, because the sweep found them stale:** the plan's Task 7 status (above); nothing else
+in the tree still says D12 is open (`grep -rn "D12"` → only the accepted records and the historical
+session log).
+
+**Repo state at session end**
+- One commit: the D12 record, the notice copy and this entry.
+- `sample.html` is *still* deleted-but-unstaged in the worktree, untouched — the pre-existing change
+  from Session 1, still not this project's to commit or revert.
+
 ## Blockers / open questions
 
-Nothing blocking, and nothing needs a task to proceed. Two items need the *user*, and both are filed
-as written proposals rather than questions in prose:
+Nothing blocking, and nothing needs a task to proceed. **`D12` was answered on 2026-10-12** — accepted,
+mobile/tablet is out of the MVP (decision log above) — so the last item that needed the *user* for
+scope is closed. One item still needs the *user*, filed as a written proposal rather than a question in
+prose:
 
-1. **`D12` (mobile/tablet) awaits the user's word** — filed in `docs/scope.md` §3: recommendation
-   **out**, i.e. a phone or tablet gets the S4 notice the way Firefox and Safari do. Task 7 is the
-   task it changes, because a mobile browser evicts an origin's storage in a way that makes its
-   promise ("your unsaved work is still there when you come back") one this port cannot honestly
-   keep. Nothing is blocked on the answer: everything is feature-detected and no code branches on the
-   device today.
-2. **`D1`, `D5` and `D8` are still `Proposed`** — lower-stakes consolidations of choices already
+1. **`D1`, `D5` and `D8` are still `Proposed`** — lower-stakes consolidations of choices already
    implied by accepted decisions. **D8 is now fully exercised**: Task 4 built its IndexedDB-for-handles
    half (`src/file/recent-files.ts`) and Task 7 the rest (session and preferences in IndexedDB, the
    bodies of unsaved documents in OPFS `backup/`). Only the user moves a `D` decision.
 
 Open items, none of which blocks the next task:
 
-3. **No Language menu — the one N++ feature Task 6 knowingly did not build.** Everything needed is in
+2. **No Language menu — the one N++ feature Task 6 knowingly did not build.** Everything needed is in
    place and verified (`languagesByName()` orders all 140 as N++ names them,
    `Workspace.setLanguage(id | null)` swaps the grammar live, `inspect().language` reports it), so this
    is a menu plus a picker, not a mechanism. Task 7 made it slightly more valuable: the language is now
    stored per document and restored, so a choice made from such a menu would survive a reload. Until it
    exists, a scratch buffer and every unmapped extension (makefile, batch, INI, JSON5, GraphQL) are
    stuck as "Normal text file".
-4. **No Dark Mode.** Task 7 built the *preference* (stored, applied at startup, threaded through
+3. **No Dark Mode.** Task 7 built the *preference* (stored, applied at startup, threaded through
    `PALETTES`/`THEMES`) and its single value is N++'s light palette; the dark skin — its token palette
    and chrome colours — is a Tier-1 row in `docs/scope.md` that no task has claimed.
-5. **Task 4's manual picker pass is now optional.** It used to be the gate;
+4. **Task 4's manual picker pass is now optional.** It used to be the gate;
    `scripts/verify-task4-pickers.py` now drives the real dialog, the real files and Chrome's write
    prompt automatically (42/42, two consecutive runs on 2026-10-10), so the evidence rule is satisfied
    without it. Offered, not required: two minutes on your own desktop — `Alt+O` each `/tmp/t4-*.txt`,
    `Alt+S`, `md5sum` again, cancel one picker.
-6. Chrome's **per-origin** file-edit prompt is answered on every run now: the pickers script wipes its
+5. Chrome's **per-origin** file-edit prompt is answered on every run now: the pickers script wipes its
    own profile before each run (see the session log), so the prompt is no longer a leftover grant from an
    earlier run — the check records which prompts it answered.
-7. The overview ruler's structure layer **saturates at 2000 ticks**. On a 10 000-line file that is
+6. The overview ruler's structure layer **saturates at 2000 ticks**. On a 10 000-line file that is
    already three ticks per pixel, so the cap is right for legibility — but a large-file mode (D10
    phase 3) should thin the ticks out instead of truncating them.
 
-Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~~ · ~~D9~~ (2026-10-06).
+Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~~ · ~~D9~~ (2026-10-06) ·
+~~D12~~ (2026-10-12).
 
 ## Definition of done for the whole project
 
 The MVP acceptance criteria in `docs/scope.md` §8 — six testable statements, including a
 byte-identical open→save round-trip, the 50k-line responsiveness check, and "unsupported
-browsers fail loudly", all passing **in Chrome/Chromium** (D11).
+browsers fail loudly", all passing **in Chrome/Chromium on a desktop OS** (D11; devices are out by
+D12).

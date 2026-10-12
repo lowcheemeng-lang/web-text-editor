@@ -43,9 +43,9 @@ weights, so they are recorded here rather than left implicit:
   Chromium-only PWA's first load. And trigger #1 remains unmet, because Minimap and Compare are
   still not MVP requirements. **CM6 stands.**
 - **D11 also lowers the weight of A2 (mobile/touch)** from *High*. Mobile was never promised in
-  the MVP and the question is still open (the user's "Chrome only" answer did not address it). If
-  mobile is later dropped entirely, A2 becomes a footnote rather than a headline — the decision
-  does not depend on it.
+  the MVP and the question is still open (the user's "Chrome only" answer did not address it) —
+  **answered 2026-10-12: D12, mobile/tablet is out of the MVP**, so A2 becomes a footnote rather
+  than a headline, exactly as this note anticipated; the decision does not depend on it.
 - **D10 (phase-3 priority = encoding + large-file mode)** converts drawback **B7** from an
   unscheduled worry into planned work: the "no productised large-file switch" cost is now owned
   explicitly.
@@ -57,7 +57,7 @@ weights, so they are recorded here rather than left implicit:
 | # | Advantage | Evidence | Weight here |
 |---|-----------|----------|-------------|
 | A1 | **~4× smaller shipped payload.** CM6 + all extensions and language packages = 8.23 MB raw / **1.26 MB gzip**; Monaco = 51.17 MB raw / **5.01 MB gzip** (Replit). Sourcegraph measured Monaco at **2.4 MB of their 6 MB** search-page JS (40% of all JS); dropping it cut their JS download **43%**. Measured locally in Task 2: the CM6 core chunk is **123.08 kB gzip**. | Replit blog; Sourcegraph blog; `PROGRESS.md` Task 2 evidence | **High** — a PWA's first load is the app's install experience |
-| A2 | **Mobile/touch actually works.** Monaco's own project page states: *"The Monaco editor is not supported in mobile browsers or mobile web frameworks."* CM6 was rewritten around native browser editing (contentEditable) specifically to support touch — that was a stated motivation for the 6.0 rewrite, and it's why Replit standardised on it. | microsoft.github.io/monaco-editor; Replit blog | **High → Medium** — lowered by D11: mobile is not in the MVP and the question is open. Still a real capability gap, not a preference |
+| A2 | **Mobile/touch actually works.** Monaco's own project page states: *"The Monaco editor is not supported in mobile browsers or mobile web frameworks."* CM6 was rewritten around native browser editing (contentEditable) specifically to support touch — that was a stated motivation for the 6.0 rewrite, and it's why Replit standardised on it. | microsoft.github.io/monaco-editor; Replit blog | **High → Medium → n/a for the MVP** — lowered by D11 (mobile not in the MVP, question open), then **settled by D12 (2026-10-12): mobile/tablet is out of scope**, so this is priced at zero here and only counts again if that decision is re-opened |
 | A3 | **You can style it to look like Notepad++, using CSS.** CM6 themes are ordinary CSS with variables. Sourcegraph on Monaco: to customise its look they *"had to hard-code hex color codes into our JavaScript instead of being able to use our site-wide CSS classes and variables."* | Sourcegraph blog | **High** — the goal is N++ chrome (menu, toolbar, tab bar, status bar), not a VS Code clone |
 | A4 | **Multiple instances with different configuration are trivial.** Sourcegraph: *"Monaco has a global reference model, which makes it tricky to run several instances of it on the same page with small configuration differences."* CM6 is `EditorState` per document + `EditorView` per pane. | Sourcegraph blog | **High** — tabs each need their own language/config; split view needs a second view |
 | A5 | **The plugin host (D5) is the native extension model, not a bolt-on.** CM6 *is* a composition of extensions, so an in-app plugin API is a thin wrapper over first-class concepts. VS Code extensions do **not** run inside Monaco — Monaco gives you its API, not an ecosystem. | CM6 reference; Monaco docs | **High** — D5 is a committed project goal |
@@ -109,7 +109,7 @@ safety net* (B4). Nothing in §3 is a functional dead end.
 | Large-file handling (T3) | Viewport rendering; **no flag** | **`largeFileOptimizations` flag**; Monarch on main thread | Monaco (slightly) — but **now scheduled work under D10**, not a gap we ignore |
 | Theming to N++ palette (T1) | Plain CSS + variables | Hardcoded hex, per Sourcegraph | CM6 |
 | Plugin host API (D5) | Composition model = native | Its own API only, no ecosystem | **CM6** |
-| Mobile / touch | Designed for it | **Officially unsupported** | **CM6** — subject to whether mobile stays in scope at all |
+| Mobile / touch | Designed for it | **Officially unsupported** | **CM6** — real, and **out of the MVP by D12** (2026-10-12) |
 | PWA offline payload | 1.26 MB gz | 5.01 MB gz + worker bundles | CM6 |
 | LSP-grade IntelliSense | `@codemirror/lsp-client`, wiring needed | Built in | Monaco — **but N++ has no such feature (B3)** |
 
@@ -124,7 +124,7 @@ defaults — precisely the set weighted Medium or below, and three of them are T
 Status as of 2026-09-25, after D11 made the MVP Chromium-only:
 
 1. MVP must include **Document Map and Compare**, and hand-rolling a minimap is unacceptable → Monaco. **Not triggered** — both are Tier 2/3 with no MVP promise.
-2. Target is **Chromium-only desktop-class** usage, making A2 (mobile) and A1/A6 (payload, workers) irrelevant → the gap narrows to roughly a tie. **Partially triggered, insufficient** — D11 chose Chromium-only, and A2's weight did drop, but A1/A6 still count for a PWA's first load and trigger #1 is unmet, so the call stands.
+2. Target is **Chromium-only desktop-class** usage, making A2 (mobile) and A1/A6 (payload, workers) irrelevant → the gap narrows to roughly a tie. **Partially triggered, insufficient** — D11 chose Chromium-only and A2's weight did drop (D12 has since taken mobile out of the MVP altogether, so A2 is priced at zero), but A1/A6 still count for a PWA's first load and trigger #1 is unmet, so the call stands.
 3. **IntelliSense becomes a headline goal** (contradicting N++ parity and D1's no-backend rule) → Monaco. **Not triggered.**
 4. CM6's maintenance (B4) deteriorates — e.g. an extended period of no releases across the `@codemirror/*` scope. **Not triggered.**
 
