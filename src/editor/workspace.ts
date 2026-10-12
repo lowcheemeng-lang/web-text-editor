@@ -309,9 +309,39 @@ export class Workspace {
   #userActedDuringRestore = false;
   #preferencesOpen = false;
 
+  /* ───────────────────────────── Task 8: what an offline first load cannot have ── */
+
   /** Record that something happened outside the restore — see `#userActedDuringRestore`. */
   #noteUserAction(): void {
     if (this.#restoring) this.#userActedDuringRestore = true;
+  }
+
+  /**
+   * A grammar whose chunk cannot be fetched. The precondition is ordinary rather than exotic
+   * (Task 8): a language is cached the first time it is *opened*, so offline a document whose
+   * language was never opened online simply has no grammar available. The status bar goes on
+   * naming the language — that is N++'s own field, and the document is what the user opened —
+   * so silence here would misreport what is on screen.
+   *
+   * **There is no in-page retry, because measurement says there cannot be one.** After the
+   * connection returned, this app's own retry re-imported the language and failed again with
+   * *no network request at all*: the failed module fetch (a shared Lezer chunk, preloaded by
+   * Vite's import helper) stays memoised for the life of the document, so the same import path
+   * keeps failing instantly. A reload gets a fresh module map, and the same document then loads
+   * its grammar and paints — both measured, with `scripts/verify-task8.py` §6 as the re-runnable
+   * form of the measurement. So the notice carries the remedy that works instead of promising
+   * one that does not.
+   */
+  #noteLanguageUnavailable(language: LanguageDefinition): void {
+    this.#chrome.showNotice(
+      `${language.label} highlighting could not be loaded`,
+      "The grammar is a file of its own, and this app had not cached it, so the document is " +
+        "shown as plain text — the text, the editing and the saving are unaffected. The browser " +
+        "will not fetch that file again in this page, so reload once there is a connection: the " +
+        "highlighting comes back with it, and offline, only the languages opened while online " +
+        "are available.",
+      { kind: "language", action: { label: "Reload the page", onClick: () => location.reload() } },
+    );
   }
 
   constructor(host: HTMLElement) {
@@ -846,6 +876,9 @@ export class Workspace {
       extension = await language.load();
     } catch (error) {
       console.error(`[task 6] ${language.id} (${language.origin}) failed to load`, error);
+      // Task 8: offline this is the *expected* outcome for a language that was never opened
+      // while online, so it is reported rather than logged and forgotten.
+      this.#noteLanguageUnavailable(language);
       return;
     }
     if (!this.#documents.includes(document)) return; // closed while loading

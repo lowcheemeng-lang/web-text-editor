@@ -6,8 +6,11 @@
 > spec (what to build, which files, how to verify). Start any new session by reading
 > `PROGRESS.md` → `docs/scope.md` → this plan, in that order.
 
-**Status:** Tasks 1–7 ✅ done · Task 8 ⬜ next · see `PROGRESS.md` for live state
-(`npm run status`). Task 6 was accepted 2026-10-11: `scripts/verify-task6.py` → **PASS (67/67)**,
+**Status:** Tasks 1–8 ✅ done — the MVP in `docs/scope.md` §8 is built · see `PROGRESS.md` for live state
+(`npm run status`). Task 8 was accepted 2026-10-12 — the last task: `scripts/verify-task8.py` →
+**PASS (57/57)**, three runs, and `node scripts/check-precache.mjs` → the offline shell agrees with
+the build. Task 7 was accepted 2026-10-11: `scripts/verify-task7.py` → **PASS (82/82)**.
+Task 6 was accepted 2026-10-11: `scripts/verify-task6.py` → **PASS (67/67)**,
 `scripts/test-languages.mjs` → **238/238**. Task 5 was accepted 2026-10-10:
 `scripts/verify-task5.py` → **PASS (105/105)**, twice in a row, over a 10k-line file as the task
 asked.
@@ -423,20 +426,74 @@ pressing Return, having spent an afternoon being blamed for opening the wrong fi
 
 ---
 
-### Task 8: Wrap as installable offline-capable web app
+### Task 8: Wrap as installable offline-capable web app — ✅ DONE (2026-10-12)
 
 **Objective:** Make the editor usable without network after first load.
 
 **Files:**
 - Create: `public/manifest.webmanifest`
-- Modify: `vite.config.ts`
+- Create: `public/icon-192.png`, `public/icon-512.png`, `public/icon-maskable-512.png` *(added — a
+  browser installs an app from raster icons of known sizes, and `scripts/gen-pwa-icons.py`
+  regenerates all three from the favicon's own mark)*
+- Create: `src/pwa/service-worker.js` *(added — a **classic** worker, emitted as `dist/sw.js` with
+  its precache list and version injected by the build; it imports nothing, which is why it is plain
+  JavaScript)*
+- Create: `src/pwa/register.ts` *(added — registration, and production builds only: a worker caching
+  the dev server's unbundled modules would serve yesterday's code through a hot reload)*
+- Modify: `vite.config.ts` — the `pwaOfflineShell()` plugin derives the precache list from the
+  bundle itself, fingerprints it, and emits `dist/sw.js`
+- Modify: `src/editor/workspace.ts`, `src/editor/chrome.ts`, `src/style.css` — a persistent notice
+  for a grammar that cannot be fetched, carrying the one remedy that works
+- Modify: `index.html` (manifest link, theme colour, icons), `src/main.ts` (registration)
+- Create: `scripts/check-precache.mjs`, `scripts/verify-task8.py`, `docs/offline-pwa.md`
 
 **Steps:**
-1. Add PWA manifest and service worker caching for static assets.
-2. Optionally bundle as a single portable HTML file for maximum portability.
-3. Verify offline load path.
 
-**Verification:** Load app once, disable network, reload; confirm editor loads and functions offline.
+1. Manifest and service worker — with the split the ledger asked for, and it is measured rather than
+   assumed: the shell (9 files) is precached at install; the **126** lazily imported chunks of D9's
+   140 languages are cached the first time the app fetches one. Precaching those would put
+   1 227.8 kB raw (481.9 kB gzipped) of languages on the wire before the first paint, which is the
+   opposite of what the lazy imports are for.
+2. The portable single HTML file — **measured and declined.** Fusing the graph (`inlineDynamicImports`)
+   gives one `index.html` of **1 699.9 kB** (all 140 languages in one file, D9's laziness gone). Served
+   it works; opened from `file://` it loses what makes this an editor: **OPFS throws** a
+   `SecurityError` (so Task 7's `backup/` protection is gone), **service-worker registration is
+   refused** (`The URL protocol of the current origin ('null') is not supported` → no offline, no
+   install) and the pickers reject. The installable PWA *is* the portable artifact; the numbers and
+   the `file://` capabilities are in `docs/offline-pwa.md`.
+3. Offline verification — three ways, none of them a proxy: the network emulated away, the server
+   **stopped** (nothing listening at all), and — for a language that was never opened — the honest
+   failure path, which the app reports instead of showing an unhighlighted document in silence.
+
+**Outcome (2026-10-12).** `python3 scripts/verify-task8.py` → **PASS (57/57)**, run three times,
+against the production build it makes itself (the dev server has no worker by design). It asserts
+Chrome's own installability verdict (`Page.getInstallabilityErrors` empty) and Chrome's own parse of
+the manifest (in Chrome's vocabulary: `kStandalone`, `rgba(240,240,240,1)`), then that the browser
+plus an online load is enough to work with no network at all: with the **server stopped**, every
+response comes from the worker (`Network.responseReceived.fromServiceWorker`, read from the protocol
+— 9/9 and 10/10 across the phases), the server's request log never grows, Task 7's session restore
+comes back dirty with its edits, typing lands, an edit is saved through to the file, and the
+languages opened while online still paint. `node scripts/check-precache.mjs` re-derives the shell set
+from `dist/` alone and prints the weights: **9 files, 461.3 kB raw / 151.3 kB gzipped** against
+**1 227.8 kB / 481.9 kB gzipped** that the first load does not pay. Regressions at HEAD:
+`verify-task7.py` 82/82, `verify-task6.py` 67/67, `verify-task5.py` 105/105, `verify-task4.py` 44/44,
+`verify-task3.py` 58/58, `test-session.mjs` 75/75, `test-file-io.mjs` 45/45, `test-languages.mjs`
+238/238, `gen-language-registry.mjs --check` OK, `npm run typecheck` exit 0, `npm run build` exit 0.
+
+**Two defects and one design reversal the measurements forced** (all three recorded in
+`docs/offline-pwa.md`, with the instrument):
+
+1. **`clients.claim()` in `install` rejects** (`InvalidStateError`) — which rejects the *install*: the
+   worker is discarded while its cache stays filled, so the app looks offline-capable and has nothing
+   to serve from. Moved to `activate`, where the spec allows it. Caught by the first probe run.
+2. **The in-page retry for a failed grammar cannot work.** Measured: after the connection returned,
+   both retries failed again with **no network request at all** for twelve seconds of polling — the
+   failed module fetch stays memoised for the life of the document — while a reload loads the grammar
+   and paints. So the retry was removed and the notice carries the remedy that does work, with copy
+   that says which is which.
+3. **A claim in the notice turned out to be checkable, so it is checked:** "the text, the editing and
+   the saving are unaffected" is verified by saving with the grammar missing and reading the bytes
+   back out of the file.
 
 ---
 
@@ -458,13 +515,16 @@ pressing Return, having spent an afternoon being blamed for opening the wrong fi
 - `src/editor/overview-ruler.ts` *(Task 6)*
 - `src/storage/session-store.ts`
 - `src/storage/preferences.ts`
+- `src/pwa/service-worker.js` *(Task 8 — the offline shell)*
+- `src/pwa/register.ts` *(Task 8)*
+- `public/manifest.webmanifest`, `public/icon-192.png`, `public/icon-512.png`, `public/icon-maskable-512.png` *(Task 8)*
 - `docs/scope.md`
+- `docs/offline-pwa.md` *(Task 8)*
 - `package.json`
 - `vite.config.ts`
 - `tsconfig.json`
 - `index.html`
-- `public/manifest.webmanifest`
-- `scripts/verify-task*.py`
+- `scripts/verify-task*.py`, `scripts/check-precache.mjs` *(Task 8)*
 
 ## Tests / Validation
 
@@ -501,10 +561,15 @@ All of the original three are closed; kept for the audit trail.
 
 ---
 
-Plan complete and saved. Tasks 1–7 are done; Task 8 (installable, offline-capable web app) is the
-next unit of work and is ungated — see `PROGRESS.md` for the live next action.
+Plan complete and saved. **All eight tasks are done** — the MVP that `docs/scope.md` §8 defines is
+built and each task's acceptance script is re-runnable from `scripts/`. What remains is what the
+scope always deferred rather than what the plan forgot: the phase-2 items (non-Chromium I/O, per-pane
+tab sets, the minimap, UDL, `D10`'s WASM encoders and large-file mode), and the two rows no task
+claimed — a Language menu and Dark Mode, both named in `DEVIATIONS_FROM_NPP` and in `PROGRESS.md`'s
+open items. See `PROGRESS.md` for the live state and the next unit of work.
 
-**One item from Task 6 is deliberately open**, for Task 7 to pick up or leave: `src/languages/`
-names a language for every file it can, but there is still **no Language menu**, so a scratch
-buffer or an extension nothing claims (makefile, batch, INI) cannot be told what it is. N++ has
-that menu; this port does not yet.
+**One item from Task 6 is deliberately still open**, for whoever takes the Language menu: `src/languages/`
+names a language for every file it can, but there is no menu to *override* it, so a scratch buffer or
+an extension nothing claims (makefile, batch, INI) cannot be told what it is. N++ has that menu; this
+port does not yet. Everything it would need — `languagesByName()`, `Workspace.setLanguage(id)`, the
+per-document language in the session — is built and verified, so it is a menu plus a picker.

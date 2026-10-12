@@ -362,6 +362,25 @@ body {
   line-height: 1.4;
 }
 
+/* Task 8: the one action a notice can offer — currently the language notice's reload, which is
+   the only thing that actually restores a grammar the browser refused to fetch. */
+.npp-notice-action {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 3px 10px;
+  border: 1px solid #b98b3d;
+  border-radius: 3px;
+  background: #ffffff;
+  color: #5a3b00;
+  font-family: var(--shell-font);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.npp-notice-action:hover {
+  background: #fdf1de;
+}
+
 /* ------------------------------------------------------------------ dialogs */
 
 .npp-dialog {

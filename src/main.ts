@@ -11,8 +11,14 @@
  *
  * `Workspace.start()` also reports an unsupported browser, so this file needs no
  * capability logic of its own.
+ *
+ * Task 8 adds one thing to the entry point: a production build registers the offline
+ * shell (`src/pwa/service-worker.js`). It is registered *after* the app is up, so the
+ * first paint never waits on a worker installing, and it is production-only because the
+ * dev server serves unbundled modules that must not be cached (see `src/pwa/register.ts`).
  */
 import { Workspace } from "./editor/workspace";
+import { registerOfflineShell } from "./pwa/register";
 
 import "./style.css";
 
@@ -32,7 +38,10 @@ if (!mount) {
 export const workspace = new Workspace(mount);
 workspace.start();
 
-if (import.meta.env.DEV) {
+if (import.meta.env.PROD) {
+  // The page that registers the worker is not yet controlled by it; every load after this one is.
+  void registerOfflineShell();
+} else {
   window.__workspace = workspace;
   console.info("[task 3] Notepad++ Web workspace mounted; exposed as window.__workspace");
 }

@@ -371,20 +371,47 @@ export class Chrome {
 
   /**
    * Persistent banner for a browser that cannot do file I/O (S4, scope §8 criterion
-   * 6). It sits under the menu bar, is never auto-dismissed, and states plainly
-   * that nothing can be saved to a file — silence is the failure mode this exists
-   * to prevent.
+   * 6), and — since Task 8 — for a grammar the app could not fetch. It sits under the
+   * menu bar, is never auto-dismissed, and states plainly what is wrong: silence is
+   * the failure mode this exists to prevent.
+   *
+   * `kind` names the subject of the notice and lands in `data-notice`, so two different
+   * conditions cannot overwrite each other and `hideNotice` can take exactly one back.
+   * `action` adds the one thing that actually fixes the condition, when there is one —
+   * the language notice's reload — rather than leaving the user with a description.
    */
-  showNotice(title: string, body: string): void {
+  showNotice(
+    title: string,
+    body: string,
+    options: { kind?: string; action?: { label: string; onClick: () => void } } = {},
+  ): void {
+    const kind = options.kind ?? "unsupported";
+    this.hideNotice(kind);
     const notice = el("div", {
       className: "npp-notice",
-      attrs: { role: "alert", "data-notice": "unsupported" },
+      attrs: { role: "alert", "data-notice": kind },
     });
     notice.append(
       el("strong", { className: "npp-notice-title", text: title }),
       el("span", { className: "npp-notice-body", text: body }),
     );
+    if (options.action) {
+      const button = el("button", {
+        className: "npp-notice-action",
+        text: options.action.label,
+        attrs: { type: "button", "data-notice-action": kind },
+      });
+      button.addEventListener("click", options.action.onClick);
+      notice.append(button);
+    }
     this.menuBar.after(notice);
+  }
+
+  /** Take a notice back — only for a condition that has genuinely gone away. */
+  hideNotice(kind: string): void {
+    const parent = this.menuBar.parentElement;
+    if (!parent) return;
+    for (const node of Array.from(parent.querySelectorAll(`[data-notice="${kind}"]`))) node.remove();
   }
 
   /**

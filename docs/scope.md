@@ -96,7 +96,7 @@ See the decision log in `PROGRESS.md`, which is the authority on status.
 | **Non-Chromium file I/O** (Tier B/C fallback UX) | `<input type=file>` + Blob download, OPFS working copy | **Moved here by D11** — see §7 |
 | Print | `window.print()` + print stylesheet | Medium — degraded vs N++ (R4) |
 | Macro record / replay / save with shortcut | Transaction recording (D6) | Medium |
-| PWA install + offline | Service worker + manifest | High |
+| PWA install + offline | Service worker + manifest | High — **shipped in Task 8** (2026-10-12): a manifest Chrome's own `Page.getInstallabilityErrors` calls installable, and an offline shell that precaches the app's first load and caches a language the first time the app fetches one. Verified with the network emulated away *and* with the server stopped. `docs/offline-pwa.md` has the numbers and the limits. |
 | Multi-select-all-matches, multi-caret editing | CM6 supports multiple ranges natively | High |
 
 ### Tier 3 — nice-to-have / exploratory
