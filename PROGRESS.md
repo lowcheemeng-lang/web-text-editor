@@ -44,7 +44,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 5 | Search, replace, navigation | DONE | `python3 scripts/verify-task5.py` → **PASS (105/105)**, twice in a row — N++'s Search dialog driven through its own controls (Normal / Extended / Regular-expression modes, Match case, Match whole word only, Wrap around, Backward direction, In selection, and N++'s per-mode gating of them), find next/previous with wrap-around and N++'s own status wording, Count, Mark All, Clear all marks, Replace and Replace All (`$1` back-references, `\t` in a replacement), Go To (line and offset) and the bookmark family (Ctrl+F2 / F2 / Shift+F2 / Clear All Bookmarks / the margin toggle). Over a **10 000-line** document: regex Count **2.4 ms**, Mark All **4.8 ms**, Replace All **46.5 ms**; `no request left the machine (D1)` green. `python3 scripts/probe-reserved-keys.py` → the keymap measurement behind decision **S6**. Regressions at HEAD: `verify-task3.py` → **PASS (58/58)**; `verify-task4.py` → **PASS (44/44)**; `verify-task4-pickers.py` → **PASS (42/42)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, editor-core **305.27 kB / 98.72 kB gz** (was 296.81 / 96.16 — `@codemirror/search` 6.7.2) | `d22f0d8` |
 | 6 | Syntax highlighting & language modes | DONE | **`python3 scripts/verify-task6.py` → PASS (67/67)** — `.js`, `.py`, `.html`, `.md` (plus `.cs`, `Dockerfile`, a shebang file and two of D9's gaps) opened through the real File ▸ Open path against OPFS handles, with every token read back as **computed colour on rendered spans** and every ruler tick read back from **canvas pixels**. `node --experimental-strip-types scripts/test-languages.mjs` → **PASS (238/238)** — all **140** loaders resolve in Node (`27` first-class + `113` legacy), every detection rule, the named extension collisions, and the gaps. `node --experimental-strip-types scripts/gen-language-registry.mjs --check` → **152 of 152** parsers the package exports are accounted for (113 catalogued, 32 superseded by a first-class grammar, 7 not languages). Over a 10 000-line JavaScript file the ruler's structure walk returns its **2000-tick** cap in **8.5 ms**. Regressions at HEAD: `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task4-pickers.py` → **PASS (42/42)**, real OS chooser included; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.24 kB / 109.13 kB gz** across **129 chunks** (was 305.27 / 98.72 — the ruler, the highlight style and the registry; a naive `manualChunks` would have made it **1 591.85 kB / 565.20 kB gz**, see S3's cousin in the plan) | `c4e3c9e` |
 | 7 | Session persistence & preferences | DONE | **`python3 scripts/verify-task7.py` → PASS (82/82)**, twice, every assertion made **after a real `page.reload()`** — the reload discards every in-page stub, so only stored state survives it: the Preferences dialog (Cancel applies nothing; OK stores, applies and persists — toolbar hidden, 12 pt text), View ▸ Zoom, an unsaved scratch buffer returning dirty with its caret and its bookmark, a CRLF+BOM file returning dirty from its `backup/` body and saving back **byte-identical** (`EF BB BF` + `one\r\ntwo\r\nTHREE`), N++'s both modified-file answers, folds/bookmarks/wrap/split/language restored (folds as *rendered* fold placeholders, in both panes), a file deleted behind the app dropped or offered as a read-only placeholder that refuses typing, and unsaved work that cannot be restored reported **by name** with snapshot mode off. `node --experimental-strip-types scripts/test-session.mjs` → **PASS (75/75)** — the storage logic in Node, where neither IndexedDB nor OPFS exists: N++'s `FILENAME@YYYY-MM-DD_HHMMSS` naming, the preference defaults and ranges, the restore decision table, the line↔offset conversions, and the fail-soft contract. Regressions at HEAD: `verify-task6.py` → **PASS (67/67)**; `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `test-languages.mjs` → **PASS (238/238)**; `gen-language-registry.mjs --check` → **OK**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.26 kB / 109.14 kB gz** across **129 chunks** (unchanged from Task 6 — the storage layer, the dialog and the ruler fix all land in the app's own chunk, now `index` **113.19 kB / 34.55 kB gz**). **`scripts/verify-task4-pickers.py` → PASS (43/43)** at the same HEAD — Task 4's real-chooser check, re-run because Task 7's restore changes the state it starts from. Three runs failed first (`36/39`), all three on one check, and they shared a cause worth knowing: a **stale session in the Chrome profile** (each run's own Chrome rewrites the profile while shutting down, after the profile had been wiped for the next run), so the app restored a previous run's documents and the check asserted a *fresh* open's fact about a *restored* document. The script wipes its own profile now and asserts the clean start as a check; the runs also turned up a real defect — `RestoreState.assumedEncoding` was built and never read, so a restored windows-1252 document reported an identified encoding to `inspect()` and the status bar (measured: `assumedEncoding: false` on the restored document, `true` after the fix) — now fixed (`c98188a`) and verified through a reload. | `f829697` · fix `c98188a` |
-| 8 | PWA / offline packaging | TODO | - | - |
+| 8 | PWA / offline packaging | DONE | **`python3 scripts/verify-task8.py` → PASS (57/57)**, three consecutive runs. It builds the production bundle itself (the dev server has no worker by design), serves `dist/` from its own static server with `Cache-Control: no-cache` — so the browser's HTTP cache can never stand in for the worker — and drives Chrome with a fresh profile per run. **Chrome's own verdicts:** `Page.getInstallabilityErrors` → empty (installable); `Page.getAppManifest` → no errors, with Chrome's parse asserted in Chrome's vocabulary (`kStandalone`, `rgba(240,240,240,1)`, the 192 and 512 icons); the manifest is also re-read from disk for the fields as written, with the PNGs' real pixel sizes. **Offline, three ways, none a proxy:** the network emulated away, and the server **stopped** (nothing listening at all) — in both, every response is `Network.responseReceived.fromServiceWorker` (9/9 and 10/10 across the phases), the server's request log never grows, the editor mounts, Task 7's session restore returns dirty with its edits (`TYPED_OFFLINE_MARKER`), typing lands, an edit **saves through to the file** (`SAVED_WITH_NO_SERVER`, read back out of OPFS) and the languages opened while online still paint N++'s colours. The honest edge is asserted too: offline, a language that was never opened opens as plain text with the status bar still naming it, a persistent notice explaining why, and the **one remedy that works** — its Reload button, verified as a real navigation (`performance.timeOrigin` moves) after which the grammar loads and paints. `node scripts/check-precache.mjs` → **OK**: it re-derives the shell set from `dist/` alone, and prints the weights — **9 files / 461.3 kB raw / 151.3 kB gzipped** precached against **126 chunks / 1 227.8 kB raw / 481.9 kB gzipped** cached on first use. Design + measurements in `docs/offline-pwa.md`. Regressions at HEAD: `verify-task7.py` → **PASS (82/82)**; `verify-task6.py` → **PASS (67/67)**; `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; **`verify-task4-pickers.py` → PASS (43/43)** with the real OS chooser; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `test-session.mjs` → **PASS (75/75)**; `test-languages.mjs` → **PASS (238/238)**; `gen-language-registry.mjs --check` → **OK**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0 | `8ac032e` |
 
 **Status vocabulary:** `TODO` · `WIP` · `DONE` · `BLOCKED` · `DEFERRED`
 
@@ -55,39 +55,37 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**Task 7 is DONE (2026-10-11).** Its acceptance check needs nothing but the dev server:
-`python3 scripts/verify-task7.py` → **PASS (82/82**, twice), and
-`node --experimental-strip-types scripts/test-session.mjs` → **PASS (75/75)** for the storage logic
-without a browser. The design — N++'s `session.xml`, its `backup/` algorithm and its `config.xml`
-keys, with the browser mapping and every deviation — is written up in
-`docs/session-persistence.md`, and the app's own list of what is *not* Notepad++'s is in
-`DEVIATIONS_FROM_NPP` (nine new entries).
+**Task 8 is DONE (2026-10-12) and it was the last planned task — all eight are complete, and the MVP
+`docs/scope.md` §8 defines is built.** Its acceptance check needs no dev server, because the dev
+server has no service worker by design (registration is production-only):
 
-**Then: Task 8 — wrap as an installable, offline-capable web app** (`public/manifest.webmanifest`,
-`vite.config.ts`, optional single-file bundle), which is ungated:
+```bash
+npm run build                      # emits dist/sw.js and prints the version
+node scripts/check-precache.mjs    # re-derives the offline shell from dist/ and prints the weights
+python3 scripts/verify-task8.py    # builds, serves dist/ itself, drives Chrome (57 checks)
+```
 
-1. The manifest and a service worker for the app shell. `base: "./"` and relative asset URLs are
-   already in place from Task 2, so a cache-first worker is a small change — but the shell is **129
-   chunks** and the 140 languages are lazy, so the worker has to decide what "offline" means for a
-   language that was never opened: precache the shell and the languages that *were* opened at
-   runtime, and say in the ledger which of the two it does.
-2. Optionally bundle one portable HTML file (the plan's step 2) — worth measuring against the 129
-   chunks rather than assuming.
-3. Verify the offline path: load once, disable the network, reload, and confirm the editor mounts and
-   works. Two things from Task 7 worth asserting there because offline is the first load that cannot
-   fall back to the network: the session restore must work with no network at all (it does — nothing
-   here fetches — but that is the place to prove it), and `navigator.storage.persist()`'s answer is
-   worth re-reading, since an installed PWA is one of the signals Chrome uses to grant it.
+What a later session should pick up, in the order the evidence suggests:
 
-**Two things Task 7 deliberately left open**, both named in `DEVIATIONS_FROM_NPP` rather than
-papered over:
+1. **The Language menu** — the one N++ feature Task 6 knowingly did not build, and the only open item
+   with everything already verified behind it: `languagesByName()` orders all 140 as N++ names them,
+   `Workspace.setLanguage(id | null)` swaps the grammar live, `inspect().language` reports it, and
+   Task 7 stores the language per document, so a choice made from such a menu survives a reload. It
+   is a menu plus a picker, not a mechanism. Until it exists, a scratch buffer and every unmapped
+   extension (makefile, batch, INI, JSON5, GraphQL) are stuck as "Normal text file".
+2. **Dark Mode** — Task 7 built the *preference* (stored, applied, threaded through
+   `PALETTES`/`THEMES`) and its only value is N++'s light palette. The dark skin is a Tier-1 row in
+   `docs/scope.md` that no task has claimed.
+3. **Phase 2, as `docs/scope.md` schedules it:** `D10`'s WASM encoders (UTF-32, DOS codepages) and
+   large-file mode first, then the Tier-2 backlog (non-Chromium I/O per `D11`, per-pane tab sets,
+   the minimap, UDL, macros per `D6`). One measured debt to carry into large-file mode: the overview
+   ruler's structure layer saturates at 2000 ticks instead of thinning out (fine at 10 000 lines —
+   three ticks per pixel, measured — wrong for a million-line file).
 
-- **No Language menu** (carried from Task 6, still unbuilt). Everything a menu needs is verified —
-  `languagesByName()`, `Workspace.setLanguage(id)`, `inspect().language` — and the session already
-  stores the language per document, so a language *chosen* from such a menu now survives a reload.
-- **No Dark Mode.** The theme is stored, applied and threaded through `PALETTES`/`THEMES`, and its
-  only value is N++'s light palette. The dark skin (its token palette and chrome colours) is a
-  Tier-1 row in `docs/scope.md` that no task has claimed.
+**Nothing is blocking, and no task needs the user for scope.** `D1`, `D5` and `D8` remain `Proposed`
+— low-stakes consolidations of choices already implied by accepted decisions, and `D8` is now fully
+exercised (Task 4 built its IndexedDB-for-handles half, Task 7 the IndexedDB-for-metadata and
+OPFS-for-bodies halves). Only the user moves a `D` decision.
 
 **`D12` (mobile/tablet) was answered by the user on 2026-10-12 — "D12 mobile/tablet is a no for now".
 Recorded as `Accepted` in `docs/scope.md` §3**, and with it §5, §7's new tier D and §8: mobile/tablet
@@ -119,6 +117,21 @@ retrofit.
   real reloads — and stubs the pickers with OPFS handles exactly as `verify-task4.py` does. Almost every
   assertion is made **after a `page.reload()`**, which is the point: a reload discards every in-page stub
   and every queued timer, so only genuinely stored state can survive it.
+- **`scripts/verify-task8.py`** (Task 8) is the one check that does **not** use the dev server, and
+  deliberately: the offline shell only exists in a production build (`vite.config.ts` emits
+  `dist/sw.js`; registration is PROD-only, because a worker caching the dev server's unbundled
+  modules would serve yesterday's code through a hot reload). It runs `npm run build` itself, serves
+  `dist/` from its own static server — `Cache-Control: no-cache`, so the browser's HTTP cache can
+  never stand in for the worker, and a request log that is itself evidence — and launches Chrome with
+  a **fresh profile per run** (`tempfile.mkdtemp`), which sidesteps the pickers script's stale-profile
+  lesson entirely. Its strongest facts come from the protocol
+  (`Network.responseReceived.fromServiceWorker`), not from a proxy. It needs **Pillow** (icon pixel
+  sizes) and **tesseract** (OCR of the notice) as well as Chrome, and it prints the state it sees at
+  the points where a failure would otherwise be silent (`dump_state`).
+- **`scripts/check-precache.mjs`** (Task 8) needs no browser and no `--experimental-strip-types`: it
+  reads `dist/` (the emitted HTML, the emitted chunks' own static imports, the manifest's icons),
+  re-derives the offline shell's precache list, compares it against what `dist/sw.js` carries, asserts
+  that no lazily imported chunk is precached, and prints the measured weight of both sets.
 - One check needs more than Chrome: `scripts/verify-task4-pickers.py` drives a **real** OS file
   chooser, so it needs `Xvfb`, `xdotool`, `ffmpeg` (x11grab), `tesseract` and `dbus-run-session`.
   It starts its own Xvfb on `:99` and never touches the desktop; run it with `npm run dev` up. It also
@@ -177,6 +190,8 @@ retrofit.
 | S9 | 2026-10-11 | A contested file extension is resolved by the **order of `LANGUAGES`** (first-class rows first, then the legacy table in N++-name order); the collisions are named and asserted in `scripts/test-languages.mjs` rather than left to chance | N++ resolves the same collisions by walking its own language table *backwards* (`Parameters.cpp:4464`), which is an accident of its enum order and not something a port can copy without copying the enum. The collisions are few and real (`.m` MATLAB vs Objective-C, `.s` R vs GNU assembly, `.pp` Pascal vs Puppet, `.mm` Objective-C, `.pyx` Python vs Cython), and each one's winner is now a test | Accepted |
 | S10 | 2026-10-11 | **Task 7's persistence is N++'s own material, not an invention of this port:** the session record carries `session.xml`'s fields, the bodies of unsaved documents go to N++'s `backup/` directory implemented on OPFS with its own `FILENAME@YYYY-MM-DD_HHMMSS` names and its documented sync rules (`Buffer.cpp:1231-1272`), and the preferences are `config.xml`'s session, toolbar and zoom keys — in one IndexedDB database for the metadata (D8's half) plus OPFS for the bodies (D8's other half). | The task's own spec is three sentences ("save tabs, caret and scroll in IndexedDB; persist preferences; restore on startup"), and every question those sentences raise — what to store, when to write it, what to ask on the way back, what to do with a document whose file is gone — N++ has already answered, in code with line numbers attached. Where the browser cannot match the original (a page has no `%APPDATA%`, cannot ask before a reload, cannot be given a folder to write into) the difference is recorded in `DEVIATIONS_FROM_NPP` and `docs/session-persistence.md` rather than improvised. | Accepted |
 | S11 | 2026-10-11 | The split's reconciliation mirrors compare **changes, not states**: a view tells its peers only when the folds or bookmarks *it* holds moved since the last transaction it was asked about, tracked as a per-view signature (`#foldSignatures`, `#bookmarkSignatures`). | A freshly mounted clone legitimately starts empty, so comparing states made the clone's first transaction read as "the document has no folds" and clear the fold in the other pane — silently, and only when the document had a fold *and* the clone had a reason to dispatch before the mount-time handover. Task 7's `verify-task7.py` covers the sequence that exposed it (bookmark, fold, then open the split), and the fix is the same rule the rest of the app follows: propagate what changed. | Accepted |
+| S12 | 2026-10-12 | **The offline shell precaches the app's first load and caches a language chunk the first time the app fetches one — never the whole language set at install.** The precache list is *derived from the build* (`pwaOfflineShell()` walks the entry chunks' static import closure and reads the manifest's icons), it is compared against a re-derivation from `dist/` by `scripts/check-precache.mjs`, and the cache name carries a fingerprint of that list plus the worker's own source. | The ledger asked which of the two this task does, and the numbers decided: precaching D9's languages would put **1 227.8 kB raw / 481.9 kB gzipped** in front of the first paint — the exact cost the lazy imports exist to avoid — against a shell of **9 files / 461.3 kB raw / 151.3 kB gzipped**. Deriving the list from the bundle rather than keeping it by hand means it cannot drift when a chunk is renamed; the version in the cache name means a new build gets a new cache while the old one is deleted, so a cached language chunk can never be served beside a newer shell (they share runtime chunks — one module graph or none). | Accepted |
+| S13 | 2026-10-12 | A grammar that cannot be fetched is **reported, never retried in the page**: the document stays editable as plain text, the status bar goes on naming the language, and a persistent notice explains what happened and offers the one remedy that works — a reload. | Measured, not assumed: with the network cut, an uncached language fails to import; with the network *back*, the app's own retry (on `online`, and again when the document came forward) failed twice more and **not one request left the page in twelve seconds** — the failed module fetch, preloaded by Vite's import helper, stays memoised for the life of the document — while a reload loaded the grammar and painted the file. So the retry was removed rather than shipped as a promise the browser does not keep, and `scripts/verify-task8.py` §6 checks the remedy (`performance.timeOrigin` moves, the notice disappears, the document highlights). The copy the notice carries is verified too: "the text, the editing and the saving are unaffected" is asserted by saving with the grammar missing and reading the bytes back. | Accepted |
 
 ## Session log
 
@@ -1123,19 +1138,109 @@ session log).
 - `sample.html` is *still* deleted-but-unstaged in the worktree, untouched — the pre-existing change
   from Session 1, still not this project's to commit or revert.
 
+### 2026-10-12 — Session 8 (Task 8): the installable, offline-capable app
+
+**User input received**
+- "task 8" — the Next action the ledger carried, and the last task in the plan.
+
+**What made the task concrete.** Not Notepad++'s source, for once: this task is about the *browser's*
+rules, and N++ has nothing to say about them (it needs no offline shell because everything it needs
+is already on the disk — a difference now recorded in `DEVIATIONS_FROM_NPP`). What shaped it instead
+was the ledger's own question — *"what does offline mean for a language that was never opened?"* —
+and then measurement: every design decision below was taken after a probe run said which way it went.
+
+**Built**
+- `public/manifest.webmanifest` and three icons (`scripts/gen-pwa-icons.py` draws them from the
+  favicon's own mark; the maskable variant exists because an installed app's icon is cropped by the
+  platform, and D12's phone exclusion does not make the manifest less honest about what it is).
+- `src/pwa/service-worker.js` — a **classic** worker (it imports nothing, which is why it is plain
+  JavaScript), emitted as `dist/sw.js` with its precache list and version injected; `src/pwa/register.ts`
+  registers it in production builds only; `vite.config.ts` gains `pwaOfflineShell()`, which derives the
+  precache list from the bundle (the entry chunks' static import closure, the HTML's own references,
+  the manifest's icons) and fingerprints it.
+- The honest failure path: `Workspace.#loadLanguage`'s catch now reports instead of only logging, and
+  `chrome.showNotice` gained a `kind` (so two conditions cannot overwrite each other) and an optional
+  action — the language notice's Reload button.
+- `scripts/check-precache.mjs`, `scripts/verify-task8.py`, `docs/offline-pwa.md`, and three
+  `DEVIATIONS_FROM_NPP` entries (no installer/registry/file-association, no portable mode, offline ≠ local).
+
+**Verified at HEAD** — `python3 scripts/verify-task8.py` → **PASS (57/57)**, three consecutive runs;
+`node scripts/check-precache.mjs` → **OK** (9 precached files, 461.3 kB raw / 151.3 kB gzipped, against
+126 chunks / 1 227.8 kB / 481.9 kB gzipped cached on first use). Regressions: `verify-task7.py` 82/82,
+`verify-task6.py` 67/67, `verify-task5.py` 105/105, `verify-task4.py` 44/44,
+`verify-task4-pickers.py` 43/43 (the real OS chooser), `verify-task3.py` 58/58,
+`test-file-io.mjs`/`test-session.mjs`/`test-languages.mjs` 45/45 · 75/75 · 238/238,
+`gen-language-registry.mjs --check` OK, `spike-r2-split.py` PASS, `npm run typecheck` exit 0,
+`npm run build` exit 0.
+
+**One note about *how* those regressions were run, because the first pass said otherwise.** Run as one
+back-to-back batch, the suite reported `verify-task3.py` crashed (a Playwright driver error, the tail
+reading `Node.js v24.15.0`) and `verify-task6.py` at 64/67 — three timing failures, all of them "the
+lazy import had not resolved yet". Re-run **alone**, both are green (58/58, 67/67) on the same code and
+the same server, so the batch run was measuring the machine rather than the app (a dev server still
+re-transforming modules this session had edited, with Chrome instances overlapping). The lesson is the
+one this ledger keeps relearning: when a check fails in a batch and passes alone, say which run the
+number came from — here it is the alone-run for those two, and both were re-run before the row above
+was written. The real-chooser check was run on a quiet machine for the same reason.
+
+**Three things the measurements changed, each worth more than the code it removed**
+
+1. **`clients.claim()` in `install` rejects** (`InvalidStateError`), which rejects the install — and
+   the leftover state is the worst kind: the cache is filled, so the app *looks* offline-capable,
+   while there is no worker to serve from it. Moved to `activate`; caught by the first probe run.
+2. **The in-page retry for a failed grammar cannot work.** Measured: after the network came back, the
+   app's retry (on `online`, and again when the document came forward) failed twice more with **not
+   one request leaving the page** across twelve seconds of polling — the failed module fetch stays
+   memoised for the life of the document — while a reload loaded the grammar and painted the file.
+   So the retry was *removed* rather than shipped as a promise the browser does not keep, and the
+   notice now carries the remedy that works. Recorded as **S13**.
+3. **The single portable HTML file was measured and declined.** Fusing the graph gives one
+   `index.html` of **1 699.9 kB** (D9's laziness gone). Opened from `file://` it loses OPFS
+   (`SecurityError`), service-worker registration (`origin 'null' is not supported`) and the pickers —
+   i.e. it loses file I/O and the protection for unsaved work — while costing 1.7 MB up front. The
+   numbers are in `docs/offline-pwa.md`; the plan's "optional" step is answered with evidence instead
+   of a shrug.
+
+**Mistakes of mine, recorded rather than tidied**
+- **A whole run's failures were the harness's, not the app's.** `page.add_init_script` takes *raw
+  JavaScript source*; I passed it an arrow-function string, which is a no-op statement. So the OS
+  picker stub never installed, Chrome's real chooser opened invisibly in headless, `Alt+O` silently
+  did nothing, and three checks failed with messages about the status bar and the session. The check
+  now asserts its own precondition (`window.__stubPickers`) so this class of failure names itself.
+- **Three assertions were racing the restore.** One batch of three runs failed 3 of 57 checks in a
+  shape that did not reproduce: asserting on "the first `.cm-content`" read the welcome buffer that
+  the restore had not replaced yet. Now every post-reload assertion waits for the *restored document
+  to be active* (`wait_for_active`) — after which three consecutive runs were 57/57.
+- **One assertion was guessing at a mechanism.** "The reload fetched the grammar into the worker's
+  cache" is false in a case I then measured: a language recovered by a reload can be served from the
+  browser's own caches, with nothing reaching the server and nothing entering the worker's cache. The
+  assertion was replaced with the outcome a user experiences (offline again, still highlighted, with
+  zero requests served) and the limit is stated in the docs — the app promises what it controls.
+- **Two probe scripts of mine were wrong before they were useful**: a single-file inliner that
+  appended every chunk into the HTML repeatedly (`RangeError: Invalid string length`), and a Vite
+  config written to `/tmp`, which cannot resolve `vite` from `node_modules` (`ERR_MODULE_NOT_FOUND`).
+  Both fixed by measuring the failure instead of guessing at it.
+
+**Repo state at session end**
+- `8ac032e` — `task-8: the installable, offline-capable app — the shell is precached, a language is
+  cached when it is used, and the notice offers the reload that works` (src, `public/`, `vite.config.ts`,
+  `index.html`, `package.json`, the three new scripts, `docs/offline-pwa.md`, the scope row, the plan's
+  Task 8 section), then this docs commit, recording that SHA in the board.
+- `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
+  from Session 1, still not this project's to commit or revert.
+
 ## Blockers / open questions
 
 Nothing blocking, and nothing needs a task to proceed. **`D12` was answered on 2026-10-12** — accepted,
-mobile/tablet is out of the MVP (decision log above) — so the last item that needed the *user* for
-scope is closed. One item still needs the *user*, filed as a written proposal rather than a question in
-prose:
+mobile/tablet is out of the MVP (decision log above) — and **Task 8 closed the last planned task**, so
+the only item that still needs the *user* is a written proposal rather than a question in prose:
 
 1. **`D1`, `D5` and `D8` are still `Proposed`** — lower-stakes consolidations of choices already
    implied by accepted decisions. **D8 is now fully exercised**: Task 4 built its IndexedDB-for-handles
    half (`src/file/recent-files.ts`) and Task 7 the rest (session and preferences in IndexedDB, the
    bodies of unsaved documents in OPFS `backup/`). Only the user moves a `D` decision.
 
-Open items, none of which blocks the next task:
+Open items, none of which blocks anything:
 
 2. **No Language menu — the one N++ feature Task 6 knowingly did not build.** Everything needed is in
    place and verified (`languagesByName()` orders all 140 as N++ names them,
@@ -1149,15 +1254,18 @@ Open items, none of which blocks the next task:
    and chrome colours — is a Tier-1 row in `docs/scope.md` that no task has claimed.
 4. **Task 4's manual picker pass is now optional.** It used to be the gate;
    `scripts/verify-task4-pickers.py` now drives the real dialog, the real files and Chrome's write
-   prompt automatically (42/42, two consecutive runs on 2026-10-10), so the evidence rule is satisfied
-   without it. Offered, not required: two minutes on your own desktop — `Alt+O` each `/tmp/t4-*.txt`,
-   `Alt+S`, `md5sum` again, cancel one picker.
+   prompt automatically, so the evidence rule is satisfied without it. Offered, not required: two
+   minutes on your own desktop — `Alt+O` each `/tmp/t4-*.txt`, `Alt+S`, `md5sum` again, cancel one
+   picker.
 5. Chrome's **per-origin** file-edit prompt is answered on every run now: the pickers script wipes its
    own profile before each run (see the session log), so the prompt is no longer a leftover grant from an
    earlier run — the check records which prompts it answered.
 6. The overview ruler's structure layer **saturates at 2000 ticks**. On a 10 000-line file that is
    already three ticks per pixel, so the cap is right for legibility — but a large-file mode (D10
    phase 3) should thin the ticks out instead of truncating them.
+7. **The single portable HTML file is not shipped, by measurement** (Task 8): fusing the graph costs
+   1 699.9 kB up front and a `file://` open loses OPFS, service-worker registration and the pickers.
+   `docs/offline-pwa.md` has the numbers, so re-opening the idea starts from evidence.
 
 Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~~ · ~~D9~~ (2026-10-06) ·
 ~~D12~~ (2026-10-12).
@@ -1167,4 +1275,5 @@ Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~
 The MVP acceptance criteria in `docs/scope.md` §8 — six testable statements, including a
 byte-identical open→save round-trip, the 50k-line responsiveness check, and "unsupported
 browsers fail loudly", all passing **in Chrome/Chromium on a desktop OS** (D11; devices are out by
-D12).
+D12). **All eight planned tasks are complete**; the evidence for each is its row in the status board,
+and every one of those rows is re-runnable from `scripts/`.
