@@ -43,10 +43,11 @@ import {
   indentUnit,
 } from "@codemirror/language";
 
-import { nppHighlighting } from "../languages/highlight";
+import { DARK_TOKEN_COLORS, NPP_TOKEN_COLORS, nppHighlighting, type TokenColours } from "../languages/highlight";
 import { bookmarkField, bookmarkMarginCompartment, bookmarkMarginExtension } from "../search/bookmarks";
 import { markField } from "../search/find-replace";
 import { fontSizeForZoom, type ThemeName } from "../storage/preferences";
+import { paletteFor } from "./palettes.ts";
 import { overviewRuler } from "./overview-ruler";
 
 /* ------------------------------------------------------------------ defaults */
@@ -70,52 +71,14 @@ export const NPP_INDENT_GUIDES = true;
 export const NPP_WORD_WRAP = false;
 export const NPP_CARET_WIDTH = 1;
 
-/** stylers.model.xml → GlobalStyles. Names are N++'s own. */
-export const NPP_COLORS = {
-  foreground: "#000000", // Default Style fgColor
-  background: "#ffffff", // Default Style bgColor
-  activeLine: "#e8e8ff", // Current line background colour
-  selection: "#c0c0c0", // Selected text colour
-  caret: "#8000ff", // Caret colour
-  gutterBackground: "#e4e4e4", // Line number margin bgColor
-  gutterForeground: "#808080", // Line number margin fgColor
-  foldMarginBackground: "#e9e9e9", // Fold margin bgColor
-  foldActive: "#ff0000", // Fold active fgColor
-  braceHighlight: "#ff0000", // Brace highlight style fgColor (fontStyle 1 = bold)
-  badBrace: "#800000", // Bad brace colour
-  indentGuide: "#c0c0c0", // Indent guideline style
-  whitespaceSymbol: "#ffb56a", // White space symbol
-  smartHighlight: "#00ff00", // Smart Highlighting
-  edge: "#80ffff", // Edge colour
-  markStyle1: "#00ffff", // Mark Style 1 — the colour of the "Find Mark style" (stylers.model.xml)
-  bookmark: "#5f7bd7", // bookmark14, the marker bitmap: centre pixel (rgba_icons.h)
-} as const;
-
-/* -------------------------------------------------------------------- theme */
-
-/**
- * A theme is a palette plus the two facts the rest of the app needs about it. There is one
- * today (N++'s own stylers.model.xml colours, which is what the app has always drawn); the
- * second — N++'s Dark Mode, a Tier-1 row in `docs/scope.md` that no task has built yet — is a
- * palette here and one more entry in `THEMES`, which is why the shape is a map rather than a
- * bare constant. Until then the theme preference is stored and applied, and its only value is
- * the honest one. Recorded in `DEVIATIONS_FROM_NPP`.
- */
-interface NppPalette {
-  readonly dark: boolean;
-  readonly colors: typeof NPP_COLORS;
-}
-
-export const PALETTES: Record<ThemeName, NppPalette> = {
-  notepadpp: { dark: false, colors: NPP_COLORS },
-};
-
-/** What a theme name this build does not know falls back to. */
-const DEFAULT_PALETTE: NppPalette = { dark: false, colors: NPP_COLORS };
+// The palettes live in `palettes.ts`, free of CodeMirror imports, so `scripts/test-themes.mjs`
+// can compare them in Node. Re-exported from here because this is the module the rest of the
+// app already takes its colours from.
+export { NPP_COLORS, DARK_COLORS, PALETTES, type NppColours } from "./palettes.ts";
 
 /** The editor's look at a given zoom and theme — what `editorLookCompartment` holds. */
 export function nppEditorLook(options: { zoom?: number; theme?: ThemeName } = {}): Extension {
-  const palette = (options.theme && PALETTES[options.theme]) || DEFAULT_PALETTE;
+  const palette = paletteFor(options.theme);
   const colors = palette.colors;
   return EditorView.theme(
     {
@@ -355,11 +318,23 @@ export function cloneHistoryKeymap(owner: () => EditorView | undefined): KeyBind
 export const wordWrapCompartment = new Compartment();
 
 /**
- * Task 7. The editor's look — N++'s colours at the current zoom. A preference is not a
- * preference until it changes something, so zoom and theme are applied through this compartment
+ * Task 7. The editor's look — N++'s colours at the current zoom and theme. A preference is not
+ * a preference until it changes something, so zoom and theme are applied through this compartment
  * on every live view, the same way word wrap and the language are.
  */
 export const editorLookCompartment = new Compartment();
+
+/**
+ * Task 10. The token palette that goes with the theme. Separate from the look because a
+ * `HighlightStyle` is a different extension: the look owns the editor's chrome colours, this
+ * owns the syntax colours, and a theme change reconfigures both.
+ */
+export const highlightCompartment = new Compartment();
+
+/** The token table for a theme; an unknown name falls back to N++'s light palette. */
+export function tokenColoursFor(theme?: ThemeName): TokenColours {
+  return paletteFor(theme).dark ? DARK_TOKEN_COLORS : NPP_TOKEN_COLORS;
+}
 
 /**
  * Task 6. The language's extension, swapped with `reconfigure` when a document's language is
@@ -436,8 +411,9 @@ export function editorCoreExtensions(options: EditorCoreOptions = {}): Extension
     indentUnit.of(NPP_INDENT_UNIT),
     // Task 7: N++'s colours at the current zoom, swappable when the preference changes.
     editorLookCompartment.of(nppEditorLook({ zoom: options.zoom, theme: options.theme })),
-    // Task 6: N++'s token colours, plus the document's own language (empty until it loads).
-    nppHighlighting,
+    // Task 6/10: N++'s token colours for the theme in force, plus the document's own language
+    // (empty until it loads).
+    highlightCompartment.of(nppHighlighting(tokenColoursFor(options.theme))),
     languageCompartment.of(options.language ?? []),
     // Task 6: the overview ruler, per view like the marks it draws from.
     overviewRuler,
@@ -514,7 +490,7 @@ export const DEVIATIONS_FROM_NPP: readonly string[] = [
   "The session lives in IndexedDB and the bodies of unsaved documents in an OPFS `backup/` directory, not in `%APPDATA%\\\\Notepad++\\\\session.xml` and `backup\\\\`. The *fields* and the *rules* are N++'s (including its `FILENAME@YYYY-MM-DD_HHMMSS` backup names); the storage is what a page has instead of a user directory. A consequence worth stating: N++ users can copy session.xml aside as a backup, and this port cannot hand out its storage — the protection it offers instead is `navigator.storage.persist()` plus the snapshot interval.",
   "A reload is not a close. N++ can ask before quitting and therefore cannot lose unsaved edits by surprise; a page cannot stop a reload, and the browser may do it on its own (a crash, a mobile tab eviction). What this port does instead: it snapshots every dirty document on N++'s own interval, and when a reload happens with that protection switched off it says so, by name, rather than opening the file and letting the edits disappear quietly.",
   "N++'s Preferences ▸ MISC is a page of checkboxes; this port's Settings ▸ Preferences… carries only the settings it actually has (the session and snapshot group, the toolbar, the theme and the zoom). Style Configurator, Shortcut Mapper and the Import submenu are not built — they exist in N++ because it has style files and a Win32 shortcut table, neither of which a page has.",
-  "The theme preference has exactly one value, Notepad++'s own light palette. N++'s Dark Mode (a Tier 1 row in docs/scope.md that no task has claimed) is not built: `PALETTES` in `notepadpp-config.ts` takes a second palette and `THEMES` a second name, and the store and the compartment are already theme-agnostic — but a dark skin is a feature, not a preference, and it is not in this task.",
+  "Dark Mode is N++'s own: `installer/themes/DarkModeDefault.xml` for the editor and `NppDarkMode.cpp`'s `Colors` table for the chrome, with two honest limits. (1) That theme ships no UDL styles, so the five markdown tokens (heading, strong, emphasis, code, strikethrough) are mapped to the nearest Zenburn styles rather than being N++'s own. (2) N++'s colours do not meet WCAG AA everywhere in either theme — measured on the backgrounds the port actually draws: dark comment 3.59:1, doc comment 3.59, operator 3.77, regexp 3.97, string 4.09 on #3f3f3f; light number and heading 2.52:1 on white. The port keeps N++'s values rather than inventing a more accessible skin, and `scripts/test-themes.mjs` pins both sets by name so a future palette edit has to state its intent. One further difference: N++ sets the selected text's *foreground* in dark (000000 on 585858); CM6 paints its selection *behind* the text, so this port changes the selection background and leaves the token colour alone.",
   "View ▸ Zoom In / Zoom Out / Restore Default Zoom are not bound to keys. N++ binds them to the numeric keypad's +/- (its `winKeyDefs[]` table) and documents Ctrl+mouse wheel in the menu label; a browser owns Ctrl+wheel for page zoom unless the page cancels the gesture, and whether this one can be claimed here has not been measured — measuring first is this project's rule (see S6). The commands and their persistence work; only the binding is missing.",
   "N++ keeps a zoom per view (`zoom` and `zoom2`) plus a \"Synchronize Across Views\" switch, and groups the zoom commands in a `Zoom` submenu. This menu bar has no submenus, and one zoom for the whole app is what `zoomSync` means in N++ — the split's two panes are one document shown twice (S5), not two views with independent settings.",
   "The Toolbar preference's layout value names icon sets in N++ (its `config.xml` carries `standard`, `small`, `fluent` and a fluent colour); this port's toolbar is text, so the value spends itself on the button box instead. `visible` means what it means in N++.",

@@ -65,11 +65,13 @@ function selectRow(
   values: readonly string[],
   selected: string,
   note?: string,
+  labels?: Readonly<Record<string, string>>,
 ): HTMLElement {
   const row = el("div", { className: "npp-pref-row" });
   const select = el("select", { attrs: { id: `pref-${key}`, "data-pref": key } });
   for (const value of values) {
-    const option = el("option", { text: value, attrs: { value } });
+    const text = labels?.[value] ?? value;
+    const option = el("option", { text, attrs: { value } });
     if (value === selected) option.selected = true;
     select.append(option);
   }
@@ -80,6 +82,12 @@ function selectRow(
   if (note) row.append(el("span", { className: "npp-pref-note", text: note }));
   return row;
 }
+
+/** The two themes in N++'s own vocabulary; the stored values stay internal ids. */
+const THEME_LABELS: Readonly<Record<string, string>> = {
+  notepadpp: "Notepad++ (light)",
+  dark: "Notepad++ Dark Mode",
+};
 
 function numberRow(
   key: string,
@@ -168,7 +176,8 @@ export function openPreferencesDialog(
         "Theme",
         THEMES,
         current.theme,
-        "Notepad++'s Dark Mode is not built yet — a Tier 1 row in docs/scope.md that no task has claimed. The half that exists is the storage: this value is stored and applied at startup, and a second theme is one palette in PALETTES.",
+        "N++'s light styles and its own Dark Mode — the dark palette is DarkModeDefault.xml and NppDarkMode.cpp's colours, not a CSS filter. Applied on OK and restored before the first paint.",
+        THEME_LABELS,
       ),
     );
     body.append(

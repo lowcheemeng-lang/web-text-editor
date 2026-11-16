@@ -16,6 +16,21 @@
     -->
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#f0f0f0" />
+    <!--
+      Task 10: the theme preference lives in IndexedDB (asynchronous), so the one value the
+      first paint needs is mirrored in localStorage. Reading it here — before the module script
+      and its stylesheet run — is what stops a dark-theme user seeing a white frame and then a
+      repaint. Fail-soft: no storage or no value means the light theme, which is N++'s default.
+    -->
+    <script>
+      try {
+        if (localStorage.getItem("npp-web.theme") === "dark") {
+          document.documentElement.dataset.theme = "dark";
+        }
+      } catch (error) {
+        /* storage can throw in private mode; the app still starts, in the light theme */
+      }
+    </script>
     <!-- Inline SVG favicon: no extra request, no 404, and it still resolves offline. -->
     <link
       rel="icon"

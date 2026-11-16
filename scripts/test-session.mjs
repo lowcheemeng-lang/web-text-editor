@@ -131,7 +131,7 @@ const mixed = normalisePreferences({
   snapshotMode: false,              // honoured
   snapshotBackupTiming: 250,        // below the sane floor → default
   toolbarLayout: "fluent",          // a real N++ value this build does not have → default
-  theme: "dark",                    // not a theme this build ships → default
+  theme: "obsidian",                // a real N++ theme this build does not ship → default
   zoom: 999,                        // above Scintilla's range → clamped
   futureKey: true,                  // unknown keys are dropped
 });

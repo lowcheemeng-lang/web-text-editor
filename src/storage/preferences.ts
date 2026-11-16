@@ -21,8 +21,12 @@
  */
 import { idbGet, idbPut } from "./idb.ts";
 
-/** N++'s Style Configurator lists the theme *file* names it found (`ThemeSwitcher`, Parameters.h:1253). */
-export type ThemeName = "notepadpp";
+/**
+ * N++'s Style Configurator lists the theme *file* names it found (`ThemeSwitcher`,
+ * Parameters.h:1253). This port ships the two N++ itself makes meaningful: its own light
+ * styles (`stylers.model.xml`) and Dark Mode (`installer/themes/DarkModeDefault.xml`).
+ */
+export type ThemeName = "notepadpp" | "dark";
 export type ToolbarLayout = "standard" | "small";
 
 export interface Preferences {
@@ -68,8 +72,38 @@ export const NPP_PREFERENCES: Readonly<Preferences> = Object.freeze({
   zoom: 0,
 });
 
-/** The themes this port ships. N++'s Dark Mode is *not* one of them yet (see the ledger). */
-export const THEMES: readonly ThemeName[] = ["notepadpp"];
+/** The themes this port ships: N++'s light styles and N++'s own Dark Mode. */
+export const THEMES: readonly ThemeName[] = ["notepadpp", "dark"];
+
+/**
+ * The theme, mirrored where it can be read **synchronously**. The preference itself lives in
+ * IndexedDB (D8), whose read is asynchronous — too late to stop the first paint from drawing
+ * the light chrome and then repainting it dark. N++ reads `config.xml` before it draws a
+ * window, so the port keeps the one value it needs at first paint in `localStorage` as well.
+ * Both reads are fail-soft: private-mode storage can throw, and a missing mirror only costs a
+ * one-frame flash, never a failure to start.
+ */
+const THEME_MIRROR_KEY = "npp-web.theme";
+
+export function readThemeMirror(): ThemeName | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const value = localStorage.getItem(THEME_MIRROR_KEY);
+    return value !== null && (THEMES as readonly string[]).includes(value) ? (value as ThemeName) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeThemeMirror(theme: ThemeName): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(THEME_MIRROR_KEY, theme);
+  } catch {
+    // A preference that cannot be mirrored is still stored in IndexedDB; the mirror is an
+    // optimisation for the first paint, not the record.
+  }
+}
 
 export const TOOLBAR_LAYOUTS: readonly ToolbarLayout[] = ["standard", "small"];
 
@@ -159,7 +193,11 @@ export function clampZoom(zoom: number): number {
 /** Read the stored preferences; N++'s defaults when there is nothing stored (or no storage). */
 export async function loadPreferences(): Promise<Preferences> {
   const stored = await idbGet<unknown>("preferences", PREFERENCES_KEY);
-  return normalisePreferences(stored);
+  const preferences = normalisePreferences(stored);
+  // Keep the synchronous mirror in step with the record (it is what `index.html` reads
+  // before the first paint, so a stale mirror would flash the wrong theme).
+  writeThemeMirror(preferences.theme);
+  return preferences;
 }
 
 /**
@@ -169,5 +207,6 @@ export async function loadPreferences(): Promise<Preferences> {
 export async function savePreferences(patch: Partial<Preferences>): Promise<Preferences> {
   const merged = normalisePreferences({ ...(await loadPreferences()), ...patch });
   await idbPut("preferences", merged, PREFERENCES_KEY);
+  writeThemeMirror(merged.theme);
   return merged;
 }

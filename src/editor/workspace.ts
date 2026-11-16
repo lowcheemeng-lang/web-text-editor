@@ -111,17 +111,21 @@ import {
 import {
   NPP_BOOKMARK_MARGIN,
   NPP_WORD_WRAP,
+  PALETTES,
   SEARCH_KEYS,
   WEB_PORT_KEYS,
   createCloneState,
   createDocumentState,
   editorLookCompartment,
+  highlightCompartment,
   languageCompartment,
   nppEditorLook,
+  tokenColoursFor,
   wordWrapCompartment,
   wordWrapExtension,
   type NppCommandHandlers,
 } from "./notepadpp-config";
+import { nppHighlighting } from "../languages/highlight";
 import { refreshStructure, rulerCounts, type RulerCounts } from "./overview-ruler";
 import { openPreferencesDialog } from "./preferences-dialog";
 import {
@@ -1568,11 +1572,17 @@ export class Workspace {
   #applyPreferences(): void {
     this.#chrome.setToolbarVisible(this.#preferences.toolbarVisible);
     this.#chrome.setToolbarLayout(this.#preferences.toolbarLayout);
+    const theme = this.#preferences.theme;
+    // The chrome is CSS: one attribute on the document switches every variable `style.css`
+    // defines (Task 10). The editor's colours travel through the two compartments below.
+    const palette = PALETTES[theme] ?? PALETTES.notepadpp;
+    document.documentElement.dataset.theme = palette.dark ? "dark" : "light";
     const look = editorLookCompartment.reconfigure(
-      nppEditorLook({ zoom: this.#preferences.zoom, theme: this.#preferences.theme }),
+      nppEditorLook({ zoom: this.#preferences.zoom, theme }),
     );
+    const highlight = highlightCompartment.reconfigure(nppHighlighting(tokenColoursFor(theme)));
     for (const document of this.#documents) {
-      this.#eachView(document, (view) => view.dispatch({ effects: look }));
+      this.#eachView(document, (view) => view.dispatch({ effects: [look, highlight] }));
     }
   }
 
