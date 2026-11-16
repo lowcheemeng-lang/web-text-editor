@@ -1,12 +1,13 @@
 # Notepad++ Web Edition — Phase 2 Implementation Plan
 
-> **For Hermes:** this file is the **spec**, and this document was written as **planning only** —
-> nothing in it has been executed. Progress lives in [`PROGRESS.md`](../../PROGRESS.md), not here.
-> Start a session by reading `PROGRESS.md` → `docs/scope.md` → the phase-1 plan → this plan, in
-> that order.
+> **For Hermes:** this file is the **spec**. It began as planning only; **Task 10 is implemented**
+> (2026-11-16) and carries an Outcome block, and **Tasks 11–22 are still unstarted**. Progress lives
+> in [`PROGRESS.md`](../../PROGRESS.md), not here. Start a session by reading `PROGRESS.md` →
+> `docs/scope.md` → the phase-1 plan → this plan, in that order.
 
-**Status:** planning, written 2026-11-16. Phase 1 (Tasks 1–8) is fully built and verified; the
-Language menu is Task 9 and is not part of this document. Every task below is **unstarted**.
+**Status:** Task 10 (Dark Mode) is **DONE** (2026-11-16). **Tasks 11–22 are unstarted.** Phase 1
+(Tasks 1–8) is fully built and verified; the Language menu was Task 9 and is not part of this
+document.
 
 **Predecessor:** `.hermes/plans/2026-09-24_notepadpp-web-plan.md` (Tasks 1–8, all DONE).
 **Scope authority:** `docs/scope.md` §4 (Tier 1 / Tier 2 / Tier 3) — this plan claims what that
@@ -64,10 +65,31 @@ stay `Proposed` and need the user, not a task; D5 only matters if the plugin hos
 
 ---
 
-## Task 10 — Dark Mode (Tier 1 gap)
+## Task 10 — Dark Mode (Tier 1 gap) — ✅ DONE (2026-11-16)
 
 **Objective:** Notepad++'s Dark Mode as a second palette selected by the preference that already
 exists, applied to the editor *and* the chrome, with N++'s dark token colours — not a CSS filter.
+
+**Outcome.** The two palettes now live in `src/editor/palettes.ts` and the token tables in
+`src/languages/token-colours.ts` (both free of CodeMirror imports, so `scripts/test-themes.mjs` can
+read them in Node); `highlight.ts` builds the `HighlightStyle` from the table in force and
+`notepadpp-config.ts` holds a `highlightCompartment` beside the look compartment. Every chrome
+colour in `style.css` became a variable, with `[data-theme="dark"]` carrying `NppDarkMode.cpp`'s
+values. The theme is mirrored into `localStorage`, and an inline script in `index.html` sets the
+attribute before the first paint; `#applyPreferences()` keeps it in step. `verify-task10.py`
+(24/24) drives the real dialog and menus, and `test-themes.mjs` (18/18) checks the tables.
+
+**One acceptance line in this plan was wrong, and the measurement is the record:** the verification
+below asked for "WCAG contrast ≥ 4.5:1 for every token colour". N++'s own palettes do not meet
+that — dark comment/docComment 3.59:1, operator 3.77, regexp 3.97, string 4.09 on #3f3f3f; light
+number/heading 2.52:1, string 3.95, added 3.80, attribute/error 4.00, removed 4.13 on white. The
+task keeps N++'s colours and pins both sets in the Node test and in `DEVIATIONS_FROM_NPP`, which is
+the honest version of "match Notepad++".
+
+**Files (as built):** `src/editor/palettes.ts` *(new)*; `src/languages/token-colours.ts` *(new)*;
+`src/editor/notepadpp-config.ts`; `src/languages/highlight.ts`; `src/storage/preferences.ts`;
+`src/style.css`; `src/editor/preferences-dialog.ts`; `src/editor/workspace.ts`; `index.html`;
+`scripts/test-themes.mjs`; `scripts/verify-task10.py`.
 
 **Why it is first:** it is the only Tier-1 row no task has claimed, and every phase-2 feature that
 adds chrome (panels, print stylesheet, minimap) is cheaper to theme once.

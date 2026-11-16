@@ -46,6 +46,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 7 | Session persistence & preferences | DONE | **`python3 scripts/verify-task7.py` → PASS (82/82)**, twice, every assertion made **after a real `page.reload()`** — the reload discards every in-page stub, so only stored state survives it: the Preferences dialog (Cancel applies nothing; OK stores, applies and persists — toolbar hidden, 12 pt text), View ▸ Zoom, an unsaved scratch buffer returning dirty with its caret and its bookmark, a CRLF+BOM file returning dirty from its `backup/` body and saving back **byte-identical** (`EF BB BF` + `one\r\ntwo\r\nTHREE`), N++'s both modified-file answers, folds/bookmarks/wrap/split/language restored (folds as *rendered* fold placeholders, in both panes), a file deleted behind the app dropped or offered as a read-only placeholder that refuses typing, and unsaved work that cannot be restored reported **by name** with snapshot mode off. `node --experimental-strip-types scripts/test-session.mjs` → **PASS (75/75)** — the storage logic in Node, where neither IndexedDB nor OPFS exists: N++'s `FILENAME@YYYY-MM-DD_HHMMSS` naming, the preference defaults and ranges, the restore decision table, the line↔offset conversions, and the fail-soft contract. Regressions at HEAD: `verify-task6.py` → **PASS (67/67)**; `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `test-languages.mjs` → **PASS (238/238)**; `gen-language-registry.mjs --check` → **OK**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.26 kB / 109.14 kB gz** across **129 chunks** (unchanged from Task 6 — the storage layer, the dialog and the ruler fix all land in the app's own chunk, now `index` **113.19 kB / 34.55 kB gz**). **`scripts/verify-task4-pickers.py` → PASS (43/43)** at the same HEAD — Task 4's real-chooser check, re-run because Task 7's restore changes the state it starts from. Three runs failed first (`36/39`), all three on one check, and they shared a cause worth knowing: a **stale session in the Chrome profile** (each run's own Chrome rewrites the profile while shutting down, after the profile had been wiped for the next run), so the app restored a previous run's documents and the check asserted a *fresh* open's fact about a *restored* document. The script wipes its own profile now and asserts the clean start as a check; the runs also turned up a real defect — `RestoreState.assumedEncoding` was built and never read, so a restored windows-1252 document reported an identified encoding to `inspect()` and the status bar (measured: `assumedEncoding: false` on the restored document, `true` after the fix) — now fixed (`c98188a`) and verified through a reload. | `f829697` · fix `c98188a` |
 | 8 | PWA / offline packaging | DONE | **`python3 scripts/verify-task8.py` → PASS (57/57)**, three consecutive runs. It builds the production bundle itself (the dev server has no worker by design), serves `dist/` from its own static server with `Cache-Control: no-cache` — so the browser's HTTP cache can never stand in for the worker — and drives Chrome with a fresh profile per run. **Chrome's own verdicts:** `Page.getInstallabilityErrors` → empty (installable); `Page.getAppManifest` → no errors, with Chrome's parse asserted in Chrome's vocabulary (`kStandalone`, `rgba(240,240,240,1)`, the 192 and 512 icons); the manifest is also re-read from disk for the fields as written, with the PNGs' real pixel sizes. **Offline, three ways, none a proxy:** the network emulated away, and the server **stopped** (nothing listening at all) — in both, every response is `Network.responseReceived.fromServiceWorker` (9/9 and 10/10 across the phases), the server's request log never grows, the editor mounts, Task 7's session restore returns dirty with its edits (`TYPED_OFFLINE_MARKER`), typing lands, an edit **saves through to the file** (`SAVED_WITH_NO_SERVER`, read back out of OPFS) and the languages opened while online still paint N++'s colours. The honest edge is asserted too: offline, a language that was never opened opens as plain text with the status bar still naming it, a persistent notice explaining why, and the **one remedy that works** — its Reload button, verified as a real navigation (`performance.timeOrigin` moves) after which the grammar loads and paints. `node scripts/check-precache.mjs` → **OK**: it re-derives the shell set from `dist/` alone, and prints the weights — **9 files / 461.3 kB raw / 151.3 kB gzipped** precached against **126 chunks / 1 227.8 kB raw / 481.9 kB gzipped** cached on first use. Design + measurements in `docs/offline-pwa.md`. Regressions at HEAD: `verify-task7.py` → **PASS (82/82)**; `verify-task6.py` → **PASS (67/67)**; `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; **`verify-task4-pickers.py` → PASS (43/43)** with the real OS chooser; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `test-session.mjs` → **PASS (75/75)**; `test-languages.mjs` → **PASS (238/238)**; `gen-language-registry.mjs --check` → **OK**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0 | `8ac032e` |
 | 9 | Language menu & the current-line selection order | DONE | **`python3 scripts/verify-task9.py` → PASS (41/41)** — N++'s Language menu driven through the menu bar, **opened by hover (no click)**: "None (Normal Text)" first (`Notepad_plus.rc:1000`), the 140 languages grouped **A–Z under first-letter submenus** (N++'s compact form) with N++'s short-name order inside each group and N++'s radio check on the active document's language, Python / JavaScript / Brainfuck applying live with the status bar naming N++'s long name, "None" clearing it, a choice surviving a real `page.reload()` (Task 7's session), and a choice **overriding a `.txt` file's detection** through the real File ▸ Open path. The check also asserts that hovering a title drops its menu down and moving to another title switches it (S17), that a submenu opens beside its row and stays inside the window, that clicking a group is a disclosure rather than a command, and that all 140 languages appear **exactly once under their own initial** (S16). **The selection bug, measured and fixed (S15):** the theme's selection rule lost on specificity to CM6's five-class base rule — the selection stayed CM6's `#d7d4f0`, the same pale lavender as the `#e8e8ff` current-line band — **and** CM6 paints its selection at z-index −2, behind the content, so the opaque band hid it outright (every pixel on the current row sampled `#e8e8ff`). The band now lives on `.cm-activeLine::before` at z-index −3, which is Scintilla's order: band, selection, text. The check samples real pixels — `#c0c0c0` inside the selection, `#e8e8ff` on the rest of the row, with and without a selection. Regressions at HEAD: `verify-task3.py` **58/58**; `verify-task4.py` **44/44**; `verify-task4-pickers.py` **PASS (43/43)** with the real OS chooser; `verify-task5.py` **105/105**; `verify-task6.py` **67/67**; `verify-task7.py` **82/82**; `verify-task8.py` **57/57**; `test-file-io.mjs` **45/45**; `test-session.mjs` **75/75**; `test-languages.mjs` **238/238**; `gen-language-registry.mjs --check` **OK**; `spike-r2-split.py` **PASS**; `npm run typecheck` exit 0; `npm run build` exit 0, `index` **117.43 kB / 35.91 kB gz**, `editor-core` unchanged at **335.26 kB / 109.14 kB gz** | `3274581` · follow-up `34e1ad4` |
+| 10 | Dark Mode (phase 2) | DONE | **`python3 scripts/verify-task10.py` → PASS (24/24)** — through the real Preferences dialog and menus: the light theme is unchanged (editor #ffffff, gutter #e4e4e4, `def` #0000ff bold); Cancel applies nothing; OK applies Dark Mode live and stores it; the editor takes `DarkModeDefault.xml` (#3f3f3f background, #dcdccc text, #0c0c0c margin, #101010 current line); the chrome takes `NppDarkMode.cpp` (#202020 status bar, #2b2b2b tab strip / menu / Preferences / Find, #e0e0e0 text); tokens become #dfc47d keyword, #7f9f7f comment, #8cd0d3 number (keyword 6.18:1 on the dark background); the S4 notice is dark too; a reload puts `data-theme="dark"` on the document **at DOMContentLoaded** (no white flash — the localStorage mirror plus the inline script in `index.html`); switching back is live and leaves the text untouched; no console/page errors, no request off the machine. `node --experimental-strip-types scripts/test-themes.mjs` → **PASS (18/18)** — key parity between the palettes and between the token tables, 6-digit hex values, N++'s sourced values pinned, and the contrast tables: **five dark tokens and eight light tokens are below WCAG AA, which is N++'s own palette** (dark comment/docComment 3.59, operator 3.77, regexp 3.97, string 4.09; light number/heading 2.52, string 3.95, added 3.80, attribute/error 4.00, removed 4.13) — kept rather than "fixed", and named in `DEVIATIONS_FROM_NPP`. Regressions at HEAD: `verify-task3.py` **58/58**; `verify-task4.py` **44/44**; `verify-task4-pickers.py` **PASS (43/43)** with the real OS chooser; `verify-task5.py` **105/105**; `verify-task6.py` **67/67**; `verify-task7.py` **82/82**; `verify-task8.py` **57/57**; `verify-task9.py` **41/41**; `test-file-io.mjs` **45/45**; `test-session.mjs` **75/75** (with one deliberate change: `dark` is now a real theme, so its unknown-theme case uses `obsidian`); `test-languages.mjs` **238/238**; `gen-language-registry.mjs --check` **OK**; `spike-r2-split.py` **PASS**; `npm run typecheck` exit 0; `npm run build` exit 0, `index` **118.67 kB / 36.33 kB gz**, CSS **12.17 kB / 2.98 kB gz**, `editor-core` unchanged at **335.26 kB / 109.14 kB gz** | `f3fc966` |
 
 **Status vocabulary:** `TODO` · `WIP` · `DONE` · `BLOCKED` · `DEFERRED`
 
@@ -56,21 +57,19 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**Task 9 is DONE (2026-11-16): the Language menu exists and the selection bug is fixed.** The MVP
-itself was finished on 2026-10-12 with Task 8, and Task 9 closed the only open item that had
-everything already built behind it (`languagesByName()`, `setLanguage()`, the per-document language
-in the session). Its check has two halves, both driven through the real UI:
+**Task 10 is DONE (2026-11-16): Notepad++ Dark Mode.** The preference Task 7 stored now has a
+second, real value; the palette is N++'s own (`DarkModeDefault.xml` for the editor,
+`NppDarkMode.cpp` for the chrome), applied live and restored before the first paint. Two checks
+cover it, one of which needs no browser:
 
 ```bash
-npm run build                      # emits dist/sw.js — the menu adds ~2 kB to the index chunk
-python3 scripts/verify-task9.py    # the menu (grouped A–Z, hover) + the selection pixels (41 checks)
+python3 scripts/verify-task10.py                                  # the dialog, both themes, pixels (24 checks)
+node --experimental-strip-types scripts/test-themes.mjs           # the tables + contrast in Node (18 checks)
 ```
 
-**Phase 2 now has a plan — `.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md` — written as
-planning only, nothing executed.** It claims, in this order:
+**Phase 2, in the order `.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md` claims:**
 
-1. **Task 10 — Dark Mode.** The last unclaimed Tier-1 row: the preference exists (`THEMES` has one
-   value), the skill does not.
+1. ~~Task 10 — Dark Mode~~ — done (this row).
 2. **Task 11 — encoding fidelity** (D10): UTF-32 and the DOS/IBM codepages, with a spike to decide
    table-vs-WASM before any WebAssembly is written.
 3. **Task 12 — large-file mode** (D10), including the overview ruler's 2000-tick saturation: thin
@@ -189,6 +188,7 @@ decision is a scope edit, not a retrofit.
 | S15 | 2026-11-16 | **The current-line band is painted on `.cm-activeLine::before` at z-index −3, and the selection rule names CodeMirror's own five-class selector shape plus `.cm-editor` so it wins on specificity rather than on stylesheet order.** | Two measurements, both in `verify-task9.py`: (a) the original three-class selection rule lost silently to CM6's `&light.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground` (five classes), so the palette's `#c0c0c0` never reached the screen and the selection stayed CM6's `#d7d4f0` — visually the same pale lavender as `#e8e8ff`; (b) even with the right colour, the opaque band on `.cm-line` painted over the selection, because CM6 draws its selection on a layer at z-index −2, *behind* the content. N++ paints the line background first and the selection over it, so the band moved to a pseudo-element at −3. Four pixel checks hold it: `#c0c0c0` inside the selection, `#e8e8ff` on the rest of the row, with and without a selection. | Accepted |
 | S16 | 2026-11-16 | **The Language menu groups the languages under their first letter, A–Z — N++'s compact form — superseding S14's flat list.** A group is a disclosure: hovering or clicking it opens its list and never runs a command. Inside a group the order stays N++'s short name, case-insensitively. | The user asked for N++'s A–Z grouping, and N++ has exactly that shape as its *compact* mode (`_isLangMenuCompact`, `Notepad_plus.cpp:583-635`), so the menu bar gained submenus to carry it. The check flattens every group back into the name-ordered list, which is what makes the grouping safe to verify: all 140 languages must appear exactly once, under their own initial, in the same order S14 asserted. | Accepted (user-requested 2026-11-16) |
 | S17 | 2026-11-16 | **Menu titles open on hover (140 ms), and moving between titles switches the open menu without a click; submenus open on hover too.** Clicks still toggle, and the hover delay is a constant (`MENU_HOVER_DELAY_MS`). | The user reported that hovering only highlighted the title. Windows/N++ open a menu on hover once one is open, but a page has no such state to lean on, so the delay is what keeps a pointer crossing the bar on its way to the editor from flashing every menu. `verify-task9.py` drives the whole hover path with no click anywhere in those checks. | Accepted (user-requested 2026-11-16) |
+| S18 | 2026-11-16 | **Dark Mode is N++'s two sources applied through three seams**: `installer/themes/DarkModeDefault.xml` for the editor palette, `NppDarkMode.cpp`'s `Colors` table for the chrome, and one `data-theme` attribute for the CSS variables. The palettes and token tables live in dependency-free modules (`src/editor/palettes.ts`, `src/languages/token-colours.ts`) so `scripts/test-themes.mjs` can read them in Node, and the chosen theme is mirrored in `localStorage` so `index.html` can set the attribute **before the first paint**. | The preference itself is in IndexedDB (D8), whose read is asynchronous — too late to stop a white frame appearing before a dark repaint. N++ reads `config.xml` before it draws a window, so a synchronous mirror of the one value first paint needs is the faithful equivalent, and `verify-task10.py` records the attribute at DOMContentLoaded to prove it. Splitting the tables out of `notepadpp-config.ts`/`highlight.ts` was forced by the same test requirement: those modules import CodeMirror, which Node cannot resolve — and the test is what pins the contrast numbers N++ itself falls short of (dark comment 3.59, docComment 3.59, operator 3.77, regexp 3.97, string 4.09; light number/heading 2.52), rather than inventing a more accessible skin and calling it N++'s. | Accepted |
 
 ## Session log
 
@@ -1373,6 +1373,88 @@ exit 0; `npm run build` exit 0, `index` **117.43 kB / 35.91 kB gz** (+2.0 kB ove
 - `sample.html` still deleted-but-unstaged and `user-guide.txt` still untracked — both pre-existing
   and neither this project's to change.
 
+### 2026-11-16 — Session 10 (phase-2 Task 10): N++ Dark Mode
+
+**User input received**
+- "ok, proceed to implement phase-2 Task 10 (Dark Mode)".
+
+**Read before writing anything.** N++'s own sources, not a taste palette: `installer/themes/
+DarkModeDefault.xml` (the "Dark mode default style", itself based on Zenburn) for the editor's
+`GlobalStyles` and lexer tables, and `NppDarkMode.cpp`'s `Colors` table for the chrome
+(`background` 202020, `softerBackground` 383838, `hotBackground` 454545, `textColor` E0E0E0,
+`darkerTextColor` C0C0C0, `disabledTextColor` 808080, `edgeColor` 646464, `hotEdgeColor` 9B9B9B,
+`linkTextColor` FFFF00). Every value in the two new palettes carries the `<WidgetStyle>`/
+`<WordsStyle>` name it came from.
+
+**Built**
+- `src/editor/palettes.ts` — the two editor palettes and `paletteFor()`, moved out of
+  `notepadpp-config.ts` so they import no CodeMirror and Node can read them.
+- `src/languages/token-colours.ts` — the two token tables, moved out of `highlight.ts` for the same
+  reason; `highlight.ts` now builds the `HighlightStyle` from whichever table is in force.
+- `src/editor/notepadpp-config.ts` — a `highlightCompartment` beside the look compartment (the
+  theme changes syntax colours too, and a compartment is the only way to swap them live), and
+  `DEVIATIONS_FROM_NPP` now carries Dark Mode's two real limits instead of saying it is unbuilt.
+- `src/storage/preferences.ts` — `ThemeName` gains `"dark"`, `THEMES` its second value, and the
+  theme is mirrored into `localStorage` (fail-soft) so it can be read synchronously.
+- `index.html` — an inline script sets `data-theme` from that mirror **before the first paint**.
+- `src/style.css` — every chrome colour became a variable; `[data-theme="dark"]` swaps the set to
+  NppDarkMode's values. Light values are unchanged, so the light theme still looks exactly as it did.
+- `src/editor/preferences-dialog.ts` — the theme select reads "Notepad++ (light)" / "Notepad++ Dark
+  Mode" and its note describes the real feature instead of its absence.
+- `src/editor/workspace.ts` — `#applyPreferences()` sets the root attribute and reconfigures both
+  compartments on every live view.
+- `scripts/test-themes.mjs` (18 checks, Node) and `scripts/verify-task10.py` (24 checks, Chrome).
+
+**The measurement that changed the plan's own acceptance line.** The plan asked for "WCAG contrast
+≥ 4.5:1 for every token colour". Computed from the sources, **N++'s palettes do not meet that**:
+dark comment/docComment 3.59:1, operator 3.77, regexp 3.97, string 4.09 on #3f3f3f; light
+number/heading 2.52:1, string 3.95, added 3.80, attribute/error 4.00, removed 4.13 on white. The
+choice was to keep N++'s colours — the task is N++'s look — and make the test pin both sets by name
+so no future edit can quietly change the story, rather than inventing a more accessible skin and
+calling it N++'s. The keyword's rendered contrast (6.18:1) is asserted in the browser; the full
+table is in the Node test and in `DEVIATIONS_FROM_NPP`.
+
+**Verified at HEAD** — `python3 scripts/verify-task10.py` → **PASS (24/24)**;
+`node --experimental-strip-types scripts/test-themes.mjs` → **PASS (18/18)**. Regressions, each run
+alone: `verify-task3.py` **58/58**; `verify-task4.py` **44/44**; `verify-task4-pickers.py`
+**43/43** with the real OS chooser; `verify-task5.py` **105/105**; `verify-task6.py` **67/67**;
+`verify-task7.py` **82/82**; `verify-task8.py` **57/57**; `verify-task9.py` **41/41**;
+`test-file-io.mjs` **45/45**; `test-session.mjs` **75/75**; `test-languages.mjs` **238/238**;
+`gen-language-registry.mjs --check` **OK**; `spike-r2-split.py` **PASS**; `npm run typecheck` exit 0;
+`npm run build` exit 0, `index` **118.67 kB / 36.33 kB gz**, CSS **12.17 kB / 2.98 kB gz**,
+`editor-core` unchanged at **335.26 kB / 109.14 kB gz** (the palettes travel in the app's own chunk).
+
+**Mistakes of mine, recorded rather than tidied**
+- **A bad patch left a dangling comment** in `highlight.ts` after moving the token tables: I had
+  replaced the opening of a doc comment and left its body outside one. Reading the file and
+  repairing the block was the fix; re-sending the patch blind would have made it worse.
+- **A screenshot with the File menu open looked as if the editor had vanished.** It was not a bug:
+  the popup covered the document's first lines, and the picture was taken in that state. The check
+  now closes the menu before the screenshot — an image can mislead as easily as a passing
+  assertion.
+- **`test-session.mjs` used `"dark"` as its "unknown theme" case**, which Task 10 made real. The
+  case now uses `"obsidian"` — a real N++ theme this build does not ship — because the *intent* of
+  the check (an unknown value falls back to light) is still worth keeping. The change is deliberate
+  and noted here rather than quietly relaxing the test.
+- **`verify-task10.py` first failed on `session.complete`.** The document was dirty but N++'s 7-second
+  snapshot had not run, so the restore asked Task 7's "some unsaved changes could not be restored"
+  question and waited for an answer — a dialog a person would dismiss, but a headless wait does not.
+  The test now lets the snapshot land before reloading and answers a restore alert if one appears.
+- **I edited `src/editor/notepadpp-config.ts` while `verify-task9.py` was running**, and Vite's HMR
+  reloaded the page under the test ("Execution context was destroyed, most likely because of a
+  navigation"). That run was invalid and was re-run alone (41/41). The same edit later hit the
+  real-chooser run too: `verify-task4-pickers.py` came back **45/46** with the one failure a page
+  reload produces — "the page still hosts the app after driving the dialog", i.e. `app_mounted`
+  false mid-navigation. Re-run with the tree quiet, it is **43/43** again, fixtures byte-identical.
+  The lesson from Session 6 was already in the ledger and still needed applying: **do not touch
+  source files while a browser check is running.**
+
+**Repo state at session end**
+- The Task 10 commit (source, `style.css`, `index.html`, the two scripts), then this docs commit
+  recording its SHA in the board, S18 in the decision log and the `docs/scope.md` row.
+- `sample.html` still deleted-but-unstaged and `user-guide.txt` still untracked — both pre-existing
+  and neither this project's to change.
+
 ## Blockers / open questions
 
 Nothing blocking, and nothing needs a task to proceed. **Task 9 closed the last open item that had
@@ -1384,9 +1466,9 @@ that plan claims, in the order it claims them:
    implied by accepted decisions. **D8 is now fully exercised**: Task 4 built its IndexedDB-for-handles
    half (`src/file/recent-files.ts`) and Task 7 the rest (session and preferences in IndexedDB, the
    bodies of unsaved documents in OPFS `backup/`). Only the user moves a `D` decision.
-2. **Dark Mode is the first phase-2 task (Task 10).** Task 7 built the *preference* (stored, applied at
-   startup, threaded through `PALETTES`/`THEMES`) and its single value is N++'s light palette; the dark
-   skin — its token palette and chrome colours — is the last unclaimed Tier-1 row in `docs/scope.md`.
+2. **Dark Mode is done (phase-2 Task 10); Task 11 is the next unit of work.** It is the encoding
+   spike: which of N++'s encodings are genuinely missing, and whether a byte table covers them or
+   WebAssembly is really needed (D10 called for WASM, but that was a priority, not a measurement).
 3. **Task 4's manual picker pass is now optional.** It used to be the gate;
    `scripts/verify-task4-pickers.py` now drives the real dialog, the real files and Chrome's write
    prompt automatically, so the evidence rule is satisfied without it. Offered, not required: two
@@ -1412,5 +1494,7 @@ byte-identical open→save round-trip, the 50k-line responsiveness check, and "u
 browsers fail loudly", all passing **in Chrome/Chromium on a desktop OS** (D11; devices are out by
 D12). **All eight MVP tasks are complete, and Task 9 closed the two rows phase 1 left open** (the
 Language menu and the current-line selection order); the evidence for each is its row in the status
-board, and every one of those rows is re-runnable from `scripts/`. Phase 2 is planned, not started:
-`.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md` — it is not part of this definition of done.
+board, and every one of those rows is re-runnable from `scripts/`. Phase 2 has started: Task 10
+(Dark Mode) is done and the rest is planned in
+`.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md`, which is not part of this definition of
+done.
