@@ -133,10 +133,33 @@ export function nppEditorLook(options: { zoom?: number; theme?: ThemeName } = {}
         borderLeftColor: colors.caret,
         borderLeftWidth: `${NPP_CARET_WIDTH}px`,
       },
-      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
+      // Selection. The selector's *shape* is load-bearing, not decoration: CodeMirror's own
+      // base theme paints the focused selection through `&light.cm-focused > .cm-scroller >
+      // .cm-selectionLayer .cm-selectionBackground` — five class selectors — and this rule's
+      // original three lost to it silently. The palette's #c0c0c0 therefore never reached
+      // the screen and the selection stayed CM6's #d7d4f0, which is indistinguishable from
+      // N++'s #e8e8ff active-line band: selecting a word on the current row looked like
+      // nothing had happened. Measured in `scripts/verify-task9.py` (S15); the `.cm-editor`
+      // class is there so this rule wins on specificity, not on stylesheet order.
+      "&.cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, & > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-content ::selection": {
         backgroundColor: colors.selection,
       },
-      ".cm-activeLine": { backgroundColor: colors.activeLine },
+      // N++ paints the current-line background *first* and the selection on top of it
+      // (Scintilla's order). CodeMirror paints its selection on a layer at z-index -2, i.e.
+      // behind the content, so an opaque background on `.cm-line` hides a selection
+      // completely — measured: on the current row the selected text kept the band's
+      // #e8e8ff and the selection's own colour never appeared. The band therefore lives on
+      // a pseudo-element at z-index -3, which is behind the selection layer; the line itself
+      // is transparent. See S15 and `scripts/verify-task9.py`.
+      ".cm-activeLine": { backgroundColor: "transparent", position: "relative" },
+      ".cm-activeLine::before": {
+        content: '""',
+        position: "absolute",
+        inset: "0",
+        zIndex: "-3",
+        pointerEvents: "none",
+        backgroundColor: colors.activeLine,
+      },
       ".cm-gutters": {
         backgroundColor: colors.gutterBackground,
         color: colors.gutterForeground,
@@ -481,7 +504,8 @@ export const DEVIATIONS_FROM_NPP: readonly string[] = [
   "Mixed per-line EOL: CM6 normalises to one line separator (risk R3 in docs/scope.md) — the status bar reports the document's single separator, as designed there.",
   // ── Task 6 (languages) ────────────────────────────────────────────────────────────────
   "The overview ruler is not a Notepad++ feature. N++'s equivalent is the Document Map (a minimap, Tier 2/3 and unscheduled — docs/editor-core-decision.md B1); this strip instead maps the whole document onto the pane height and marks the language's fold regions, the search marks and the bookmarks. Clicking it scrolls; it never moves the caret.",
-  "The language is chosen by extension, by a few well-known file names and, failing both, by N++'s own content rule (`FileManager::detectLanguageFromTextBeginning`). N++'s Language menu is not built yet, so there is no way to *override* the choice from the UI: an extensionless scratch buffer stays \"Normal text file\" until it is saved with a name.",
+  "The language is chosen by extension, by a few well-known file names and, failing both, by N++'s own content rule (`FileManager::detectLanguageFromTextBeginning`); Language ▸ <name> overrides that choice for the active document, and \"None (Normal Text)\" clears it. The menu is one flat, scrollable list ordered by N++'s short name case-insensitively — N++ keeps its hand-maintained `Notepad_plus.rc:1000-1095` order (nearly alphabetical, but CSound precedes CoffeeScript, LISP precedes LaTeX, Shell precedes Scheme) and offers an optional first-letter submenu form (`Notepad_plus.cpp:583-635`), which this menu bar does not have.",
+  "N++'s UDL entries at the bottom of the Language menu (\"Define your language…\", \"Open User Defined Language folder…\", \"Notepad++ User Defined Languages Collection\", \"User-Defined\") are absent: UDL is unscheduled (D10), and a page has no user folder to open.",
   "makefile, batch/.bat, INI, JSON5, GraphQL, Kotlin-in-N++-terms and MATLAB-in-N++-terms have no CM6 mode anywhere. They open as \"Normal text file\" — highlighting them would mean writing a StreamLanguage by hand, which D9 did not require and the plan left as an open question. (C#, Kotlin, Scala and Objective-C *are* covered: `legacy-modes/mode/clike.js` exports parsers for them.)",
   "The 113 legacy `StreamLanguage` ports highlight but do not fold: a stream parser produces tokens, not a syntax tree, so `foldable()` reports nothing and the overview ruler shows no structure ticks for them. That is the trade D9 accepted in exchange for the long tail.",
   "N++ renders a `.vue` file with its JavaScript lexer (`langs.model.xml`: ext=\"js jsm jsx mjs vue\"); this port uses the Vue grammar, which is strictly better, and hands `.jsx`/`.tsx` to the JSX/TSX variants of the JavaScript grammar for the same reason.",

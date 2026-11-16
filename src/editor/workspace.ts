@@ -53,7 +53,7 @@ import {
 import { ensureAccess, forgetRecent, hasAccessWithoutAsking, listRecent, rememberRecent } from "../file/recent-files";
 import type { RecentFile } from "../file/recent-files";
 import type { DocumentFormat } from "../file/types";
-import { detectLanguage, languageStats, PLAIN_TEXT, byId } from "../languages/registry";
+import { detectLanguage, languageStats, languagesByName, PLAIN_TEXT, byId } from "../languages/registry";
 import type { LanguageDefinition } from "../languages/registry";
 import { detectCapabilities, unsupportedNotice } from "../platform/capabilities";
 import {
@@ -536,6 +536,13 @@ export class Workspace {
         ],
       },
       {
+        // N++'s Language menu sits between View and Settings (Notepad_plus.rc:998). Its list
+        // is a function because the radio check follows the active document, which changes
+        // without the menu bar itself changing.
+        label: "Language",
+        items: () => this.#languageMenu(),
+      },
+      {
         // N++'s Settings menu holds Preferences, Style Configurator, Shortcut Mapper and Import.
         // Only the first has anything behind it here: the other three exist in N++ because it has
         // style files and a Win32 shortcut table, neither of which this port has.
@@ -577,6 +584,40 @@ export class Workspace {
       }
     }
 
+    return entries;
+  }
+
+  /**
+   * N++'s Language menu: "None (Normal Text)" (Notepad_plus.rc:1000), a rule, then the
+   * languages, with a radio check on the one the active document is using — N++ draws it
+   * with `CheckMenuRadioItem` (`Notepad_plus.cpp:2965`).
+   *
+   * The rc's own order is its hand-maintained `IDM_LANG_*` block, which is nearly
+   * alphabetical but not quite (CSound before CoffeeScript, LISP before LaTeX, Shell before
+   * Scheme). This port orders by N++'s short name case-insensitively — `languagesByName()` —
+   * rather than copying that accident, the same call S9 made about extension collisions.
+   * N++'s UDL entries at the bottom of the menu are absent because UDL is unscheduled (D10),
+   * and its optional first-letter submenu form is not built; both are in DEVIATIONS_FROM_NPP.
+   */
+  #languageMenu(): MenuEntry[] {
+    const current = this.#active()?.language?.id ?? null;
+    const entries: MenuEntry[] = [
+      {
+        id: "lang-none",
+        label: "None (Normal Text)",
+        checked: current === null,
+        onClick: () => void this.setLanguage(null),
+      },
+      { id: "lang-rule", separator: true },
+    ];
+    for (const language of languagesByName()) {
+      entries.push({
+        id: `lang-${language.id}`,
+        label: language.name,
+        checked: current === language.id,
+        onClick: () => void this.setLanguage(language.id),
+      });
+    }
     return entries;
   }
 
@@ -889,8 +930,7 @@ export class Workspace {
   }
 
   /**
-   * Set a document's language by id — N++'s Language menu, minus the menu for now (the
-   * `DEVIATIONS_FROM_NPP` entry says so). `null` is "Normal text file".
+   * Set a document's language by id — N++'s Language menu. `null` is "Normal text file".
    *
    * Everything already on screen is replaced in the same order a fresh open would use:
    * drop the old extension first so a failed load cannot leave the previous grammar in
@@ -909,6 +949,9 @@ export class Workspace {
     for (const view of [...document.runtime.views]) view.dispatch({ effects: empty });
     this.#render();
     if (wanted) await this.#loadLanguage(document);
+    // N++ records the language in the buffer's session entry; a choice made from the menu is
+    // state worth keeping even when no text changed, so it is a session write of its own.
+    this.#scheduleSessionWrite();
     return true;
   }
 

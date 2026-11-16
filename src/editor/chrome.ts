@@ -58,6 +58,12 @@ export interface MenuItemSpec {
   readonly label: string;
   /** Shown right-aligned as a hint. The real binding lives in the keymap. */
   readonly shortcut?: string;
+  /**
+   * N++'s radio check, for the one menu that has a current value (Language). `undefined`
+   * means "this item is not a radio item", so the other menus keep the exact DOM they had.
+   * N++ draws this with `CheckMenuRadioItem` (`Notepad_plus.cpp:2965`).
+   */
+  readonly checked?: boolean;
   readonly onClick: () => void;
 }
 
@@ -167,10 +173,19 @@ export class Chrome {
   }
 
   #menuItem(item: MenuItemSpec): HTMLElement {
-    const entry = el("button", {
-      className: "npp-menu-item",
-      attrs: { type: "button", role: "menuitem", "data-menu-item": item.id },
-    });
+    const radio = item.checked !== undefined;
+    const attrs: Record<string, string> = radio
+      ? {
+          type: "button",
+          role: "menuitemradio",
+          "aria-checked": String(item.checked),
+          "data-menu-item": item.id,
+        }
+      : { type: "button", role: "menuitem", "data-menu-item": item.id };
+    const entry = el("button", { className: "npp-menu-item", attrs });
+    // The check lives in the menu's left margin, so it is drawn only on radio items: every
+    // other menu keeps the exact geometry it had before the Language menu existed.
+    if (radio) entry.append(el("span", { className: "npp-menu-check", text: item.checked ? "●" : "" }));
     entry.append(
       el("span", { className: "npp-menu-label", text: item.label }),
       el("span", { className: "npp-menu-shortcut", text: item.shortcut ?? "" }),
