@@ -7,7 +7,10 @@
 > `PROGRESS.md` → `docs/scope.md` → this plan, in that order.
 
 **Status:** Tasks 1–8 ✅ done — the MVP in `docs/scope.md` §8 is built · see `PROGRESS.md` for live state
-(`npm run status`). Task 8 was accepted 2026-10-12 — the last task: `scripts/verify-task8.py` →
+(`npm run status`). **Task 9 ✅ done 2026-11-16** — the Language menu and the current-line selection
+order, `scripts/verify-task9.py` → **PASS (34/34)**. **Phase 2 is planned, not started:**
+`.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md`. Task 8 was accepted 2026-10-12 — the last
+MVP task: `scripts/verify-task8.py` →
 **PASS (57/57)**, three runs, and `node scripts/check-precache.mjs` → the offline shell agrees with
 the build. Task 7 was accepted 2026-10-11: `scripts/verify-task7.py` → **PASS (82/82)**.
 Task 6 was accepted 2026-10-11: `scripts/verify-task6.py` → **PASS (67/67)**,
@@ -561,15 +564,17 @@ All of the original three are closed; kept for the audit trail.
 
 ---
 
-Plan complete and saved. **All eight tasks are done** — the MVP that `docs/scope.md` §8 defines is
-built and each task's acceptance script is re-runnable from `scripts/`. What remains is what the
-scope always deferred rather than what the plan forgot: the phase-2 items (non-Chromium I/O, per-pane
-tab sets, the minimap, UDL, `D10`'s WASM encoders and large-file mode), and the two rows no task
-claimed — a Language menu and Dark Mode, both named in `DEVIATIONS_FROM_NPP` and in `PROGRESS.md`'s
-open items. See `PROGRESS.md` for the live state and the next unit of work.
+Plan complete and saved. **All eight MVP tasks are done, and Task 9 closed the two rows phase 1 left
+open** — the Language menu (S14) and the current-line selection paint order (S15) — so every row this
+document specified is built and each task's acceptance script is re-runnable from `scripts/`. What
+remains is what the scope deferred rather than what the plan forgot, and it now has its own document:
+**`.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md`** — Dark Mode, encoding fidelity and
+large-file mode (D10), the Tier-2 backlog, then Tier B/C I/O (D11), print and macros (D6). See
+`PROGRESS.md` for the live state and the next unit of work.
 
-**One item from Task 6 is deliberately still open**, for whoever takes the Language menu: `src/languages/`
-names a language for every file it can, but there is no menu to *override* it, so a scratch buffer or
-an extension nothing claims (makefile, batch, INI) cannot be told what it is. N++ has that menu; this
-port does not yet. Everything it would need — `languagesByName()`, `Workspace.setLanguage(id)`, the
-per-document language in the session — is built and verified, so it is a menu plus a picker.
+**The Language menu item is closed:** `src/languages/` names a language for every file it can, and
+Language ▸ <name> now lets the user override it — a scratch buffer or an extension nothing claims
+(makefile, batch, INI) can finally be told what it is. The menu reuses `languagesByName()`,
+`Workspace.setLanguage(id)` and the per-document language Task 7 already stored; `verify-task9.py`
+drives it end to end, including a choice restored through a real reload and a choice overriding a
+`.txt` file's detection.

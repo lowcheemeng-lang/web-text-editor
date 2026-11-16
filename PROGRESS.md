@@ -45,6 +45,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 6 | Syntax highlighting & language modes | DONE | **`python3 scripts/verify-task6.py` → PASS (67/67)** — `.js`, `.py`, `.html`, `.md` (plus `.cs`, `Dockerfile`, a shebang file and two of D9's gaps) opened through the real File ▸ Open path against OPFS handles, with every token read back as **computed colour on rendered spans** and every ruler tick read back from **canvas pixels**. `node --experimental-strip-types scripts/test-languages.mjs` → **PASS (238/238)** — all **140** loaders resolve in Node (`27` first-class + `113` legacy), every detection rule, the named extension collisions, and the gaps. `node --experimental-strip-types scripts/gen-language-registry.mjs --check` → **152 of 152** parsers the package exports are accounted for (113 catalogued, 32 superseded by a first-class grammar, 7 not languages). Over a 10 000-line JavaScript file the ruler's structure walk returns its **2000-tick** cap in **8.5 ms**. Regressions at HEAD: `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task4-pickers.py` → **PASS (42/42)**, real OS chooser included; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.24 kB / 109.13 kB gz** across **129 chunks** (was 305.27 / 98.72 — the ruler, the highlight style and the registry; a naive `manualChunks` would have made it **1 591.85 kB / 565.20 kB gz**, see S3's cousin in the plan) | `c4e3c9e` |
 | 7 | Session persistence & preferences | DONE | **`python3 scripts/verify-task7.py` → PASS (82/82)**, twice, every assertion made **after a real `page.reload()`** — the reload discards every in-page stub, so only stored state survives it: the Preferences dialog (Cancel applies nothing; OK stores, applies and persists — toolbar hidden, 12 pt text), View ▸ Zoom, an unsaved scratch buffer returning dirty with its caret and its bookmark, a CRLF+BOM file returning dirty from its `backup/` body and saving back **byte-identical** (`EF BB BF` + `one\r\ntwo\r\nTHREE`), N++'s both modified-file answers, folds/bookmarks/wrap/split/language restored (folds as *rendered* fold placeholders, in both panes), a file deleted behind the app dropped or offered as a read-only placeholder that refuses typing, and unsaved work that cannot be restored reported **by name** with snapshot mode off. `node --experimental-strip-types scripts/test-session.mjs` → **PASS (75/75)** — the storage logic in Node, where neither IndexedDB nor OPFS exists: N++'s `FILENAME@YYYY-MM-DD_HHMMSS` naming, the preference defaults and ranges, the restore decision table, the line↔offset conversions, and the fail-soft contract. Regressions at HEAD: `verify-task6.py` → **PASS (67/67)**; `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `test-languages.mjs` → **PASS (238/238)**; `gen-language-registry.mjs --check` → **OK**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0, `editor-core` **335.26 kB / 109.14 kB gz** across **129 chunks** (unchanged from Task 6 — the storage layer, the dialog and the ruler fix all land in the app's own chunk, now `index` **113.19 kB / 34.55 kB gz**). **`scripts/verify-task4-pickers.py` → PASS (43/43)** at the same HEAD — Task 4's real-chooser check, re-run because Task 7's restore changes the state it starts from. Three runs failed first (`36/39`), all three on one check, and they shared a cause worth knowing: a **stale session in the Chrome profile** (each run's own Chrome rewrites the profile while shutting down, after the profile had been wiped for the next run), so the app restored a previous run's documents and the check asserted a *fresh* open's fact about a *restored* document. The script wipes its own profile now and asserts the clean start as a check; the runs also turned up a real defect — `RestoreState.assumedEncoding` was built and never read, so a restored windows-1252 document reported an identified encoding to `inspect()` and the status bar (measured: `assumedEncoding: false` on the restored document, `true` after the fix) — now fixed (`c98188a`) and verified through a reload. | `f829697` · fix `c98188a` |
 | 8 | PWA / offline packaging | DONE | **`python3 scripts/verify-task8.py` → PASS (57/57)**, three consecutive runs. It builds the production bundle itself (the dev server has no worker by design), serves `dist/` from its own static server with `Cache-Control: no-cache` — so the browser's HTTP cache can never stand in for the worker — and drives Chrome with a fresh profile per run. **Chrome's own verdicts:** `Page.getInstallabilityErrors` → empty (installable); `Page.getAppManifest` → no errors, with Chrome's parse asserted in Chrome's vocabulary (`kStandalone`, `rgba(240,240,240,1)`, the 192 and 512 icons); the manifest is also re-read from disk for the fields as written, with the PNGs' real pixel sizes. **Offline, three ways, none a proxy:** the network emulated away, and the server **stopped** (nothing listening at all) — in both, every response is `Network.responseReceived.fromServiceWorker` (9/9 and 10/10 across the phases), the server's request log never grows, the editor mounts, Task 7's session restore returns dirty with its edits (`TYPED_OFFLINE_MARKER`), typing lands, an edit **saves through to the file** (`SAVED_WITH_NO_SERVER`, read back out of OPFS) and the languages opened while online still paint N++'s colours. The honest edge is asserted too: offline, a language that was never opened opens as plain text with the status bar still naming it, a persistent notice explaining why, and the **one remedy that works** — its Reload button, verified as a real navigation (`performance.timeOrigin` moves) after which the grammar loads and paints. `node scripts/check-precache.mjs` → **OK**: it re-derives the shell set from `dist/` alone, and prints the weights — **9 files / 461.3 kB raw / 151.3 kB gzipped** precached against **126 chunks / 1 227.8 kB raw / 481.9 kB gzipped** cached on first use. Design + measurements in `docs/offline-pwa.md`. Regressions at HEAD: `verify-task7.py` → **PASS (82/82)**; `verify-task6.py` → **PASS (67/67)**; `verify-task5.py` → **PASS (105/105)**; `verify-task4.py` → **PASS (44/44)**; **`verify-task4-pickers.py` → PASS (43/43)** with the real OS chooser; `verify-task3.py` → **PASS (58/58)**; `test-file-io.mjs` → **PASS (45/45)**; `test-session.mjs` → **PASS (75/75)**; `test-languages.mjs` → **PASS (238/238)**; `gen-language-registry.mjs --check` → **OK**; `spike-r2-split.py` → **R2_SPIKE: PASS**; `npm run typecheck` → exit 0; `npm run build` → exit 0 | `8ac032e` |
+| 9 | Language menu & the current-line selection order | DONE | **`python3 scripts/verify-task9.py` → PASS (34/34)** — N++'s Language menu driven through the menu bar: "None (Normal Text)" first (`Notepad_plus.rc:1000`), 141 entries, the 140 languages ordered by N++'s short name, N++'s radio check on the active document's language, Python / JavaScript / Brainfuck applying live with the status bar naming N++'s long name, "None" clearing it, a choice surviving a real `page.reload()` (Task 7's session), and a choice **overriding a `.txt` file's detection** through the real File ▸ Open path. **The selection bug, measured and fixed (S15):** the theme's selection rule lost on specificity to CM6's five-class base rule — the selection stayed CM6's `#d7d4f0`, the same pale lavender as the `#e8e8ff` current-line band — **and** CM6 paints its selection at z-index −2, behind the content, so the opaque band hid it outright (every pixel on the current row sampled `#e8e8ff`). The band now lives on `.cm-activeLine::before` at z-index −3, which is Scintilla's order: band, selection, text. The check samples real pixels — `#c0c0c0` inside the selection, `#e8e8ff` on the rest of the row, with and without a selection. Regressions at HEAD: `verify-task3.py` **58/58**; `verify-task4.py` **44/44**; `verify-task4-pickers.py` **PASS (43/43)** with the real OS chooser; `verify-task5.py` **105/105**; `verify-task6.py` **67/67**; `verify-task7.py` **82/82**; `verify-task8.py` **57/57**; `test-file-io.mjs` **45/45**; `test-session.mjs` **75/75**; `test-languages.mjs` **238/238**; `gen-language-registry.mjs --check` **OK**; `spike-r2-split.py` **PASS**; `npm run typecheck` exit 0; `npm run build` exit 0, `index` **115.42 kB / 35.33 kB gz**, `editor-core` unchanged at **335.26 kB / 109.14 kB gz** | `3274581` |
 
 **Status vocabulary:** `TODO` · `WIP` · `DONE` · `BLOCKED` · `DEFERRED`
 
@@ -55,46 +56,38 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**Task 8 is DONE (2026-10-12) and it was the last planned task — all eight are complete, and the MVP
-`docs/scope.md` §8 defines is built.** Its acceptance check needs no dev server, because the dev
-server has no service worker by design (registration is production-only):
+**Task 9 is DONE (2026-11-16): the Language menu exists and the selection bug is fixed.** The MVP
+itself was finished on 2026-10-12 with Task 8, and Task 9 closed the only open item that had
+everything already built behind it (`languagesByName()`, `setLanguage()`, the per-document language
+in the session). Its check has two halves, both driven through the real UI:
 
 ```bash
-npm run build                      # emits dist/sw.js and prints the version
-node scripts/check-precache.mjs    # re-derives the offline shell from dist/ and prints the weights
-python3 scripts/verify-task8.py    # builds, serves dist/ itself, drives Chrome (57 checks)
+npm run build                      # emits dist/sw.js — the menu adds ~2 kB to the index chunk
+python3 scripts/verify-task9.py    # the menu + the pixel checks for the selection (34 checks)
 ```
 
-What a later session should pick up, in the order the evidence suggests:
+**Phase 2 now has a plan — `.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md` — written as
+planning only, nothing executed.** It claims, in this order:
 
-1. **The Language menu** — the one N++ feature Task 6 knowingly did not build, and the only open item
-   with everything already verified behind it: `languagesByName()` orders all 140 as N++ names them,
-   `Workspace.setLanguage(id | null)` swaps the grammar live, `inspect().language` reports it, and
-   Task 7 stores the language per document, so a choice made from such a menu survives a reload. It
-   is a menu plus a picker, not a mechanism. Until it exists, a scratch buffer and every unmapped
-   extension (makefile, batch, INI, JSON5, GraphQL) are stuck as "Normal text file".
-2. **Dark Mode** — Task 7 built the *preference* (stored, applied, threaded through
-   `PALETTES`/`THEMES`) and its only value is N++'s light palette. The dark skin is a Tier-1 row in
-   `docs/scope.md` that no task has claimed.
-3. **Phase 2, as `docs/scope.md` schedules it:** `D10`'s WASM encoders (UTF-32, DOS codepages) and
-   large-file mode first, then the Tier-2 backlog (non-Chromium I/O per `D11`, per-pane tab sets,
-   the minimap, UDL, macros per `D6`). One measured debt to carry into large-file mode: the overview
-   ruler's structure layer saturates at 2000 ticks instead of thinning out (fine at 10 000 lines —
-   three ticks per pixel, measured — wrong for a million-line file).
+1. **Task 10 — Dark Mode.** The last unclaimed Tier-1 row: the preference exists (`THEMES` has one
+   value), the skill does not.
+2. **Task 11 — encoding fidelity** (D10): UTF-32 and the DOS/IBM codepages, with a spike to decide
+   table-vs-WASM before any WebAssembly is written.
+3. **Task 12 — large-file mode** (D10), including the overview ruler's 2000-tick saturation: thin
+   the ticks instead of truncating them, with the threshold taken from a measurement.
+4. **Tasks 13–19 — the Tier-2 backlog** (Smart Highlighter + incremental search, per-pane tab sets,
+   Function List, block-edit UI, minimap, autocompletion, drop files).
+5. **Tasks 20–22 — the deferred contracts**: Tier B/C file I/O per D11, print, and macros per D6.
 
 **Nothing is blocking, and no task needs the user for scope.** `D1`, `D5` and `D8` remain `Proposed`
 — low-stakes consolidations of choices already implied by accepted decisions, and `D8` is now fully
 exercised (Task 4 built its IndexedDB-for-handles half, Task 7 the IndexedDB-for-metadata and
 OPFS-for-bodies halves). Only the user moves a `D` decision.
 
-**`D12` (mobile/tablet) was answered by the user on 2026-10-12 — "D12 mobile/tablet is a no for now".
-Recorded as `Accepted` in `docs/scope.md` §3**, and with it §5, §7's new tier D and §8: mobile/tablet
-is out of the MVP, and a phone or tablet gets the S4 notice the way Firefox and Safari do. **Nothing
-was built for it and nothing had to be:** the capability check tests for the File System Access API
-rather than sniffing a device, and mobile Chromium has no pickers (`src/platform/capabilities.ts`,
-checked against caniuse 2026-10-06), so a phone already received that notice. The "for now" is the part
-that matters — nothing branches on the device, so re-opening the decision is a scope edit, not a
-retrofit.
+**`D12` (mobile/tablet) was answered by the user on 2026-10-12 — "D12 mobile/tablet is a no for now"**
+(recorded as `Accepted` in `docs/scope.md` §3): mobile/tablet is out of the MVP, and a phone or tablet
+gets the S4 notice the way Firefox and Safari do. Nothing branches on the device, so re-opening the
+decision is a scope edit, not a retrofit.
 
 ### Scope settled at sign-off, and since (2026-09-25 → 2026-10-12)
 
@@ -192,6 +185,8 @@ retrofit.
 | S11 | 2026-10-11 | The split's reconciliation mirrors compare **changes, not states**: a view tells its peers only when the folds or bookmarks *it* holds moved since the last transaction it was asked about, tracked as a per-view signature (`#foldSignatures`, `#bookmarkSignatures`). | A freshly mounted clone legitimately starts empty, so comparing states made the clone's first transaction read as "the document has no folds" and clear the fold in the other pane — silently, and only when the document had a fold *and* the clone had a reason to dispatch before the mount-time handover. Task 7's `verify-task7.py` covers the sequence that exposed it (bookmark, fold, then open the split), and the fix is the same rule the rest of the app follows: propagate what changed. | Accepted |
 | S12 | 2026-10-12 | **The offline shell precaches the app's first load and caches a language chunk the first time the app fetches one — never the whole language set at install.** The precache list is *derived from the build* (`pwaOfflineShell()` walks the entry chunks' static import closure and reads the manifest's icons), it is compared against a re-derivation from `dist/` by `scripts/check-precache.mjs`, and the cache name carries a fingerprint of that list plus the worker's own source. | The ledger asked which of the two this task does, and the numbers decided: precaching D9's languages would put **1 227.8 kB raw / 481.9 kB gzipped** in front of the first paint — the exact cost the lazy imports exist to avoid — against a shell of **9 files / 461.3 kB raw / 151.3 kB gzipped**. Deriving the list from the bundle rather than keeping it by hand means it cannot drift when a chunk is renamed; the version in the cache name means a new build gets a new cache while the old one is deleted, so a cached language chunk can never be served beside a newer shell (they share runtime chunks — one module graph or none). | Accepted |
 | S13 | 2026-10-12 | A grammar that cannot be fetched is **reported, never retried in the page**: the document stays editable as plain text, the status bar goes on naming the language, and a persistent notice explains what happened and offers the one remedy that works — a reload. | Measured, not assumed: with the network cut, an uncached language fails to import; with the network *back*, the app's own retry (on `online`, and again when the document came forward) failed twice more and **not one request left the page in twelve seconds** — the failed module fetch, preloaded by Vite's import helper, stays memoised for the life of the document — while a reload loaded the grammar and painted the file. So the retry was removed rather than shipped as a promise the browser does not keep, and `scripts/verify-task8.py` §6 checks the remedy (`performance.timeOrigin` moves, the notice disappears, the document highlights). The copy the notice carries is verified too: "the text, the editing and the saving are unaffected" is asserted by saving with the grammar missing and reading the bytes back. | Accepted |
+| S14 | 2026-11-16 | **The Language menu is one flat, scrollable list**: "None (Normal Text)" first, a rule, then all 140 languages ordered by N++'s short name case-insensitively (`languagesByName()`), with N++'s radio check on the active document's language. It sits between View and Settings. | N++'s `Notepad_plus.rc:1000-1095` order is its hand-maintained `IDM_LANG_*` block, which is nearly alphabetical but not quite (CSound before CoffeeScript, LISP before LaTeX, Shell before Scheme), and its optional compact form groups languages into first-letter submenus (`Notepad_plus.cpp:583-635`). This menu bar has no submenus and a hand-copied order would be an accident to maintain, so the list is sorted by name — the same call S9 made about extension collisions — and `verify-task9.py` asserts both the count (141) and the order. N++'s UDL entries at the bottom are absent because UDL is unscheduled (D10). | Accepted |
+| S15 | 2026-11-16 | **The current-line band is painted on `.cm-activeLine::before` at z-index −3, and the selection rule names CodeMirror's own five-class selector shape plus `.cm-editor` so it wins on specificity rather than on stylesheet order.** | Two measurements, both in `verify-task9.py`: (a) the original three-class selection rule lost silently to CM6's `&light.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground` (five classes), so the palette's `#c0c0c0` never reached the screen and the selection stayed CM6's `#d7d4f0` — visually the same pale lavender as `#e8e8ff`; (b) even with the right colour, the opaque band on `.cm-line` painted over the selection, because CM6 draws its selection on a layer at z-index −2, *behind* the content. N++ paints the line background first and the selection over it, so the band moved to a pseudo-element at −3. Four pixel checks hold it: `#c0c0c0` inside the selection, `#e8e8ff` on the rest of the row, with and without a selection. | Accepted |
 
 ## Session log
 
@@ -1229,41 +1224,121 @@ was written. The real-chooser check was run on a quiet machine for the same reas
 - `sample.html` is still deleted-but-unstaged in the worktree, untouched — the pre-existing change
   from Session 1, still not this project's to commit or revert.
 
+### 2026-11-16 — Session 9 (Task 9): the Language menu, and the selection the band was hiding
+
+**User input received**
+- "ok, proceed with the language menu."
+- "highlighting of any word of selected row is same color as the highlight color of the whole row,
+  causing the highlight of single word not visible" — the selection bug below, taken as a report to
+  reproduce rather than a diagnosis to trust.
+- "work out the plan for phase 2, only planning."
+
+**Read before writing anything.** Notepad++'s own `Notepad_plus.rc` Language menu
+(`POPUP "&Language"`, :998–1100) and `Notepad_plus.cpp`'s `doCheck`/`CheckMenuRadioItem` (:2965),
+because the menu's shape is N++'s, not an invention: "None (Normal Text)" first, a rule, then the
+languages, with a radio check on the current one. The rc also settled two details worth keeping and
+recording: its language order is the hand-maintained `IDM_LANG_*` block (nearly alphabetical, but
+CSound precedes CoffeeScript and Shell precedes Scheme), and the menu has an *optional* compact form
+that groups languages into first-letter submenus (`Notepad_plus.cpp:583-635`). Neither was copied —
+the menu bar has no submenus, so the list is flat and sorted by name (S14).
+
+**Built**
+- `src/editor/chrome.ts` — `MenuItemSpec.checked`, rendered as N++'s radio mark
+  (`role="menuitemradio"`, `aria-checked`) with the check in the menu's left margin so the other
+  menus keep the exact DOM they had; the popup is capped at `min(70vh, 640px)` and scrolls, which
+  the 141-entry menu needs (measured: 3824 px of items in a 530 px box).
+- `src/editor/workspace.ts` — the Language menu in N++'s place (between View and Settings), built
+  from `languagesByName()` by a function so the check follows the active document; `setLanguage()`
+  now schedules a session write of its own, because a choice with no text edit behind it is still
+  state Task 7 promised to keep.
+- `src/editor/notepadpp-config.ts` — the two selection fixes below, and the `DEVIATIONS_FROM_NPP`
+  entries the menu makes true: the flat/name-ordered list (with the rc's order and the compact form
+  named), and N++'s UDL entries being absent because UDL is unscheduled.
+- `scripts/verify-task9.py` — 34 checks, both halves through the real UI, including four pixel checks.
+
+**The reported bug was two defects stacked, and the second only showed up once the first was fixed.**
+
+1. **The selection colour never reached the screen.** The theme's rule was
+   `&.cm-focused .cm-selectionBackground` (three class selectors). CodeMirror's base theme paints
+   the focused selection with `&light.cm-focused > .cm-scroller > .cm-selectionLayer
+   .cm-selectionBackground` — five. Specificity wins over source order, so the computed colour was
+   CM6's `#d7d4f0` (measured), not N++'s `#c0c0c0`. `#d7d4f0` is visually the same pale lavender as
+   the `#e8e8ff` current-line band, which is exactly what the report described.
+2. **The band painted over the selection even at the right colour.** CM6's selection sits on a
+   layer at `z-index: -2`, i.e. *behind* the content; `.cm-activeLine` is an opaque background on
+   the line inside the content. Pixel samples on the current row were `(232,232,255)` everywhere —
+   the selection was not merely the same colour, it was covered. N++ paints the band first and the
+   selection over it, so the band moved to `.cm-activeLine::before` at `z-index: -3` and the line
+   itself became transparent. Measured with the fix in place: inside the selection `(192,192,192)`,
+   the rest of the row `(232,232,255)`, with and without a selection. S15.
+
+**Verified at HEAD** — `python3 scripts/verify-task9.py` → **PASS (34/34)** on the first run;
+regressions, each run on its own rather than as a batch (the Task 8 lesson): `verify-task3.py`
+**58/58**; `verify-task4.py` **44/44**; `verify-task4-pickers.py` **43/43** with the real OS chooser;
+`verify-task5.py` **105/105**; `verify-task6.py` **67/67**; `verify-task7.py` **82/82**;
+`verify-task8.py` **57/57**; `test-file-io.mjs` **45/45**; `test-session.mjs` **75/75**;
+`test-languages.mjs` **238/238**; `gen-language-registry.mjs --check` **OK**; `spike-r2-split.py`
+**R2_SPIKE: PASS**; `npm run typecheck` exit 0; `npm run build` exit 0, `index` **115.42 kB /
+35.33 kB gz** (+2.1 kB — the menu code and its registry walk), `editor-core` unchanged at
+**335.26 kB / 109.14 kB gz**.
+
+**Mistakes of mine, recorded rather than tidied**
+- **A check that could not fail.** The first draft of §6 contained
+  `[x for x in info()["tabs"]] is not None and True` — an assertion that is true for every possible
+  state, written while the tab-switch step was still taking shape. It was replaced before the first
+  run with the real per-document assertion (switch back, assert the first document still reports
+  Python), but a tautology in a file whose job is to prove things is exactly the failure S2 exists
+  to prevent.
+- **The menu's first render centred every label.** Adding the check span to a `space-between` row
+  put the label in the middle of the popup; the screenshot is what caught it, not the assertions
+  (which only read text and `aria-checked`). Fixed with `flex: 1 1 auto` on the label.
+- **I trusted a patch diff that read as if it had inserted a method inside `#fileMenu`.** The file
+  was correct; rather than re-apply, I re-read the region and confirmed the shape. Worth keeping:
+  a confusing diff is a reason to look, not to patch again.
+- **The first probe targeted `[data-find='find-what']`** and timed out; the dialog's actual id is
+  `what` (`data-find='what'`). Read the code, not the guess.
+
+**Also written, planning only: the phase-2 plan** at
+`.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md` — Dark Mode (Task 10), encoding fidelity and
+large-file mode (Tasks 11–12), the Tier-2 backlog (13–19), then Tier B/C I/O, print and macros
+(20–22). No phase-2 code was written, and `docs/scope.md` now points at it.
+
+**Repo state at session end**
+- `3274581` — `task-9: the Language menu — N++'s list and radio check — and the selection its
+  current-line band used to hide` (src, `src/style.css`, `scripts/verify-task9.py`).
+- then this docs commit, recording that SHA in the board, the decision log (S14, S15), `docs/scope.md`
+  and the phase-1 plan's closing section; and the phase-2 plan follows as its own commit.
+- `sample.html` is still deleted-but-unstaged, untouched — the pre-existing change from Session 1.
+- `user-guide.txt` is still untracked and still not this project's: it is not in the plan, not
+  referenced by the ledger, and the session that produced it recorded "no files were changed".
+  Left for the user to keep or delete.
+
 ## Blockers / open questions
 
-Nothing blocking, and nothing needs a task to proceed. **`D12` was answered on 2026-10-12** — accepted,
-mobile/tablet is out of the MVP (decision log above) — and **Task 8 closed the last planned task**, so
-the only item that still needs the *user* is a written proposal rather than a question in prose:
+Nothing blocking, and nothing needs a task to proceed. **Task 9 closed the last open item that had
+everything already built behind it** — the Language menu — and **phase 2 now has a plan**
+(`.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md`, planning only). The items below are what
+that plan claims, in the order it claims them:
 
 1. **`D1`, `D5` and `D8` are still `Proposed`** — lower-stakes consolidations of choices already
    implied by accepted decisions. **D8 is now fully exercised**: Task 4 built its IndexedDB-for-handles
    half (`src/file/recent-files.ts`) and Task 7 the rest (session and preferences in IndexedDB, the
    bodies of unsaved documents in OPFS `backup/`). Only the user moves a `D` decision.
-
-Open items, none of which blocks anything:
-
-2. **No Language menu — the one N++ feature Task 6 knowingly did not build.** Everything needed is in
-   place and verified (`languagesByName()` orders all 140 as N++ names them,
-   `Workspace.setLanguage(id | null)` swaps the grammar live, `inspect().language` reports it), so this
-   is a menu plus a picker, not a mechanism. Task 7 made it slightly more valuable: the language is now
-   stored per document and restored, so a choice made from such a menu would survive a reload. Until it
-   exists, a scratch buffer and every unmapped extension (makefile, batch, INI, JSON5, GraphQL) are
-   stuck as "Normal text file".
-3. **No Dark Mode.** Task 7 built the *preference* (stored, applied at startup, threaded through
-   `PALETTES`/`THEMES`) and its single value is N++'s light palette; the dark skin — its token palette
-   and chrome colours — is a Tier-1 row in `docs/scope.md` that no task has claimed.
-4. **Task 4's manual picker pass is now optional.** It used to be the gate;
+2. **Dark Mode is the first phase-2 task (Task 10).** Task 7 built the *preference* (stored, applied at
+   startup, threaded through `PALETTES`/`THEMES`) and its single value is N++'s light palette; the dark
+   skin — its token palette and chrome colours — is the last unclaimed Tier-1 row in `docs/scope.md`.
+3. **Task 4's manual picker pass is now optional.** It used to be the gate;
    `scripts/verify-task4-pickers.py` now drives the real dialog, the real files and Chrome's write
    prompt automatically, so the evidence rule is satisfied without it. Offered, not required: two
    minutes on your own desktop — `Alt+O` each `/tmp/t4-*.txt`, `Alt+S`, `md5sum` again, cancel one
    picker.
-5. Chrome's **per-origin** file-edit prompt is answered on every run now: the pickers script wipes its
+4. Chrome's **per-origin** file-edit prompt is answered on every run now: the pickers script wipes its
    own profile before each run (see the session log), so the prompt is no longer a leftover grant from an
    earlier run — the check records which prompts it answered.
-6. The overview ruler's structure layer **saturates at 2000 ticks**. On a 10 000-line file that is
-   already three ticks per pixel, so the cap is right for legibility — but a large-file mode (D10
-   phase 3) should thin the ticks out instead of truncating them.
-7. **The single portable HTML file is not shipped, by measurement** (Task 8): fusing the graph costs
+5. The overview ruler's **2000-tick cap** is claimed by phase-2 **Task 12** (large-file mode), which
+   replaces truncation with thinning. Until then the cap is correct at 10 000 lines (three ticks per
+   pixel, measured) and wrong for a million-line file.
+6. **The single portable HTML file is not shipped, by measurement** (Task 8): fusing the graph costs
    1 699.9 kB up front and a `file://` open loses OPFS, service-worker registration and the pickers.
    `docs/offline-pwa.md` has the numbers, so re-opening the idea starts from evidence.
 
@@ -1275,5 +1350,7 @@ Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~
 The MVP acceptance criteria in `docs/scope.md` §8 — six testable statements, including a
 byte-identical open→save round-trip, the 50k-line responsiveness check, and "unsupported
 browsers fail loudly", all passing **in Chrome/Chromium on a desktop OS** (D11; devices are out by
-D12). **All eight planned tasks are complete**; the evidence for each is its row in the status board,
-and every one of those rows is re-runnable from `scripts/`.
+D12). **All eight MVP tasks are complete, and Task 9 closed the two rows phase 1 left open** (the
+Language menu and the current-line selection order); the evidence for each is its row in the status
+board, and every one of those rows is re-runnable from `scripts/`. Phase 2 is planned, not started:
+`.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md` — it is not part of this definition of done.

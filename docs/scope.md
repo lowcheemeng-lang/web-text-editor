@@ -76,11 +76,17 @@ See the decision log in `PROGRESS.md`, which is the authority on status.
 | Case conversion (UPPER/lower/Title), duplicate/delete/move/sort lines, trim trailing whitespace, remove blank/duplicate lines | Pure JS line operations over the doc | High |
 | Session restore (open tabs, caret, scroll) | OPFS + IndexedDB (D8) | High — **shipped in Task 7**: the session (`session.xml`'s fields, including N++'s `<Mark>`/`<Fold>` children, so bookmarks and folds come back), the bodies of unsaved documents in an OPFS `backup/` with N++'s `FILENAME@YYYY-MM-DD_HHMMSS` names, and the preferences (`config.xml`'s session/toolbar/zoom keys). `python3 scripts/verify-task7.py` → 82/82, everything asserted after a real reload; `docs/session-persistence.md` has the mapping and the deviations |
 | Recent files | Stored handles via File System Access (D11) | High |
-| Dark mode / themes | CM6 theme, N++-style palette | High — **the preference shipped in Task 7, the dark palette did not**: the theme name is stored, applied at startup and threaded through `PALETTES`/`THEMES`, but Notepad++'s Dark Mode itself (its dark token palette and chrome colours) is a skin, not a preference, and no task has claimed it |
+| Dark mode / themes | CM6 theme, N++-style palette | High — **the preference shipped in Task 7, the dark palette did not**: the theme name is stored, applied at startup and threaded through `PALETTES`/`THEMES`, but Notepad++'s Dark Mode itself (its dark token palette and chrome colours) is a skin, not a preference, and no MVP task claimed it. **Claimed by phase-2 Task 10** |
 | Line ending + encoding + language indicator in status bar | Status bar component | High — **shipped in Task 6** for the language field, in N++'s own position: `STATUSBAR_DOC_TYPE` is part 0, the leftmost (`Notepad_plus_msgs.h:185`), and the wording is N++'s long name ("Python file", "Normal text file") |
+| Language menu (choose or override the language) | Custom menu over `languagesByName()` + `Workspace.setLanguage()` | High — **shipped in Task 9 (2026-11-16)**: N++'s menu in N++'s place, "None (Normal Text)" first (`Notepad_plus.rc:1000`), all 140 languages in one scrollable list with N++'s radio check, and the choice stored per document and restored. `python3 scripts/verify-task9.py` → **34/34** |
 | Keyboard shortcuts matching N++ defaults | Custom keymap | High |
 
 ### Tier 2 — should-have (phase 2)
+
+**Phase 2 is planned but not started** — `.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md`
+claims these rows, plus the Dark Mode gap above and D10's scheduled correctness work, in an order:
+Dark Mode (Task 10), encoding fidelity and large-file mode (Tasks 11–12), then these Tier-2 rows as
+Tasks 13–19, with the deferred contracts (Tier B/C I/O per D11, print, macros per D6) as Tasks 20–22.
 
 | Feature | Web implementation | Notes |
 |---|---|---|
