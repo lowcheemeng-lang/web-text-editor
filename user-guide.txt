@@ -1,0 +1,21 @@
+This is notepadpp-web — a backend-free, browser-based text editor (Vite + TypeScript + CodeMirror 6). Dependencies are already installed (node_modules present, Node v22). Run it from /home/lowcheemeng/dev/web-text-editor:
+
+Run in development (the normal way):
+
+npm run dev
+
+Starts the Vite dev server and prints a local URL (usually http://localhost:5173) — open it in a browser.
+
+Run the production build:
+
+npm run build      # typecheck + build into dist/
+npm run preview    # serve the built dist/ locally
+
+
+Other scripts:
+- npm run typecheck — TypeScript check only, no output
+- npm run status — runs scripts/status.mjs (project progress/status report)
+
+There is no backend to start — it's a static single-page app (with a service worker for offline/PWA use). Note: files in dist/ already exist from a previous build, so npm run preview would also work immediately without building.
+
+No files were changed.
