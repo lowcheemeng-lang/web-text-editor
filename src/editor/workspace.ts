@@ -589,15 +589,15 @@ export class Workspace {
 
   /**
    * N++'s Language menu: "None (Normal Text)" (Notepad_plus.rc:1000), a rule, then the
-   * languages, with a radio check on the one the active document is using — N++ draws it
-   * with `CheckMenuRadioItem` (`Notepad_plus.cpp:2965`).
+   * languages grouped under their first letter — N++'s compact form
+   * (`_isLangMenuCompact`, `Notepad_plus.cpp:583-635`) — with a radio check on the one
+   * the active document is using (`CheckMenuRadioItem`, `Notepad_plus.cpp:2965`).
    *
-   * The rc's own order is its hand-maintained `IDM_LANG_*` block, which is nearly
-   * alphabetical but not quite (CSound before CoffeeScript, LISP before LaTeX, Shell before
-   * Scheme). This port orders by N++'s short name case-insensitively — `languagesByName()` —
-   * rather than copying that accident, the same call S9 made about extension collisions.
-   * N++'s UDL entries at the bottom of the menu are absent because UDL is unscheduled (D10),
-   * and its optional first-letter submenu form is not built; both are in DEVIATIONS_FROM_NPP.
+   * Inside a group the order is N++'s short name, case-insensitively (`languagesByName()`),
+   * rather than copying the rc's hand-maintained `IDM_LANG_*` order (nearly alphabetical,
+   * but CSound precedes CoffeeScript and Shell precedes Scheme) — the same call S9 made
+   * about extension collisions. N++'s UDL entries at the bottom of the menu are absent
+   * because UDL is unscheduled (D10); that is in DEVIATIONS_FROM_NPP.
    */
   #languageMenu(): MenuEntry[] {
     const current = this.#active()?.language?.id ?? null;
@@ -610,13 +610,20 @@ export class Workspace {
       },
       { id: "lang-rule", separator: true },
     ];
+    const groups = new Map<string, MenuEntry[]>();
     for (const language of languagesByName()) {
-      entries.push({
+      const letter = language.name.charAt(0).toUpperCase();
+      const group = groups.get(letter) ?? [];
+      group.push({
         id: `lang-${language.id}`,
         label: language.name,
         checked: current === language.id,
         onClick: () => void this.setLanguage(language.id),
       });
+      groups.set(letter, group);
+    }
+    for (const [letter, submenu] of groups) {
+      entries.push({ id: `lang-group-${letter.toLowerCase()}`, label: letter, submenu });
     }
     return entries;
   }

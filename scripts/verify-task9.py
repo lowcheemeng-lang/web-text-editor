@@ -1,27 +1,30 @@
 #!/usr/bin/env python3
-"""Task 9 acceptance check — N++'s Language menu, and the selection that N++ paints over its
-current-line band.
+"""Task 9 acceptance check — N++'s Language menu (grouped A–Z, opened on hover), and the
+selection that N++ paints over its current-line band.
 
     npm run dev                        # in another shell
     python3 scripts/verify-task9.py    # exit 0 = Task 9 accepted
 
 S2: every claim `PROGRESS.md` makes about Task 9 is backed by this script. It drives the app
-the way a person does — the menu bar, the menu's own items, keystrokes — and fails loudly on
-console errors, page errors, or a request that leaves the machine.
+the way a person does — hovering the menu bar, hovering the menu's own items, keystrokes —
+and fails loudly on console errors, page errors, or a request that leaves the machine.
 
-Two things are under test here, and the second is the user's own report:
+Three things are under test:
 
-1. **The Language menu** (the one N++ feature Task 6 knowingly left unbuilt). The registry has
-   ordered the 140 languages since Task 6, `Workspace.setLanguage()` has swapped a grammar
-   live since then too, and Task 7 stores the language per document; what was missing was the
-   menu. Checked here: its place in the menu bar (Notepad_plus.rc:998), "None (Normal Text)"
-   first (rc:1000), the 140 entries in name order, N++'s radio check on the current one
-   (`CheckMenuRadioItem`, Notepad_plus.cpp:2965), a choice applying live and painting in N++'s
-   colours, `None` clearing it, a legacy mode loading, the checked state following the active
-   document, a choice surviving a real reload (Task 7's session), and a choice *overriding* a
-   detected language on a real file opened through the stubbed picker.
+1. **The Language menu** (the one N++ feature Task 6 knowingly left unbuilt). Its place in the
+   menu bar (`Notepad_plus.rc:998`), "None (Normal Text)" first (`rc:1000`), the 140 languages
+   grouped under their first letter — N++'s compact form (`_isLangMenuCompact`,
+   `Notepad_plus.cpp:583-635`) — with N++'s radio check on the current one
+   (`CheckMenuRadioItem`, :2965), a choice applying live and painting in N++'s colours, `None`
+   clearing it, a legacy mode loading, the checked state following the active document, a
+   choice surviving a real reload (Task 7's session), and a choice *overriding* a detected
+   language on a real file opened through the stubbed picker.
 
-2. **The reported bug: a selected word on the current row was invisible.** Two causes, both
+2. **Hover opens menus** (S17). The menu bar used to only highlight a title; the check moves
+   the pointer (no clicks) and asserts the popup drops down, and that moving to another title
+   switches which menu is open.
+
+3. **The reported bug: a selected word on the current row was invisible.** Two causes, both
    measured here:
      - the theme's selection rule had three class selectors against CodeMirror's own
        `&light.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground`
@@ -35,6 +38,7 @@ Two things are under test here, and the second is the user's own report:
 """
 from __future__ import annotations
 
+import re
 import sys
 
 from PIL import Image
@@ -75,9 +79,31 @@ ADOPT = """async (name) => {
     window.showOpenFilePicker = async () => [await root.getFileHandle(name)];
 }"""
 
+# Direct children only: the submenus live in the menu wrapper, but a nested one must never
+# be mistaken for a top-level entry if that ever changes.
 MENU = """() => {
-    const popup = document.querySelector('.npp-menu-popup:not([hidden])');
+    const popup = document.querySelector('.npp-menu-popup:not([hidden]):not(.npp-submenu)');
     if (!popup) return null;
+    return {
+        items: [...popup.querySelectorAll(':scope > [data-menu-item]')].map((node) => ({
+            id: node.getAttribute('data-menu-item'),
+            label: node.querySelector('.npp-menu-label')?.textContent ?? '',
+            role: node.getAttribute('role'),
+            checked: node.getAttribute('aria-checked'),
+            submenu: node.getAttribute('aria-haspopup') === 'menu',
+        })),
+        rules: popup.querySelectorAll(':scope > .npp-menu-rule').length,
+        scrollHeight: popup.scrollHeight,
+        clientHeight: popup.clientHeight,
+        bottom: Math.round(popup.getBoundingClientRect().bottom),
+        viewport: window.innerHeight,
+    };
+}"""
+
+SUBMENU = """() => {
+    const popup = document.querySelector('.npp-submenu:not([hidden])');
+    if (!popup) return null;
+    const box = popup.getBoundingClientRect();
     return {
         items: [...popup.querySelectorAll('[data-menu-item]')].map((node) => ({
             id: node.getAttribute('data-menu-item'),
@@ -85,12 +111,8 @@ MENU = """() => {
             role: node.getAttribute('role'),
             checked: node.getAttribute('aria-checked'),
         })),
-        rules: popup.querySelectorAll('.npp-menu-rule').length,
-        firstChildIsRule: popup.firstElementChild?.classList.contains('npp-menu-rule') ?? false,
-        scrollHeight: popup.scrollHeight,
-        clientHeight: popup.clientHeight,
-        bottom: Math.round(popup.getBoundingClientRect().bottom),
-        viewport: window.innerHeight,
+        box: { x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.width), h: Math.round(box.height) },
+        viewport: { w: window.innerWidth, h: window.innerHeight },
     };
 }"""
 
@@ -142,26 +164,45 @@ with sync_playwright() as p:
         "() => [...document.querySelectorAll('.npp-status-item')].map((n) => n.textContent)"
     )
 
-    def open_menu() -> dict:
-        page.click(".npp-menu-title:has-text('Language')")
-        page.wait_for_timeout(120)
+    # Where each language lives, filled in by the structural pass below.
+    group_of: dict[str, str] = {}
+
+    def away_from_menus() -> None:
+        page.mouse.move(4, 420)
+        page.wait_for_timeout(90)
+
+    def open_menu(label: str = "Language") -> dict:
+        away_from_menus()
+        page.hover(f".npp-menu-title:has-text('{label}')")
+        page.wait_for_timeout(300)  # 140 ms hover delay, then the popup renders
         menu = page.evaluate(MENU)
         if menu is None:
-            raise AssertionError("the Language menu did not open")
+            raise AssertionError(f"the {label} menu did not open on hover")
         return menu
+
+    def hover_group(letter: str) -> dict:
+        page.hover(f"[data-menu-item='lang-group-{letter.lower()}']")
+        page.wait_for_timeout(180)
+        submenu = page.evaluate(SUBMENU)
+        if submenu is None:
+            raise AssertionError(f"the {letter} submenu did not open on hover")
+        return submenu
 
     def choose(item_id: str) -> None:
         open_menu()
+        if item_id != "lang-none":
+            hover_group(group_of[item_id])
         page.click(f"[data-menu-item='{item_id}']")
         page.wait_for_function(
-            "() => !document.querySelector('.npp-menu-popup:not([hidden])')", timeout=5000
+            "() => !document.querySelector('.npp-menu-popup:not([hidden]):not(.npp-submenu)')",
+            timeout=5000,
         )
         page.wait_for_timeout(500)  # the lazy grammar import resolves here
 
     def token_of(word: str) -> dict | None:
         return next((token for token in tokens() if token["text"] == word), None)
 
-    # ── 1. the menu exists, where N++ puts it, with N++'s shape ───────────────
+    # ── 1. the menu exists, where N++ puts it ─────────────────────────────────
     page.click(".cm-content")
     page.keyboard.press("Control+a")
     page.keyboard.type("def greet():\n    const = 1\n")
@@ -174,17 +215,43 @@ with sync_playwright() as p:
         str(menu_titles),
     )
 
-    menu = open_menu()
-    page.screenshot(path=SHOT_MENU)
-    check(
-        "Language opens with 141 entries — 'None (Normal Text)' plus all 140 languages",
-        len(menu["items"]) == 141,
-        f"{len(menu['items'])} entries",
+    # ── 2. hover opens a menu — no click involved ─────────────────────────────
+    away_from_menus()
+    page.hover(".npp-menu-title:has-text('View')")
+    page.wait_for_timeout(300)
+    hovered = page.evaluate(
+        """() => ({
+            title: document.querySelector('.npp-menu-title[aria-expanded="true"]')?.textContent ?? null,
+            visible: document.querySelector('.npp-menu-popup:not([hidden]):not(.npp-submenu)') !== null,
+        })"""
     )
     check(
+        "hovering a menu title drops its menu down without a click",
+        hovered["visible"] and hovered["title"] == "View",
+        str(hovered),
+    )
+    page.hover(".npp-menu-title:has-text('Language')")
+    page.wait_for_timeout(300)
+    switched = page.evaluate(
+        """() => ({
+            title: document.querySelector('.npp-menu-title[aria-expanded="true"]')?.textContent ?? null,
+            open: document.querySelectorAll('.npp-menu-popup:not([hidden]):not(.npp-submenu)').length,
+        })"""
+    )
+    check(
+        "…and moving to another title switches the open menu, still without a click",
+        switched["title"] == "Language" and switched["open"] == 1,
+        str(switched),
+    )
+
+    # ── 3. the A–Z grouping is N++'s compact form ─────────────────────────────
+    menu = open_menu()
+    page.screenshot(path=SHOT_MENU)
+    labels = [item["label"] for item in menu["items"]]
+    check(
         "the first entry is N++'s 'None (Normal Text)' (Notepad_plus.rc:1000)",
-        menu["items"][0]["label"] == "None (Normal Text)",
-        repr(menu["items"][0]["label"]),
+        labels[0] == "None (Normal Text)",
+        repr(labels[0]),
     )
     check(
         "…and it is the one checked on a scratch buffer",
@@ -193,30 +260,87 @@ with sync_playwright() as p:
         str([item["label"] for item in menu["items"] if item["checked"] == "true"]),
     )
     check(
-        "a rule separates 'None' from the languages (one rule, after the first entry)",
+        "a rule separates 'None' from the groups",
         menu["rules"] == 1,
         f"{menu['rules']} rules",
     )
-    labels = [item["label"] for item in menu["items"]]
+    groups = labels[1:]
     check(
-        "the 140 languages are ordered by N++'s short name, case-insensitively",
-        labels[1:] == sorted(labels[1:], key=str.casefold),
-        "first mismatch: "
-        + str(next((pair for pair in zip(labels[1:], sorted(labels[1:], key=str.casefold)) if pair[0] != pair[1]), None)),
+        "the languages are grouped into single-letter submenus, A–Z",
+        groups == sorted(groups) and len(set(groups)) == len(groups) and all(re.fullmatch(r"[A-Z]", g) for g in groups),
+        f"{len(groups)} groups: {''.join(groups)}",
     )
     check(
-        "every entry is a radio item (N++ draws a check, not a tick), with exactly one checked",
-        all(item["role"] == "menuitemradio" for item in menu["items"])
-        and len([item for item in menu["items"] if item["checked"] == "true"]) == 1,
-        f"roles={sorted({item['role'] for item in menu['items']})}",
+        "every group is a disclosure (a submenu parent, not a command)",
+        all(item["submenu"] and item["role"] == "menuitem" for item in menu["items"][1:]),
+        str([item["role"] for item in menu["items"][1:3]]),
     )
     check(
-        "the long menu is capped and scrolls inside the window instead of running off it",
-        menu["scrollHeight"] > menu["clientHeight"] and menu["bottom"] <= menu["viewport"] and menu["clientHeight"] <= int(menu["viewport"] * 0.7) + 4,
-        f"{menu['scrollHeight']}px of items in a {menu['clientHeight']}px box, bottom {menu['bottom']} of {menu['viewport']}",
+        "the grouped list is capped and scrolls inside the window",
+        menu["scrollHeight"] > menu["clientHeight"]
+        and menu["bottom"] <= menu["viewport"]
+        and menu["clientHeight"] <= int(menu["viewport"] * 0.7) + 4,
+        f"{menu['scrollHeight']}px of groups in a {menu['clientHeight']}px box, bottom {menu['bottom']} of {menu['viewport']}",
     )
 
-    # Escape closes with nothing changed.
+    # Open every group and collect what is inside; this is also where `group_of` comes from.
+    flattened: list[dict] = []
+    first_geometry: dict | None = None
+    for letter in groups:
+        submenu = hover_group(letter)
+        flattened.extend(submenu["items"])
+        for child in submenu["items"]:
+            group_of[child["id"]] = letter
+        if first_geometry is None:
+            row = page.locator(f"[data-menu-item='lang-group-{letter.lower()}']").bounding_box()
+            first_geometry = {"submenu": submenu, "row": row}
+
+    check(
+        "all 140 languages appear exactly once under their letter",
+        len(flattened) == 140 and len({item["id"] for item in flattened}) == 140,
+        f"{len(flattened)} entries, {len({item['id'] for item in flattened})} unique",
+    )
+    check(
+        "…in N++'s short-name order, case-insensitively",
+        [item["label"] for item in flattened] == sorted((item["label"] for item in flattened), key=str.casefold),
+        str([item["label"] for item in flattened][:4]),
+    )
+    check(
+        "…and every language sits under its own initial",
+        all(item["label"][0].upper() == group_of[item["id"]] for item in flattened),
+        str(next((item for item in flattened if item["label"][0].upper() != group_of[item["id"]]), None)),
+    )
+    check(
+        "the languages inside the groups are radio items",
+        all(item["role"] == "menuitemradio" for item in flattened),
+        f"roles={sorted({item['role'] for item in flattened})}",
+    )
+
+    if first_geometry and first_geometry["row"] is not None:
+        submenu, row = first_geometry["submenu"], first_geometry["row"]
+        check(
+            "a submenu opens beside its row and stays inside the window",
+            abs(submenu["box"]["x"] - (row["x"] + row["width"] - 3)) <= 6
+            and submenu["box"]["x"] + submenu["box"]["w"] <= submenu["viewport"]["w"]
+            and submenu["box"]["y"] + submenu["box"]["h"] <= submenu["viewport"]["h"],
+            f"row right {round(row['x'] + row['width'])}, submenu {submenu['box']}",
+        )
+
+    # Clicking a group is a disclosure: it must not choose a language or close the menu.
+    open_menu()
+    page.hover("[data-menu-item='lang-group-b']")
+    page.wait_for_timeout(180)
+    page.click("[data-menu-item='lang-group-b']")
+    page.wait_for_timeout(120)
+    disclosure = page.evaluate(
+        "() => document.querySelector('.npp-menu-popup:not([hidden]):not(.npp-submenu)') !== null"
+    )
+    check(
+        "clicking a group only opens/closes its submenu, never picks a language",
+        disclosure and info()["language"] is None,
+        f"menu still open={disclosure}, language={info()['language']}",
+    )
+
     page.keyboard.press("Escape")
     page.wait_for_timeout(120)
     closed = page.evaluate("() => document.querySelector('.npp-menu-popup:not([hidden])') === null")
@@ -226,11 +350,11 @@ with sync_playwright() as p:
         f"closed={closed}, language={info()['language']}",
     )
 
-    # ── 2. choosing a language applies it, live, in N++'s colours ─────────────
+    # ── 4. choosing a language applies it, live, in N++'s colours ─────────────
     choose("lang-python")
     language = info()["language"] or {}
     check(
-        "Language ▸ Python sets the open document's language",
+        "Language ▸ P ▸ Python sets the open document's language",
         language.get("id") == "python" and language.get("name") == "Python" and language.get("loaded") is True,
         str(language),
     )
@@ -251,21 +375,24 @@ with sync_playwright() as p:
         str(token_of("const")),
     )
 
-    menu = open_menu()
-    checked = [item["label"] for item in menu["items"] if item["checked"] == "true"]
+    open_menu()
+    hover_group("P")
+    checked = page.evaluate(
+        """() => [...document.querySelectorAll('.npp-submenu [role=menuitemradio]')]
+            .filter((node) => node.getAttribute('aria-checked') === 'true')
+            .map((node) => node.querySelector('.npp-menu-label')?.textContent ?? '')"""
+    )
     check(
-        "reopening the menu shows the radio check on Python, and only on Python",
+        "reopening the menu marks Python inside its P group, and only Python",
         checked == ["Python"],
         str(checked),
     )
-    page.keyboard.press("Escape")
-    page.wait_for_timeout(80)
 
-    # ── 3. switching replaces the old grammar rather than stacking a second ───
+    # ── 5. switching replaces the old grammar rather than stacking a second ───
     choose("lang-javascript")
     const_token = token_of("const")
     check(
-        "Language ▸ JavaScript replaces Python's grammar: `const` is now the keyword",
+        "Language ▸ J ▸ JavaScript replaces Python's grammar: `const` is now the keyword",
         info()["language"]["id"] == "javascript"
         and const_token is not None
         and const_token["color"] == KEYWORD
@@ -278,7 +405,7 @@ with sync_playwright() as p:
         str(token_of("def")),
     )
 
-    # ── 4. "None (Normal Text)" is a real language choice, not a no-op ────────
+    # ── 6. "None (Normal Text)" is a real language choice, not a no-op ────────
     choose("lang-none")
     check(
         "Language ▸ None (Normal Text) clears the language and the status bar",
@@ -291,7 +418,7 @@ with sync_playwright() as p:
         str(tokens()),
     )
 
-    # ── 5. the long tail: a legacy stream mode loads through the same menu ────
+    # ── 7. the long tail: a legacy stream mode loads through the same menu ────
     choose("lang-brainfuck")
     language = info()["language"] or {}
     check(
@@ -305,7 +432,7 @@ with sync_playwright() as p:
         str(info()["ruler"]),
     )
 
-    # ── 6. the check follows the active document ──────────────────────────────
+    # ── 8. the check follows the active document ──────────────────────────────
     page.keyboard.press("Control+Home")
     choose("lang-python")
     page.keyboard.press("Alt+n")  # a second document, which has no language
@@ -320,7 +447,7 @@ with sync_playwright() as p:
     page.keyboard.press("Escape")
     page.wait_for_timeout(80)
 
-    # ── 7. a chosen language survives a real reload (Task 7's session) ────────
+    # ── 9. a chosen language survives a real reload (Task 7's session) ────────
     page.click(".npp-tab:not(.is-active)")
     page.wait_for_timeout(200)
     check(
@@ -347,7 +474,7 @@ with sync_playwright() as p:
         str(token_of("def")),
     )
 
-    # ── 8. a menu choice overrides a detected language on a real file ────────
+    # ── 10. a menu choice overrides a detected language on a real file ───────
     page.evaluate(SEED, ["notes.txt", list(b"def greet(name):\n    return name\n")])
     page.evaluate(ADOPT, "notes.txt")
     press_open(page)
@@ -359,13 +486,13 @@ with sync_playwright() as p:
     )
     choose("lang-python")
     check(
-        "…and Language ▸ Python overrides the extension's decision",
+        "…and Language ▸ P ▸ Python overrides the extension's decision",
         (info()["language"] or {}).get("id") == "python"
         and (token_of("def") or {}).get("color") == KEYWORD,
         str(info()["language"]),
     )
 
-    # ── 9. the reported bug: a selected word on the current row is visible ───
+    # ── 11. the reported bug: a selected word on the current row is visible ──
     page.evaluate("() => window.__workspace.activeView?.focus()")
     page.keyboard.press("Control+Home")
     page.keyboard.press("Shift+End")
@@ -419,7 +546,7 @@ with sync_playwright() as p:
         f"pixel {row}, expected {BAND}",
     )
 
-    # ── 10. no errors, and nothing left the machine (D1) ─────────────────────
+    # ── 12. no errors, and nothing left the machine (D1) ─────────────────────
     check("no console errors", console_errors == [], str(console_errors[:3]))
     check("no uncaught page errors", page_errors == [], str(page_errors[:3]))
     off_machine = [url for url in requests if not url.startswith(URL.rstrip("/")) and not url.startswith("data:")]

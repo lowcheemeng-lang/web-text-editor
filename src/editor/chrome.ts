@@ -8,6 +8,13 @@
  * project's convention is not to ship a claim it cannot back.
  */
 
+/**
+ * How long the pointer must rest on a menu title before the menu drops down. N++/Win32
+ * opens on hover once a menu is open; a page has no such state to lean on, so the delay
+ * is what keeps a pointer crossing the bar from flashing every menu on its way.
+ */
+const MENU_HOVER_DELAY_MS = 140;
+
 export interface PaneElements {
   readonly id: string;
   readonly root: HTMLElement;
@@ -64,7 +71,13 @@ export interface MenuItemSpec {
    * N++ draws this with `CheckMenuRadioItem` (`Notepad_plus.cpp:2965`).
    */
   readonly checked?: boolean;
-  readonly onClick: () => void;
+  /**
+   * A submenu — N++'s compact Language menu groups the languages under their first
+   * letter (`_isLangMenuCompact`, `Notepad_plus.cpp:583-635`). Hovering or clicking the
+   * parent opens it; the parent itself runs no command.
+   */
+  readonly submenu?: readonly MenuEntry[];
+  readonly onClick?: () => void;
 }
 
 /** A rule between groups of items. */
@@ -102,6 +115,11 @@ export class Chrome {
     { spec: MenuSpec; popup: HTMLElement; button: HTMLButtonElement }
   >();
   #openMenu: string | null = null;
+  /** The open submenu, and the item that owns it (one at a time, as N++/Win32 behave). */
+  #openSubmenu: HTMLElement | null = null;
+  #openSubmenuFor: HTMLElement | null = null;
+  /** The hover-to-open delay: long enough not to flash while the pointer crosses the bar. */
+  #hoverTimer: number | null = null;
 
   constructor(host: HTMLElement) {
     host.classList.add("npp-app");
@@ -149,7 +167,29 @@ export class Chrome {
         event.stopPropagation();
         this.#toggleMenu(menu.label);
       });
+      // Hover opens the menu. The title used to only highlight, which is what the user
+      // reported: the pointer arrives, nothing drops down, and the menu feels dead. The
+      // short delay keeps a pointer crossing the bar on its way to the editor from
+      // flashing every menu it passes, and Windows' own menu bar behaves the same way
+      // once a menu is open.
+      wrapper.addEventListener("mouseenter", () => {
+        if (this.#hoverTimer !== null) window.clearTimeout(this.#hoverTimer);
+        this.#hoverTimer = window.setTimeout(() => {
+          this.#hoverTimer = null;
+          if (this.#openMenu !== menu.label) this.#openMenuAt(menu.label);
+        }, MENU_HOVER_DELAY_MS);
+      });
+      wrapper.addEventListener("mouseleave", () => {
+        if (this.#hoverTimer !== null) {
+          window.clearTimeout(this.#hoverTimer);
+          this.#hoverTimer = null;
+        }
+        if (this.#openMenu === menu.label) this.#closeMenus();
+      });
       wrapper.append(button, popup);
+      // A scrolling popup moves the row a submenu is attached to; keep the submenu beside
+      // it instead of leaving it pointing at where the row used to be.
+      popup.addEventListener("scroll", () => this.#repositionSubmenu());
       this.#menus.set(menu.label, { spec: menu, popup, button });
       this.menuBar.appendChild(wrapper);
     }
@@ -158,13 +198,15 @@ export class Chrome {
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") this.#closeMenus();
     });
+    window.addEventListener("resize", () => this.#closeMenus());
   }
 
   /** Rebuild one menu's popup — cheap, and the only way a dynamic list stays live. */
   #renderMenu(target: { spec: MenuSpec; popup: HTMLElement }): void {
+    this.#closeSubmenu();
     const items = typeof target.spec.items === "function" ? target.spec.items() : target.spec.items;
     target.popup.replaceChildren(
-      ...items.map((item) => (isSeparator(item) ? this.#menuRule() : this.#menuItem(item))),
+      ...items.map((item) => (isSeparator(item) ? this.#menuRule() : this.#menuItem(item, target.popup))),
     );
   }
 
@@ -172,8 +214,9 @@ export class Chrome {
     return el("hr", { className: "npp-menu-rule" });
   }
 
-  #menuItem(item: MenuItemSpec): HTMLElement {
+  #menuItem(item: MenuItemSpec, container: HTMLElement): HTMLElement {
     const radio = item.checked !== undefined;
+    const hasSubmenu = item.submenu !== undefined;
     const attrs: Record<string, string> = radio
       ? {
           type: "button",
@@ -182,6 +225,10 @@ export class Chrome {
           "data-menu-item": item.id,
         }
       : { type: "button", role: "menuitem", "data-menu-item": item.id };
+    if (hasSubmenu) {
+      attrs["aria-haspopup"] = "menu";
+      attrs["aria-expanded"] = "false";
+    }
     const entry = el("button", { className: "npp-menu-item", attrs });
     // The check lives in the menu's left margin, so it is drawn only on radio items: every
     // other menu keeps the exact geometry it had before the Language menu existed.
@@ -190,21 +237,101 @@ export class Chrome {
       el("span", { className: "npp-menu-label", text: item.label }),
       el("span", { className: "npp-menu-shortcut", text: item.shortcut ?? "" }),
     );
-    entry.addEventListener("click", () => {
+    if (hasSubmenu) entry.append(el("span", { className: "npp-menu-arrow", text: "›" }));
+    entry.addEventListener("mouseenter", () => {
+      // A leaf inside the open submenu must not close its own popup — the pointer just
+      // moved from the parent row into the list, which is one gesture, not a new one.
+      if (this.#openSubmenu?.contains(entry)) return;
+      // One submenu at a time, and a plain sibling closes the open one.
+      if (this.#openSubmenuFor !== entry) this.#closeSubmenu();
+      if (hasSubmenu) this.#showSubmenu(item, entry, container);
+    });
+    entry.addEventListener("click", (event) => {
+      if (hasSubmenu) {
+        // A submenu parent is a disclosure, not a command — it must not close the menu.
+        event.stopPropagation();
+        if (this.#openSubmenuFor === entry) this.#closeSubmenu();
+        else this.#showSubmenu(item, entry, container);
+        return;
+      }
       this.#closeMenus();
-      item.onClick();
+      item.onClick?.();
       // The next keystroke belongs to the editor, not the menu.
       document.querySelector<HTMLElement>(".npp-pane .cm-content")?.focus();
     });
     return entry;
   }
 
+  /**
+   * Open `item`'s submenu beside its row, inside the parent popup so that moving the
+   * pointer from the row into the submenu never leaves the menu. It flips to the left
+   * when the window has no room on the right, which is the same rule a desktop menu uses.
+   */
+  #showSubmenu(item: MenuItemSpec, entry: HTMLElement, container: HTMLElement): void {
+    if (this.#openSubmenuFor === entry && this.#openSubmenu) return;
+    this.#closeSubmenu();
+    const submenu = item.submenu;
+    if (!submenu) return;
+    // The parent popup scrolls when the list is longer than the window, and a scrolling
+    // container clips absolutely-positioned children. So the submenu is hosted by the menu
+    // wrapper instead — still inside the element that owns the hover, so moving the pointer
+    // from the row into the submenu never leaves the menu — and positioned in viewport
+    // coordinates beside the row it belongs to.
+    const host = container.closest<HTMLElement>(".npp-menu") ?? container;
+    const popup = el("div", { className: "npp-menu-popup npp-submenu", attrs: { role: "menu" } });
+    popup.style.position = "fixed";
+    popup.append(
+      ...submenu.map((child) => (isSeparator(child) ? this.#menuRule() : this.#menuItem(child, popup))),
+    );
+    const anchor = entry.getBoundingClientRect();
+    popup.style.top = `${Math.max(4, anchor.top - 4)}px`;
+    popup.style.left = `${anchor.right - 3}px`;
+    host.append(popup);
+    const rect = popup.getBoundingClientRect();
+    // Flip, the way a desktop menu does, when the window has no room on either side.
+    if (rect.right > window.innerWidth - 8) {
+      popup.style.left = `${Math.max(4, anchor.left - rect.width + 3)}px`;
+    }
+    if (rect.bottom > window.innerHeight - 8) {
+      popup.style.top = `${Math.max(4, window.innerHeight - rect.height - 8)}px`;
+    }
+    this.#openSubmenu = popup;
+    this.#openSubmenuFor = entry;
+    entry.setAttribute("aria-expanded", "true");
+    entry.classList.add("is-submenu-open");
+  }
+
+  #closeSubmenu(): void {
+    if (this.#openSubmenu) this.#openSubmenu.remove();
+    this.#openSubmenu = null;
+    if (this.#openSubmenuFor) {
+      this.#openSubmenuFor.setAttribute("aria-expanded", "false");
+      this.#openSubmenuFor.classList.remove("is-submenu-open");
+    }
+    this.#openSubmenuFor = null;
+  }
+
+  /** Keep an open submenu beside its row when the parent popup scrolls under it. */
+  #repositionSubmenu(): void {
+    if (!this.#openSubmenu || !this.#openSubmenuFor) return;
+    const anchor = this.#openSubmenuFor.getBoundingClientRect();
+    const height = this.#openSubmenu.offsetHeight;
+    this.#openSubmenu.style.top = `${Math.max(4, Math.min(anchor.top - 4, window.innerHeight - height - 8))}px`;
+  }
+
   #toggleMenu(label: string): void {
+    if (this.#openMenu === label) {
+      this.#closeMenus();
+      return;
+    }
+    this.#openMenuAt(label);
+  }
+
+  /** Open a named menu, whether the click or the hover timer asked for it. */
+  #openMenuAt(label: string): void {
     const target = this.#menus.get(label);
     if (!target) return;
-    const wasOpen = this.#openMenu === label;
     this.#closeMenus();
-    if (wasOpen) return;
     this.#renderMenu(target);
     target.popup.hidden = false;
     target.button.setAttribute("aria-expanded", "true");
@@ -212,6 +339,11 @@ export class Chrome {
   }
 
   #closeMenus(): void {
+    if (this.#hoverTimer !== null) {
+      window.clearTimeout(this.#hoverTimer);
+      this.#hoverTimer = null;
+    }
+    this.#closeSubmenu();
     if (this.#openMenu === null) return;
     const current = this.#menus.get(this.#openMenu);
     if (current) {

@@ -337,6 +337,26 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* A submenu parent (the Language menu's A–Z groups): the arrow sits at the right edge,
+   and the row stays highlighted while its submenu is open, the way a desktop menu does. */
+.npp-menu-arrow {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  color: #777;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.npp-menu-item.is-submenu-open,
+.npp-menu-item.is-submenu-open:hover {
+  background: var(--chrome-active);
+}
+
+/* The submenu is positioned in `chrome.ts` beside its row; these are only the defaults. */
+.npp-submenu {
+  min-width: 190px;
+}
+
 /* Recent-file entries are filenames, which can be long; keep them on one line
    with the tail visible rather than letting the popup grow. */
 .npp-menu-item .npp-menu-label {
