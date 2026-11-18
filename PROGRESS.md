@@ -7,8 +7,11 @@ The plan is the *spec*; this ledger is the *state*. Keep them separate.
 |---|---|---|
 | `PROGRESS.md` (this file) | Current status, next action, decisions, session log | Updated at the **end of every work session** |
 | `.hermes/plans/2026-09-24_notepadpp-web-plan.md` | Task specs (what to build, file paths, verification) | Edited only when the plan genuinely changes |
+| `.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md` | Phase-2 task specs (Tasks 10–22) | Edited only when the plan genuinely changes |
+| `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md` | Plugin host (D5) assessment and task breakdown P0–P8 | Scheduled after phase-2 Task 22; P0 done |
 | `docs/scope.md` | Locked scope + browser compatibility matrix | Edited when a decision is *reversed* |
 | `docs/editor-core-decision.md` | D2 evidence: CodeMirror 6 vs Monaco, sourced | Settled 2026-09-25 |
+| `docs/plugins.md` | D5's plugin host: trust model, API surface, v1 limits | Decided 2026-11-17; **not built** |
 | `scripts/status.mjs` | Progress reporter — `npm run status` | — |
 | `scripts/verify-task<N>.py` | Executable acceptance check for a task | — |
 
@@ -77,11 +80,17 @@ node --experimental-strip-types scripts/test-themes.mjs           # the tables +
 4. **Tasks 13–19 — the Tier-2 backlog** (Smart Highlighter + incremental search, per-pane tab sets,
    Function List, block-edit UI, minimap, autocompletion, drop files).
 5. **Tasks 20–22 — the deferred contracts**: Tier B/C file I/O per D11, print, and macros per D6.
+6. **Then the plugin host (D5, accepted 2026-11-17 as amended)** — tasks P0–P8 in
+   `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`. **P0 is done** (the decision
+   and `docs/plugins.md`); P1–P8 are not started, by the user's scheduling: it waits until after
+   Task 22, because Tasks 11–22 keep changing the extension seams (`notepadpp-config.ts`'s
+   compartments, the chrome, the storage layer) that a plugin host would sit on.
 
-**Nothing is blocking, and no task needs the user for scope.** `D1`, `D5` and `D8` remain `Proposed`
+**Nothing is blocking, and no task needs the user for scope.** `D1` and `D8` remain `Proposed`
 — low-stakes consolidations of choices already implied by accepted decisions, and `D8` is now fully
 exercised (Task 4 built its IndexedDB-for-handles half, Task 7 the IndexedDB-for-metadata and
-OPFS-for-bodies halves). Only the user moves a `D` decision.
+OPFS-for-bodies halves). Only the user moves a `D` decision. **`D5` was moved to `Accepted` by the
+user on 2026-11-17**, as amended — see the decision log and `docs/plugins.md`.
 
 **`D12` (mobile/tablet) was answered by the user on 2026-10-12 — "D12 mobile/tablet is a no for now"**
 (recorded as `Accepted` in `docs/scope.md` §3): mobile/tablet is out of the MVP, and a phone or tablet
@@ -162,7 +171,7 @@ decision is a scope edit, not a retrofit.
 | D2 | 2026-09-25 | CodeMirror 6 as the editor core | Analysis in `docs/editor-core-decision.md`: 1.26 MB gz vs 5.01 MB; mobile supported vs officially unsupported; CSS theming for an N++ look; independent per-tab configs; native plugin-composition; viewport rendering for big files. Monaco's only wins here are built-in minimap + diff editor (both Tier 3, both substitutable) | **Accepted — user-confirmed 2026-09-25** |
 | D3 | 2026-09-25 | Two-tier file I/O, feature-detected | Pickers are Chromium-only; Mozilla position on them is *harmful* | **Accepted — user-confirmed 2026-10-06:** MVP ships **Tier A only** (FS Access pickers, real in-place save); non-Chromium gets the explicit "not supported yet" message (S4); tier B/C I/O stays phase 2 |
 | D4 | 2026-09-25 | Encoding: WHATWG label set only in MVP; UTF-32/DOS codepages via WASM | Encoding API's label list is fixed | **Accepted — user-confirmed 2026-10-06:** what the browser gives natively is enough for the MVP; UTF-32, DOS codepages and autodetect are **refused with an explicit warning** until the phase-3 WASM work (D10). Round-trip fidelity is the standing rule |
-| D5 | 2026-09-25 | Plugins = runtime-loaded ES modules + WASM, no native ABI | Only backend-free option | Proposed |
+| D5 | 2026-09-25 (amended 2026-11-17) | Plugins = runtime-loaded ES modules, no native ABI. **As amended:** one ES module *file* per plugin; installed from a local file the user selects; stored as source text in IndexedDB; loaded by `import()` of a blob URL; no remote catalogue and no auto-update (D1); **no sandbox claim** — an in-page module holds the page's privileges, and the install dialog says so; WASM stays usable by a plugin but v1 defines no WASM contract | Only backend-free option. Two of the original mechanism's words were corrected rather than kept: "sandboxed" cannot be honoured by a module that runs in the page (a Worker or sandboxed iframe would reduce the API to declarative data — no panels, no decorations), and "user-picked local folder" needs a Chromium-only picker that no check can drive (Task 4's real-chooser script is the measured cost of that route) | **Accepted — user-confirmed 2026-11-17:** "accept D5 as amended", and "schedule it after phase-2 Task 22". Assessment `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`, design and trust model `docs/plugins.md`. P0 done; P1–P8 wait for Task 22 |
 | D6 | 2026-09-25 | Macros = editor transaction record/replay, not OS input replay | CM6 exposes every change as a transaction, so record/replay/run-N-times works without native hooks (N++'s macro playback is OS-input based and cannot be emulated literally) | **Accepted — user-confirmed 2026-10-06** |
 | D7 | 2026-09-25 | Run/exec + native plugins permanently out of scope | Impossible without a process/shell | **Accepted — user-confirmed 2026-09-25** |
 | D8 | 2026-09-25 | OPFS for documents, IndexedDB for metadata/prefs | OPFS is Baseline cross-browser since March 2023 | **Half in use, still `Proposed`:** the user directed Task 4's recent files to be implemented, which exercises the *IndexedDB-for-metadata-and-handles* half (`src/file/recent-files.ts`). The OPFS-for-document-bodies half belongs to Task 7 and is unbuilt. Only the user may move this to `Accepted` |
@@ -1455,6 +1464,48 @@ alone: `verify-task3.py` **58/58**; `verify-task4.py` **44/44**; `verify-task4-p
 - `sample.html` still deleted-but-unstaged and `user-guide.txt` still untracked — both pre-existing
   and neither this project's to change.
 
+### 2026-11-17 — Session 11 (D5 accepted as amended; the plugin host decided and scheduled)
+
+**User input received**
+- "is it possible to implement the plugins feature like notepad++? only assessment and plan" →
+  assessment + plan filed, nothing built (`.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`).
+- "proceed and I am ok with following: 1. accept D5 as amended 2. schedule it after phase-2 Task 22"
+  — the two words that move a `D` decision, and the scheduling answer to the plan's open question 2.
+
+**Done (P0 only — decision and documentation; no `src/` file touched)**
+- `docs/scope.md`: D5's row rewritten as the amendment (one ES module file per plugin, local-file
+  install, IndexedDB source text, blob-URL `import()`, no catalogue, no auto-update, **no sandbox
+  claim**, WASM usable but unspecified); the header's "D1, D5, D8 remain proposed" became "D1, D8";
+  §2 non-goals gained the two plugin lines (no remote catalogue, no sandbox); the Tier-3 row lost the
+  word "sandboxed" and gained the schedule; §10 records D5 as the fifth resolved decision.
+- `docs/plugins.md` (new): the trust model in the user's terms, the v1 limits stated as limits
+  (view-level extensions only, no runtime languages, no shadowing the app's keys, one API version),
+  the host API surface with the Notepad++ mapping beside each member, the singleton rule, the
+  install/storage/lifecycle design, porting guidance, and the open items the file does not settle.
+  It leads with **DECIDED, NOT BUILT** so it cannot be read as shipped documentation.
+- `PROGRESS.md`: D5 → `Accepted` with the user's words quoted; the artifact map gained the phase-2
+  plan, the plugin-host plan and `docs/plugins.md`; Next action gained item 6 (the plugin host, after
+  Task 22); Blockers item 1 lost D5 and gained item 7 (decided and scheduled, not built).
+- The plan's own header now records the acceptance and the scheduling, so a session that starts from
+  the plan does not re-open what the user already closed.
+
+**Deliberately not done**
+- **P1–P8.** The user scheduled the build after phase-2 Task 22, so the next unit of work is still
+  Task 11 (the encoding spike). Writing the loader now would put a new extension surface under four
+  correctness tasks that are going to change `notepadpp-config.ts`'s compartments, the chrome and the
+  storage layer anyway.
+- No `src/plugins/`, no Plugins menu, no `pluginCompartment`, no DB version bump. `git status` at the
+  end of this session shows only the four documentation files and the plan.
+
+**What P1 will have to measure before anything else is trusted**
+Three things the design assumes and nothing has proven yet, all cheap to test and all fatal if wrong:
+that a blob-URL `import()` works in both the dev server and a production build; that an extension
+built from the app's own CM6 modules is accepted by an already-mounted view (the singleton rule);
+and that disabling a plugin removes its effect from **both** panes of a split view. The plan makes
+that spike the gate on P2–P8 for exactly this reason — the R2/S5 precedent is that a measured
+surprise changes the plan, and the right move when it does is to record the measurement and amend,
+not to ship around it.
+
 ## Blockers / open questions
 
 Nothing blocking, and nothing needs a task to proceed. **Task 9 closed the last open item that had
@@ -1462,10 +1513,12 @@ everything already built behind it** — the Language menu — and **phase 2 now
 (`.hermes/plans/2026-11-16_notepadpp-web-phase2-plan.md`, planning only). The items below are what
 that plan claims, in the order it claims them:
 
-1. **`D1`, `D5` and `D8` are still `Proposed`** — lower-stakes consolidations of choices already
+1. **`D1` and `D8` are still `Proposed`** — lower-stakes consolidations of choices already
    implied by accepted decisions. **D8 is now fully exercised**: Task 4 built its IndexedDB-for-handles
    half (`src/file/recent-files.ts`) and Task 7 the rest (session and preferences in IndexedDB, the
-   bodies of unsaved documents in OPFS `backup/`). Only the user moves a `D` decision.
+   bodies of unsaved documents in OPFS `backup/`). Only the user moves a `D` decision. **~~D5~~ was
+   amended and accepted by the user on 2026-11-17**, so it is off this list; what remains open for it
+   is scheduling, not scope.
 2. **Dark Mode is done (phase-2 Task 10); Task 11 is the next unit of work.** It is the encoding
    spike: which of N++'s encodings are genuinely missing, and whether a byte table covers them or
    WebAssembly is really needed (D10 called for WASM, but that was a priority, not a measurement).
@@ -1483,9 +1536,15 @@ that plan claims, in the order it claims them:
 6. **The single portable HTML file is not shipped, by measurement** (Task 8): fusing the graph costs
    1 699.9 kB up front and a `file://` open loses OPFS, service-worker registration and the pickers.
    `docs/offline-pwa.md` has the numbers, so re-opening the idea starts from evidence.
+7. **The plugin host is decided and scheduled, not built.** D5 closed 2026-11-17; the assessment and
+   the P0–P8 breakdown are in `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md` and
+   the design is written down in `docs/plugins.md`. P1–P8 wait until after phase-2 Task 22 by the
+   user's scheduling, so nothing in `src/` mentions plugins yet — and P1 (the loader spike) is the
+   gate on the rest, because it measures the three things the design must not assume: blob-loaded
+   `import()`, one CodeMirror instance shared with the plugin, and teardown in both panes.
 
 Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~~ · ~~D9~~ (2026-10-06) ·
-~~D12~~ (2026-10-12).
+~~D12~~ (2026-10-12) · ~~D5~~ (2026-11-17, as amended).
 
 ## Definition of done for the whole project
 

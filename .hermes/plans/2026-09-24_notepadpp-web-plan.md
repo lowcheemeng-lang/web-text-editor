@@ -74,9 +74,11 @@ absent, not from a device check.
 
 **Verification:** `docs/scope.md` reviewed; each feature has a target API or a fallback entry.
 **Outcome:** Complete. Decisions ran D1–D12; all four questions that were open in §10 are now
-resolved (D2, D7, D10, D11). As of 2026-10-06 D6 and D9 are accepted too, and as of 2026-10-12 D12
-(mobile/tablet out) — **D1, D3, D4, D5 and D8 remain proposed, and none of them gates a task now**
-(D3 + D4 gated Task 4, which is done).**
+resolved (D2, D7, D10, D11). D3, D4, D6 and D9 were accepted 2026-10-06 and D12 (mobile/tablet out)
+2026-10-12. **D5 was amended and accepted by the user on 2026-11-17** — the plugin host is decided
+and scheduled after phase-2 Task 22 (assessment:
+`.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`, design: `docs/plugins.md`).
+**D1 and D8 remain proposed, and neither gates a task now** (D3 + D4 gated Task 4, which is done).**
 
 ---
 

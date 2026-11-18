@@ -5,8 +5,10 @@
 MVP), all user-confirmed 2026-09-25; **D6 (transaction record/replay macros)** and **D9 (22 official
 packages + 103 legacy-modes)** confirmed 2026-10-06; **D3 (Tier A file I/O only)** and **D4 (WHATWG
 encoding set, explicit warning for the rest)** also confirmed 2026-10-06; **D12 (mobile/tablet out of
-the MVP)** confirmed 2026-10-12.
-D1, D5, D8 remain proposed.
+the MVP)** confirmed 2026-10-12; **D5 (plugin mechanism)** confirmed **2026-11-17, as amended** —
+trusted in-page ES modules, one module file per plugin, installed from a local file, **no sandbox
+claim** (see §3's D5 row and `docs/plugins.md`).
+D1, D8 remain proposed.
 **Reference target:** Notepad++ 8.9.8 (Scintilla-based, C++/Win32, GPL).
 **Verified on:** 2026-09-25. Source links in [Sources](#sources).
 
@@ -29,7 +31,11 @@ Two questions drive almost every scoping call:
 
 - Not a 1:1 port of Notepad++/Scintilla. Behaviour is *aligned*, not identical.
 - No backend, no server-side rendering, no cloud sync in the MVP.
-- No native plugin (`.dll` / Plugin Admin) compatibility — see §5.
+- No native plugin (`.dll` / Plugin Admin) compatibility — see §5. No remote plugin catalogue and no
+  auto-update either (D1: there is no backend to ask), so "Plugin Admin" has no equivalent here; what
+  exists is a manager for plugins the user already has as files.
+- No sandboxed plugins. A v1 plugin is an in-page ES module and holds the page's privileges (D5);
+  the install dialog states that rather than implying a boundary the mechanism does not draw.
 - Windows-only integration (registry, shell context menu, GPG release flow) is out of scope.
 
 ## 3. Decisions
@@ -44,7 +50,7 @@ See the decision log in `PROGRESS.md`, which is the authority on status.
 | **D2** | **Editor core: CodeMirror 6** (not Monaco). | Monaco is monolithically loaded (no lazy loading) and Replit measured it at 51.17 MB raw / 5.01 MB gzip vs CM6 + all languages at 8.23 MB raw / 1.26 MB gzip. CM6 is modular, its syntax tree powers Function List and folding for free, and `StreamLanguage` lets us build runtime-defined tokenizers — the only credible path to UDL parity. Monaco's minimap is the one thing we lose; a canvas minimap is a Tier-3 substitute. |
 | **D3** | **Two-tier file I/O, capability-detected at runtime.** Tier A (Chromium): File System Access pickers, real in-place save. Tier B (Firefox/Safari/iOS): `<input type=file>` read + Blob download write, with OPFS as the editable home. | Pickers are Chromium-only and Mozilla's standards position is formally *harmful*, so a single-API implementation would exclude ~30% of users. **Narrowed by D11:** the MVP implements Tier A only; the Tier B/C fallback I/O moves to phase 2. The feature-detection *principle* survives as the thin capability check in Task 4 (S4). |
 | **D4** | **Encoding: what the Encoding API gives us, and be honest about the rest.** | The WHATWG label list is fixed; UTF-32 and DOS/IBM codepages are absent. See §6. **Split by D10:** the MVP ships the WHATWG label set; the WASM half (UTF-32, DOS codepages) is the scheduled phase-3 priority. |
-| **D5** | **"Plugins" = runtime-loaded ES modules** against a documented host API, plus WASM. No native ABI. | The only backend-free option. Chromium can load them from a user-picked local folder; elsewhere, paste-source install. |
+| **D5** | **"Plugins" = runtime-loaded ES modules** against a documented host API. No native ABI. **Amended and accepted 2026-11-17:** one ES module *file* per plugin (this port's analogue of one DLL); installed from a local file the user selects, stored as source text in IndexedDB, loaded with `import()` of a blob URL; **no remote catalogue and no auto-update** (D1); **no sandbox claim** — an in-page module holds the page's privileges, so the install dialog states that plainly instead of pretending otherwise. WASM stays available to a plugin (it may instantiate bytes itself) but v1 defines no WASM contract. | The only backend-free option. The original wording's two mechanisms are corrected by measurement rather than by taste: a *folder* pick needs the File System Access picker, which cannot be driven by a check (Task 4's real-chooser script is the proof of that cost) and does not exist outside Chromium, while a plain `<input type=file>` works everywhere the app runs and is automatable; and "sandboxed" cannot be honoured by a module that runs in the page — the alternatives (Worker, sandboxed iframe) reduce the API to declarative data and would not be a plugin model in N++'s sense. Full assessment in `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`, API and trust model in `docs/plugins.md`. **Scheduled after phase-2 Task 22** (user, 2026-11-17), because Tasks 11–22 keep changing the extension seams this host would sit on. |
 | **D6** | **Macro recording = editor transaction recording**, not OS input replay. | CM6 exposes every change as a transaction, so record/replay/run-N-times is genuinely feasible without native hooks. |
 | **D7** | **Run/exec features (NppExec-style, external tools) are out of scope.** | Requires a process/shell. Impossible backend-free; would need a desktop wrapper. |
 | **D8** | **Persistence: OPFS for document bodies, IndexedDB for metadata/preferences.** Handles are also storable in IndexedDB, which is what makes Tier A "recent files" work. | OPFS is Baseline widely available (since March 2023) across Chromium/Firefox/Safari. **Both halves are now built** — Task 4 exercised the IndexedDB-for-handles half (`src/file/recent-files.ts`) and Task 7 the rest: the session and the preferences in IndexedDB, the bodies of unsaved documents in OPFS `backup/` (`src/storage/`). Status stays **Proposed**: only the user moves a `D` decision |
@@ -115,7 +121,13 @@ Tasks 13–19, with the deferred contracts (Tier B/C I/O per D11, print, macros 
 **Below that, unscheduled:**
 
 - **User Defined Language (UDL)** — N++'s UDL2 XML parsed into a CM6 `StreamLanguage`. Keyword lists, comments, operators map cleanly; folder/keyword nesting and delimiters only partially. Best-effort parity, not exact. Ranked below D10.
-- **Plugin host API** — sandboxed ES module loader with a documented `hostAPI` (commands, decorations, panels, dialogs).
+- **Plugin host API** — **D5 accepted 2026-11-17, scheduled after phase-2 Task 22.** Runtime-loaded
+  ES modules (one file per plugin) against a documented host API: commands, toolbar buttons, docked
+  panels, view-level editor decorations, document lifecycle events, dialogs, per-plugin settings.
+  **Not** "sandboxed" — an in-page module holds the page's privileges, and the install dialog says so
+  (the word in this row's original wording was a promise the mechanism cannot keep). v1 limits, the
+  API surface and the Notepad++ mapping are in `docs/plugins.md`; the assessment and task breakdown
+  are in `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`.
 - **Column sort dialog, advanced regex helpers, spellcheck integration.**
 - **Compare / diff two open documents** — `@codemirror/merge`; pure JS, no backend needed.
 
@@ -228,12 +240,18 @@ The MVP is done when, in **Chrome/Chromium on a desktop OS** (D11; devices are o
 
 ## 10. Resolved decisions (history — was "open questions")
 
-All four original open questions are now closed. Kept for the audit trail.
+Five decisions have now been closed — the four original questions, and D5 later. Kept for the audit
+trail.
 
 1. ~~Confirm D2 (CodeMirror 6 over Monaco)~~ — **RESOLVED 2026-09-25: accepted.** Analysis in `docs/editor-core-decision.md`.
 2. ~~Confirm D7 — Run/exec and native plugins permanently out~~ — **RESOLVED 2026-09-25: accepted.**
 3. ~~Tier 3 priority — UDL, or encoding/large-file handling?~~ — **RESOLVED 2026-09-25: encoding + large-file mode, recorded as D10.** UDL ranks below it.
 4. ~~Firefox/Safari in the MVP acceptance gate, or Chromium-only first?~~ — **RESOLVED 2026-09-25: Chromium only, recorded as D11.** Non-Chromium support moves to phase 2.
+5. ~~D5 — the plugin mechanism (ES modules + WASM, no native ABI)~~ — **RESOLVED 2026-11-17: accepted as amended.** Trusted in-page ES modules, one file per plugin, local-file install, IndexedDB
+   storage, blob-URL import; "sandboxed" and "folder install" dropped from the wording, WASM left
+   without a v1 contract. Scheduled after phase-2 Task 22. Assessment:
+   `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`; API and trust model:
+   `docs/plugins.md`.
 
 ## Sources
 

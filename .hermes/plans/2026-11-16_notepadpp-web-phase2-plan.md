@@ -46,9 +46,14 @@ IndexedDB, File System Access (Tier A only until Task 20).
 | Tier 2 | print | degraded vs N++ (R4); needs a print stylesheet | **21** |
 | D6, unbuilt | **macros** (transaction record/replay) | accepted as the mechanism, never scheduled | **22** |
 
-**Not claimed here** (Tier 3, still unscheduled, still out): UDL, plugin host API, Compare/diff,
-column-sort dialog, spellcheck, and the whole "impossible backend-free" table (D7). D1, D5 and D8
-stay `Proposed` and need the user, not a task; D5 only matters if the plugin host is ever taken.
+**Not claimed here** (Tier 3, still unscheduled, still out): UDL, Compare/diff, column-sort dialog,
+spellcheck, and the whole "impossible backend-free" table (D7). **The plugin host is the exception:
+D5 was amended and accepted by the user on 2026-11-17 and the work is scheduled immediately after
+this plan's Task 22** — tasks P0–P8 in
+`.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`, design in `docs/plugins.md`. It
+is not claimed here because nothing in Tasks 10–22 depends on it, and Tasks 11–22 keep changing the
+seams it would sit on (`notepadpp-config.ts`'s compartments, the chrome, the storage layer). D1 and
+D8 stay `Proposed` and need the user, not a task.
 
 ## Ordering rules
 
@@ -440,8 +445,9 @@ wrong, the correct move is the R2/S5 move: record the measurement and change the
 
 ## Open questions this plan does **not** answer
 
-- **D1, D5, D8** stay `Proposed`. D8 is fully exercised; D1/D5 only bite if a desktop wrapper or the
-  plugin host is ever taken (Tier 3, unscheduled).
+- **D1, D8** stay `Proposed`. D8 is fully exercised; D1 only bites if a desktop wrapper is ever taken.
+  **D5 closed 2026-11-17** (amended and accepted by the user) and its build is scheduled after this
+  plan's Task 22 — see `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`.
 - **A real Firefox/Safari run** for Task 20 cannot be done in this environment (Chrome via Playwright
   only). The task ships the fallback and states that limit, rather than implying it was measured.
 - **WASM vs JS for encoding** is deliberately left to Task 11's spike, because D10's "WASM encoders"
