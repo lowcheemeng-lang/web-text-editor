@@ -6,5 +6,7 @@ coverage/
 *.local
 .DS_Store
 .hermes/cache/
+.server.*.pid
+.server.*.log
 .hermes/logs/
 .hermes/tmp/
