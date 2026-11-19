@@ -1593,6 +1593,13 @@ the bar now carries six titles, with Plugins after Settings as in N++).
 matches *nothing* — the shortcut showed in the menu and did nothing until `toKeymapKey()` converted
 it to `Ctrl-Alt-u`; and the first menu placement (between Language and Settings) split the pair
 `verify-task9.py` pins, so Plugins moved to N++'s own late position.
+**Build cost, measured (and explained):** `index` 118.95 → **138.21 kB raw / 36.40 → 42.58 kB gz**;
+`editor-core` 335.26 → **380.99 kB raw / 109.14 → 123.15 kB gz**. The editor-core jump is *not*
+plugin code: `cm.ts` imports the five CodeMirror namespaces, and a namespace import defeats
+tree-shaking, so exports the app never used (mostly `@codemirror/search`) now ship. ~20 kB gz total
+against the plan's +10–15 kB estimate. Recorded rather than hidden — curating `ctx.cm` per export is
+the lever if that 14 kB gz ever matters, and the plan's risk table already names the plugin host's
+payload as a cost to watch.
 
 **Deliberately not done**
 - P5–P8: the dock, the manager, the example plugins and the acceptance check. The tree is left green
