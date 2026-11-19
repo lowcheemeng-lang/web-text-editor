@@ -60,6 +60,13 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
+**PAUSED 2026-11-18 at the user's request, with the plugin host at P5.** P0–P5 are DONE and
+committed (`cb2b7de` is the latest); **P6 (Plugin Manager), P7 (examples + production acceptance) and
+P8 (docs close-out) are not started — resume at P6.** Nothing is half-applied: the tree is clean at
+HEAD, typecheck and build are green, and every check in the plugin row was re-run at this HEAD. Note
+for whoever resumes: the only install path today is `window.__workspace.installPlugin(source)`;
+there is **no menu path** until P6 ships the manager dialog.
+
 **Task 10 is DONE (2026-11-16): Notepad++ Dark Mode.** The preference Task 7 stored now has a
 second, real value; the palette is N++'s own (`DarkModeDefault.xml` for the editor,
 `NppDarkMode.cpp` for the chrome), applied live and restored before the first paint. Two checks
@@ -1623,6 +1630,14 @@ typecheck 0; build 0. A screenshot of the dock in the light theme is at
 43.70 kB gz** (the dock); editor-core unchanged. One check-side lesson: a reload with unsaved work
 raises the restore alert, which is modal and silently blocks pointer-driven checks — the check now
 undoes its own edit before reloading and dismisses any alert as a safety net.
+
+**Session 13 — PAUSED 2026-11-18 at the user's request**
+Work stopped cleanly after P5 was committed (`cb2b7de`). No background process is running, no
+temporary edits are on disk, and `git status` is empty. Resume at **P6 — the Plugin Manager dialog**;
+the plan file's header and P6 section are the starting point. Verified at this HEAD: typecheck 0,
+build 0, `verify-plugins-dev.py` 48/48, `test-plugins.mjs` 120/120, `verify-task3.py` 58/58,
+`verify-task9.py` 41/41, `verify-task10.py` 24/24. The user asked to be told when resuming, not to
+have work continue.
 
 ## Blockers / open questions
 
