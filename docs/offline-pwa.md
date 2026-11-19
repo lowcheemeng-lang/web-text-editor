@@ -143,3 +143,13 @@ It does need Chrome for Playwright, Pillow (icon pixel sizes) and tesseract (OCR
 * The service worker is exercised in headless Chrome only. The one behaviour that could differ is
   the browser's own cache bookkeeping in measurement 6, which is why the app promises the outcome
   and not the mechanism.
+
+## Plugins and the cache
+
+A plugin's source lives in IndexedDB (the `plugins` store, DB version 3), never in the build, so a
+plugin is offline by construction: install it while online and it loads with the network gone. Plugin
+code is not part of the precache and never will be — it is imported from a `blob:` URL, which the
+worker never sees, so `scripts/check-precache.mjs`'s shell count does not move because of plugins.
+There is also no cache-versioning question when a plugin is updated: the stored source text changes,
+and the next enable imports a fresh module. `scripts/verify-task-plugins.py` proves the outcome the
+hard way — it stops its server, reloads, and runs a plugin command.

@@ -11,6 +11,7 @@ Built with [Vite](https://vitejs.dev), TypeScript and [CodeMirror 6](https://cod
 - **140 languages** — syntax highlighting with N++'s own token colours, auto-detection from filename/extension/shebang, and a Language menu grouped A–Z under first-letter submenus just like the original.
 - **Session persistence & preferences** — unsaved buffers, dirty files, caret, folds, bookmarks, language choices and preferences are restored after a reload from IndexedDB; a Preferences dialog covers the usual knobs.
 - **Dark Mode** — faithful to Notepad++'s own dark theme (`DarkModeDefault.xml` for the editor, `NppDarkMode.cpp` for the chrome), applied live and with no white flash on reload.
+- **Plugins** — Notepad++'s plugin menu without the DLLs: install one `.js` module from the Plugin Manager, and it can add commands, shortcuts, toolbar buttons, a docked panel and editor decorations. Sources live in IndexedDB, so plugins work offline; there is no remote catalogue and no sandbox — the manager says so before you pick a file. Five worked examples in `plugins/examples/`.
 - **Installable & offline (PWA)** — installable as a standalone window; once loaded it works with no network at all, and edits still save through to your files.
 
 ## Getting started
@@ -46,9 +47,11 @@ src/
   file/        File System Access + OPFS file I/O, recent files
   languages/   language registry, detection, highlighting, N++ token colours
   search/      find/replace dialog, bookmarks
+  plugins/     plugin host: API types, registry, loader, dock, manager dialog
   storage/     IndexedDB helpers, session store, backup store, preferences
   platform/    capability detection
   pwa/         service worker registration
+plugins/       the plugin author's guide and five worked examples
 public/        manifest + icons
 scripts/       verification harnesses (browser-driven) and unit-style Node tests
 docs/          design decisions: scope, editor core, session persistence, offline/PWA
@@ -66,7 +69,7 @@ PROGRESS.md    task-by-task ledger with the evidence behind every claim
 
 ## Status
 
-All 10 planned tasks are done: editor core, file operations, search/replace, languages, session persistence, PWA/offline, the Language menu, and dark mode — each verified end-to-end by the harnesses in `scripts/`. Phase 2 items are tracked in `PROGRESS.md`.
+All 10 planned tasks are done: editor core, file operations, search/replace, languages, session persistence, PWA/offline, the Language menu, and dark mode — each verified end-to-end by the harnesses in `scripts/`. The plugin host (D5) was built as P0–P8 afterwards and is shipped too. Phase 2 items are tracked in `PROGRESS.md`.
 
 ## License
 

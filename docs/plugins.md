@@ -1,15 +1,11 @@
 # Plugins — host API, trust model, and limits
 
-**Status: P0–P7 ARE BUILT; ONLY THE DOCUMENTATION CLOSE-OUT (P8) IS LEFT.** D5 was accepted as
-amended on **2026-11-17**. What exists in the app today: the Plugins menu, plugin commands and
-shortcuts, toolbar buttons, document events, the right-hand dock for panels, and the Plugin Manager
-(install from a `.js` file, drag-and-drop or paste; enable, disable, reload, uninstall; per-plugin
-error text; `?plugins=off` recovery). Five example plugins live in `plugins/examples/`, and
-`scripts/verify-task-plugins.py` is the end-to-end evidence — **63/63** against a production build,
-including an offline reload with the server stopped. `plugins/README.md` is the author's guide.
-
-When a task lands, its section gains a **shipped / planned** marker and the check that proves it, the
-way `docs/session-persistence.md` and `docs/offline-pwa.md` do.
+**Status: SHIPPED — P0–P8, 2026-11-19.** D5 was accepted as amended on **2026-11-17**, and the host
+was built ahead of the Task-22 slot at the user's direction. Everything in this file describes
+shipped behaviour unless a section says otherwise. The author's guide is `plugins/README.md`; the
+evidence is `scripts/verify-task-plugins.py` (**63/63**, production build) and
+`scripts/verify-plugins-dev.py` (**75/75**, dev server), plus `scripts/test-plugins.mjs` (**120/120**,
+Node). The five examples live in `plugins/examples/`.
 
 ---
 
@@ -49,9 +45,11 @@ makes explicit what N++ leaves implicit:
 - A plugin that throws is contained: activation, commands and event handlers are each wrapped, the
   error is recorded against that plugin, and the editor keeps working.
 - `?plugins=off` starts the app with every plugin skipped — the escape hatch when a plugin is broken.
-- The manager can disable or uninstall a plugin at any time. Disabling disposes everything it
-  registered and calls its `deactivate()`; it does **not** unload the module from the JS engine, and
-  the manager says so rather than implying more. A reload clears it.
+  The manager still opens in that mode so the bad plugin can be disabled or removed, but it will not
+  start one: a plugin enabled from there would defeat the flag.
+- The manager can disable or uninstall a plugin at any time. Disabling runs the cleanup function
+  `activate` returned, disposes every registration and revokes the blob URL; it does **not** unload
+  the module from the JS engine, and the manager says so rather than implying more. A reload clears it.
 
 Alternatives considered and rejected for v1, with the reason, are in the plan's appendix: a Worker
 (no DOM, so no panels and no decorations) and a sandboxed iframe (message-passing only, which would
@@ -76,10 +74,10 @@ that can offer an API comparable to Notepad++'s, which is the goal.
 - **One API version.** `apiVersion` must equal the version the app publishes (1 at first release);
   anything else is refused with the supported version named. v1 is additive-only afterwards.
 
-## 4. The host API (design, not yet shipped)
+## 4. The host API (shipped)
 
-`activate(ctx)` receives a `PluginContext`. The full type will live in `src/plugins/api.ts`; the
-surface is:
+`activate(ctx)` receives a `PluginContext`. The authoritative type is `src/plugins/api.ts`; the
+context factory is `src/plugins/host.ts`, and it is deliberately thin. The surface is:
 
 | Member | What it does | N++ equivalent |
 |---|---|---|
@@ -103,6 +101,41 @@ CM6 comes from `ctx.cm`.
 disabling a plugin disposes all of it. This is what makes disable/uninstall/reload trustworthy rather
 than leaky.
 
+### Lifecycle
+
+```
+ Manager ▸ Install from file…                         page load / reload
+          │                                                  │
+          ▼                                                  ▼
+   source text ──► validate ──► import() once        for each enabled record
+          │      id / version / apiVersion                  │
+          │      (top-level code runs here)                 │
+          ▼                                                 ▼
+   IndexedDB "plugins" ───────────────────────────► import() from a fresh blob URL
+          │                                                 │
+          │                                                 ▼
+          │                                     activate(ctx)   (1.5 s deadline)
+          │                                       ├─ register commands / buttons /
+          │                                       │  panels / view extensions
+          │                                       ├─ subscribe to document events
+          │                                       └─ return an optional cleanup fn
+          │                                                 │
+          └─ disable / uninstall ──► cleanup() + dispose every registration + revoke URL
+```
+
+A fresh blob URL on every enable is what makes an edited plugin take effect on **Reload**, and a
+reload of the page is the only thing that clears a disabled plugin's code from the JS engine.
+
+### What has been measured
+
+| Check | Result | What it covers |
+|---|---|---|
+| `scripts/spike-plugin-host.py` | 37/37 | blob import in dev and production (worker-controlled), CM6 singleton, both panes, teardown, broken plugin contained, no off-origin request |
+| `scripts/test-plugins.mjs` | 120/120 | validation, shortcuts in both notations, conflicts, store, registry, loader, the one-panel rule |
+| `scripts/verify-plugins-dev.py` | 75/75 | the real UI in dev: menu, commands, shortcut, toolbar, dock, manager, errors, recovery mode |
+| `scripts/verify-task-plugins.py` | 63/63 | production build, end to end, including an offline reload with the server stopped |
+| Payload | index 118.95 → **148.69 kB** raw / 36.40 → **45.39 kB gz**; `editor-core` 335.26 → **380.99 kB** raw / 109.14 → **123.15 kB gz** | the host itself. The `editor-core` growth is `src/plugins/cm.ts`'s namespace imports defeating tree-shaking, not plugin code — recorded rather than hidden |
+
 ## 5. Porting an N++ plugin, honestly
 
 There is no mechanical route: a plugin written against `PluginInterface.h` and Scintilla messages has
@@ -110,12 +143,36 @@ to be rewritten against the host API, line by line, by a person. The mapping in 
 for that rewrite. What survives the rewrite is the plugin's *logic* (a Base64 codec, a JSON formatter,
 a line sorter); what does not is its plumbing (Win32 handles, `messageProc`, Scintilla markers).
 
-## 6. Install, storage, lifecycle (design)
+A worked example — N++'s Base64 plugin, reduced to its two operations:
 
-- **Install:** the user selects a `.js` file (or pastes source). The app reads the text, caps it at
-  512 KB, imports it to read its metadata, validates `id` / `version` / `apiVersion`, then stores a
-  record in a `plugins` IndexedDB store (DB version 3, additive upgrade per `storage/idb.ts`'s rule)
-  and activates it.
+| N++ | Here |
+|---|---|
+| `SCI_GETSELECTIONSTART` / `SCI_GETSELECTIONEND` | `ctx.editor.selections()` → `{ from, to, head, anchor }` per selection |
+| `SCI_GETSELTEXT` | `ctx.editor.replaceSelections((text) => …)` hands you the selected text |
+| `SCI_REPLACESEL` in a `SCI_BEGINUNDOACTION` / `SCI_ENDUNDOACTION` pair | the same `replaceSelections`, which performs **one** transaction — Ctrl+Z takes the whole edit back (pinned by the acceptance check) |
+| `_pEditView->getCurrentBufferID()` + `NPPM_GETFULLCURRENTPATH` | `ctx.editor.active()` gives `{ id, name, fileName, dirty, … }` |
+| `NPPM_SETSTATUSBAR` for the result | `ctx.ui.notice("Base64", …)` |
+| `FuncItem` with `_pFunc` and `_pShKey` | `ctx.commands.register({ id, label, shortcut, run })` |
+| drawing a panel with `NPPM_DMM_*` | `ctx.panels.register({ id, title, render, onShow, onHide })` |
+
+Two traps worth knowing before writing the rest:
+
+1. **Tag the editor with a data attribute, not a class.** A `ViewPlugin` receives the view; CodeMirror
+   owns `view.dom.className` and rewrites it when it applies theme classes, so an added class can
+   vanish from a freshly mounted split pane. `plugins/examples/probe.js` does it the durable way.
+2. **`ViewPlugin.destroy()` takes no argument.** Keep the view from the constructor if teardown needs
+   it; the first version of the probe example assumed otherwise and CodeMirror logged a crash.
+
+`plugins/examples/` is the template to copy: `probe.js` for extensions, `base64.js` for edits,
+`word-count.js` for a docked panel, `json-format.js` for the refusal path.
+
+## 6. Install, storage, lifecycle (shipped)
+
+- **Install:** the user selects one `.js` file (or drops it, or pastes source). The app reads the
+  text, caps it at 512 KB, imports it to read its metadata, validates `id` / `version` / `apiVersion`,
+  then stores a record in a `plugins` IndexedDB store (DB version 3, additive upgrade per
+  `storage/idb.ts`'s rule) and activates it. At most 100 plugins; installing a plugin with an id that
+  already exists is an **update**, not a duplicate row.
 - **Persist:** source text plus metadata plus `enabled` plus `lastError` live in IndexedDB, so a
   plugin is available offline by construction. Plugin code is **never** part of the service worker's
   precache — it does not come from a URL the worker sees, and `scripts/check-precache.mjs`'s shell
@@ -129,8 +186,11 @@ a line sorter); what does not is its plumbing (Win32 handles, `messageProc`, Sci
 
 ## 7. Open items this file does not settle
 
-- **Multi-file packages** (service-worker virtual origin) — a later task, and only if a real plugin
-  needs one.
+- **Whether examples ship bundled** — decided: repo-only, installed through the manager. Shipping a
+  "load the examples" button would put plugin source in the build, which the precache rules and the
+  trust model both want to keep out of it.
+- **Multi-file packages** (service-worker virtual origin) — deferred, and only if a real plugin needs
+  one. The loader's blob import cannot resolve relative specifiers between files.
 - **Document-level state for plugins** — needs the split-view reconciliation designed first, not
   bolted on.
 - **A WASM contract** — available to a plugin today (it can instantiate bytes), unspecified as a host

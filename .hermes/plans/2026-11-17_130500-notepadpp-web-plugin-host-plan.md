@@ -11,10 +11,11 @@
 > paste; enable, disable, reload, uninstall; errors; `?plugins=off` recovery), same script →
 > **75/75** — and **P7 is DONE**: the five examples, `plugins/README.md` and
 > `scripts/verify-task-plugins.py` → **63/63** against a production build (install, both panes, undo,
-> disable, reload, recovery mode, offline reload with the server stopped). **P8 (docs and ledger
-> close-out) is next.**
+> disable, reload, recovery mode, offline reload with the server stopped). **P8 is DONE too** — the
+> docs and ledger close-out — so **the plan is complete**.
 >
-> **For Hermes:** P1–P7 are done; continue at **P8 (docs and ledger)**. Work one task per
+> **For Hermes:** all tasks are done. Future work on plugins starts from `docs/plugins.md` and
+> `plugins/README.md`, not from this plan. Work one task per
 > session with a reproducible check, appending a row to `PROGRESS.md` — the project's standing rules
 > (S1–S18) apply unchanged. Do not build around a spike result: if a later measurement contradicts
 > the design, record the measurement and amend this plan, the way R2 produced S5.
@@ -783,7 +784,7 @@ the build is byte-identical to P6's (`index-e52qIhza.js`, 148.69 kB / 45.39 kB g
 
 ---
 
-### Task P8 — Documentation and ledger
+### Task P8 — Documentation and ledger — **DONE 2026-11-19**
 
 **Files:**
 - Modify: `docs/plugins.md` — complete API reference, lifecycle diagram, trust model, N++ mapping
@@ -800,6 +801,17 @@ the build is byte-identical to P6's (`index-e52qIhza.js`, 148.69 kB / 45.39 kB g
 below re-run green.
 
 **Commit:** `task-P8: document the plugin host`
+
+**Result (2026-11-19).** `docs/plugins.md` is now the shipped reference: status, §2's disable wording
+corrected (`activate`'s cleanup, not a non-existent `deactivate`), the `?plugins=off` behaviour stated,
+§4 marked shipped with a lifecycle diagram and a measured-results table, §5 gained a worked
+Base64 mapping from Scintilla calls and the two traps the acceptance check found, §6 carries the real
+caps (512 KB source, 100 plugins, 64 KB settings), §7 records the examples decision (repo-only).
+`README.md` gained a feature bullet, `src/plugins/` and `plugins/` in the layout, and the docs link;
+`docs/scope.md`'s Tier-3 row is marked built with its limits; `docs/offline-pwa.md` explains why
+plugins are offline by construction; `PROGRESS.md` has a Status-board row 11 with the commands and
+their results, and `node scripts/status.mjs` prints **11/11 done (100%)**. Verified: `status.mjs` exit
+0 with the row shown; all P7 and regression numbers stand (no source changed in P8).
 
 ---
 

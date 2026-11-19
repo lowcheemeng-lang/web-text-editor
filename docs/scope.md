@@ -121,13 +121,17 @@ Tasks 13–19, with the deferred contracts (Tier B/C I/O per D11, print, macros 
 **Below that, unscheduled:**
 
 - **User Defined Language (UDL)** — N++'s UDL2 XML parsed into a CM6 `StreamLanguage`. Keyword lists, comments, operators map cleanly; folder/keyword nesting and delimiters only partially. Best-effort parity, not exact. Ranked below D10.
-- **Plugin host API** — **D5 accepted 2026-11-17, scheduled after phase-2 Task 22.** Runtime-loaded
-  ES modules (one file per plugin) against a documented host API: commands, toolbar buttons, docked
-  panels, view-level editor decorations, document lifecycle events, dialogs, per-plugin settings.
-  **Not** "sandboxed" — an in-page module holds the page's privileges, and the install dialog says so
-  (the word in this row's original wording was a promise the mechanism cannot keep). v1 limits, the
-  API surface and the Notepad++ mapping are in `docs/plugins.md`; the assessment and task breakdown
-  are in `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`.
+- **Plugin host API** — **BUILT 2026-11-19 (P0–P7), ahead of the Task-22 slot at the user's
+  direction.** Runtime-loaded ES modules (one file per plugin) against a documented host API:
+  commands, toolbar buttons, docked panels, view-level editor decorations, document lifecycle events,
+  dialogs, per-plugin settings. **Not** "sandboxed" — an in-page module holds the page's privileges,
+  and the manager says so before the picker opens (the word in this row's original wording was a
+  promise the mechanism cannot keep). **Limits:** one module per plugin (no multi-file packages), no
+  remote catalogue or auto-update, view-level CodeMirror extensions only, no native code, no
+  cross-plugin messaging. API, trust model and the N++ mapping are in `docs/plugins.md`; the author's
+  guide is `plugins/README.md`; the evidence is `scripts/verify-task-plugins.py` (63/63, production
+  build) and `scripts/verify-plugins-dev.py` (75/75). The build plan is
+  `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`.
 - **Column sort dialog, advanced regex helpers, spellcheck integration.**
 - **Compare / diff two open documents** — `@codemirror/merge`; pure JS, no backend needed.
 
