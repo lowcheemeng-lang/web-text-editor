@@ -60,12 +60,10 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**PAUSED 2026-11-18 at the user's request, with the plugin host at P5.** P0–P5 are DONE and
-committed (`cb2b7de` is the latest); **P6 (Plugin Manager), P7 (examples + production acceptance) and
-P8 (docs close-out) are not started — resume at P6.** Nothing is half-applied: the tree is clean at
-HEAD, typecheck and build are green, and every check in the plugin row was re-run at this HEAD. Note
-for whoever resumes: the only install path today is `window.__workspace.installPlugin(source)`;
-there is **no menu path** until P6 ships the manager dialog.
+**The plugin host is at P6 — the Plugin Manager — and the tree is green at this HEAD.** P0–P6 are
+DONE; **P7 (example plugins + the production acceptance check) is next**, then P8 (docs close-out).
+Installation now has a menu path: **Plugins ▸ Plugin Manager…** (file, drop or paste); the console
+facade is still there for the checks.
 
 **Task 10 is DONE (2026-11-16): Notepad++ Dark Mode.** The preference Task 7 stored now has a
 second, real value; the palette is N++'s own (`DarkModeDefault.xml` for the editor,
@@ -104,7 +102,12 @@ node --experimental-strip-types scripts/test-themes.mjs           # the tables +
    **P5 (the dock) is DONE:** `scripts/verify-plugins-dev.py` → **PASS (48/48)** — a panel's command
    opens the right-hand dock, two panels switch by tab with one body mounted, the panel follows edits,
    closing hides it, the last panel and the width survive a reload, the splitter cannot squeeze it
-   away, Dark Mode reaches it, and disabling closes it. **P6 — the Plugin Manager dialog — is next.**
+   away, Dark Mode reaches it, and disabling closes it. **P6 (the Plugin Manager) is DONE:** same
+   script → **PASS (75/75)** — open manager, install from paste and from a `.js` file, enable, disable,
+   reload, uninstall with a confirm step, a failed row with its error, an app-shortcut conflict refused
+   with the reason, a startup failure that raises a notice with an "Open Plugin Manager" action, and
+   `?plugins=off` recovery mode. **P7 — example plugins and the production acceptance check — is
+   next.**
 
 **Nothing is blocking, and no task needs the user for scope.** `D1` and `D8` remain `Proposed`
 — low-stakes consolidations of choices already implied by accepted decisions, and `D8` is now fully
@@ -1631,13 +1634,34 @@ typecheck 0; build 0. A screenshot of the dock in the light theme is at
 raises the restore alert, which is modal and silently blocks pointer-driven checks — the check now
 undoes its own edit before reloading and dismisses any alert as a safety net.
 
-**Session 13 — PAUSED 2026-11-18 at the user's request**
-Work stopped cleanly after P5 was committed (`cb2b7de`). No background process is running, no
-temporary edits are on disk, and `git status` is empty. Resume at **P6 — the Plugin Manager dialog**;
-the plan file's header and P6 section are the starting point. Verified at this HEAD: typecheck 0,
-build 0, `verify-plugins-dev.py` 48/48, `test-plugins.mjs` 120/120, `verify-task3.py` 58/58,
-`verify-task9.py` 41/41, `verify-task10.py` 24/24. The user asked to be told when resuming, not to
-have work continue.
+**P6 — the Plugin Manager (PASS 75/75 in the browser)**
+`src/plugins/manager-dialog.ts` — N++'s Plugin Admin without the catalogue: the installed list with
+enabled/disabled/failed pills and the stored error, Enable/Disable/Reload, a two-step Uninstall (the
+row asks "Remove X? [Yes] [No]" rather than opening a modal on a modal), and three install paths —
+the file picker, drag-and-drop, and paste — under the trust sentence, which is stated *before* any
+picker. `Plugins ▸ Plugin Manager…` is the menu's permanent entry, and a plugin that fails at startup
+now raises a notice with an **Open Plugin Manager** action. The manager is fed the same facade the
+console uses; it never touches the loader.
+**Two defects measured.** (a) `enable()` never wrote `enabled: true` back to the record — a plugin
+re-enabled in the manager ran, but the row still said "Enable" and it would not have come back on
+reload; found by the check, fixed in `loader.ts`. (b) `?plugins=off` did not stop `install()`/`enable()`:
+the manager's install section is now absent in recovery mode, Enable is refused with the reason, and
+Disable/Uninstall still work — a deliberate narrowing of the plan's step 5 ("can re-enable"), because
+starting a plugin while the recovery flag is on defeats the flag.
+**Check-infra fix:** `verify-task9.py` waited a fixed 180 ms for the Language submenu; run directly
+after `verify-task3.py` it missed under load (seen twice, passed alone). It now polls for the popup
+instead of sleeping — re-run back-to-back twice, 58/58 and 41/41 both times.
+Regressions at HEAD: `test-plugins.mjs` 120/120; `verify-task3.py` 58/58; `verify-task9.py` 41/41;
+`verify-task10.py` 24/24; typecheck 0; build 0. **Build:** index 142.39 → **148.69 kB raw / 44.98 kB
+gz** (the manager); editor-core unchanged. Screenshots: `.hermes/cache/screenshots/plugin-manager-light.png`
+and `plugin-manager-dark.png`.
+
+**Session 13 — paused at P5, resumed the same day**
+The user paused the build after P5 (`cb2b7de`) and asked to be told when to resume. They said
+"resume"; P6 was built in the next turn, so the pause row above is historical rather than current.
+Verified at that pause point: typecheck 0, build 0, `verify-plugins-dev.py` 48/48,
+`test-plugins.mjs` 120/120, `verify-task3.py` 58/58, `verify-task9.py` 41/41,
+`verify-task10.py` 24/24.
 
 ## Blockers / open questions
 

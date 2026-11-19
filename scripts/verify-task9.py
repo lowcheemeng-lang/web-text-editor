@@ -174,19 +174,25 @@ with sync_playwright() as p:
     def open_menu(label: str = "Language") -> dict:
         away_from_menus()
         page.hover(f".npp-menu-title:has-text('{label}')")
-        page.wait_for_timeout(300)  # 140 ms hover delay, then the popup renders
-        menu = page.evaluate(MENU)
-        if menu is None:
-            raise AssertionError(f"the {label} menu did not open on hover")
-        return menu
+        # Wait for the popup rather than for a fixed delay: under load the 140 ms
+        # hover delay plus a render can exceed any sleep short enough to keep the
+        # script quick, and this check was observed to miss it when run directly
+        # after another browser suite on the same dev server.
+        for _ in range(30):
+            menu = page.evaluate(MENU)
+            if menu is not None:
+                return menu
+            page.wait_for_timeout(50)
+        raise AssertionError(f"the {label} menu did not open on hover")
 
     def hover_group(letter: str) -> dict:
         page.hover(f"[data-menu-item='lang-group-{letter.lower()}']")
-        page.wait_for_timeout(180)
-        submenu = page.evaluate(SUBMENU)
-        if submenu is None:
-            raise AssertionError(f"the {letter} submenu did not open on hover")
-        return submenu
+        for _ in range(30):
+            submenu = page.evaluate(SUBMENU)
+            if submenu is not None:
+                return submenu
+            page.wait_for_timeout(50)
+        raise AssertionError(f"the {letter} submenu did not open on hover")
 
     def choose(item_id: str) -> None:
         open_menu()

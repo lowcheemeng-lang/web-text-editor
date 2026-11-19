@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SHOT_DIR = ROOT / ".hermes" / "cache" / "screenshots"
 PLUGIN = (ROOT / "scripts" / "fixtures" / "plugin-commands.js").read_text(encoding="utf-8")
 PANEL_PLUGIN = (ROOT / "scripts" / "fixtures" / "plugin-panel.js").read_text(encoding="utf-8")
+BROKEN_PLUGIN = (ROOT / "scripts" / "fixtures" / "plugin-broken.js").read_text(encoding="utf-8")
 
 checks: list[tuple[str, bool, str]] = []
 console: list[str] = []
@@ -241,8 +242,9 @@ def main() -> int:
                 "els => els.map((el) => el.textContent)",
             )
             check(
-                "the menu says there are no plugins",
-                any("no plugins installed" in (label or "") for label in empty_items),
+                "the menu now offers only the Plugin Manager",
+                any("Plugin Manager" in (label or "") for label in empty_items)
+                and not any("Uppercase" in (label or "") for label in empty_items),
                 ", ".join(str(label) for label in empty_items),
             )
             page.click("body")  # close the menu
@@ -454,6 +456,210 @@ def main() -> int:
                 page.eval_on_selector_all(".npp-dock-tab", "els => els.length") == 0,
             )
             page.evaluate("() => window.__workspace.uninstallPlugin('spike.panel')")
+            page.wait_for_timeout(200)
+
+            # ── P6: the Plugin Manager ─────────────────────────────────────────
+            open_plugins_menu(page)
+            page.click('[data-menu-item="plugin-manager"]')
+            page.wait_for_selector('[data-dialog="plugin-manager"]', timeout=5000)
+            check(
+                "Plugins ▸ Plugin Manager… opens the manager",
+                page.is_visible('[data-dialog="plugin-manager"]'),
+            )
+            trust = page.inner_text(".npp-manager-trust")
+            check("the trust model is stated before any picker", "no sandbox" in trust, trust[:70])
+            check(
+                "with nothing installed the manager says so",
+                page.query_selector("[data-plugin-empty]") is not None,
+            )
+
+            page.fill("[data-plugin-source]", PLUGIN)
+            page.click("[data-plugin-install-paste]")
+            page.wait_for_timeout(600)
+            check(
+                "pasted source installs a plugin",
+                page.query_selector('[data-plugin-row="spike.commands"]') is not None,
+            )
+            check(
+                "the row says enabled",
+                page.inner_text('[data-plugin-status="spike.commands"]') == "enabled",
+            )
+            check(
+                "its commands are live",
+                inspect(page).get("plugins", {}).get("commands") == 2,
+            )
+
+            page.click('[data-plugin-row="spike.commands"] [data-plugin-action="disable"]')
+            page.wait_for_timeout(400)
+            check(
+                "Disable in the manager turns the plugin off",
+                page.inner_text('[data-plugin-status="spike.commands"]') == "disabled",
+            )
+            check(
+                "and its commands go with it",
+                inspect(page).get("plugins", {}).get("commands") == 0,
+            )
+
+            page.click('[data-plugin-row="spike.commands"] [data-plugin-action="enable"]')
+            page.wait_for_timeout(400)
+            check(
+                "Enable brings the commands back",
+                inspect(page).get("plugins", {}).get("commands") == 2,
+            )
+            check(
+                "and the row says enabled again",
+                page.inner_text('[data-plugin-status="spike.commands"]') == "enabled",
+            )
+
+            page.click('[data-plugin-row="spike.commands"] [data-plugin-action="reload"]')
+            page.wait_for_timeout(400)
+            check(
+                "Reload restarts it and keeps it enabled",
+                page.inner_text('[data-plugin-status="spike.commands"]') == "enabled"
+                and inspect(page).get("plugins", {}).get("commands") == 2,
+            )
+
+            page.click('[data-plugin-row="spike.commands"] [data-plugin-action="uninstall"]')
+            page.wait_for_timeout(150)
+            check(
+                "Uninstall asks before removing",
+                page.query_selector('[data-plugin-confirm="spike.commands"]') is not None,
+            )
+            page.click('[data-plugin-confirm="spike.commands"]')
+            page.wait_for_timeout(400)
+            check(
+                "confirming removes the plugin and its commands",
+                page.query_selector('[data-plugin-row="spike.commands"]') is None
+                and not inspect(page).get("plugins", {}).get("installed"),
+            )
+
+            page.set_input_files(
+                "[data-plugin-file]", str(ROOT / "scripts" / "fixtures" / "plugin-panel.js")
+            )
+            page.wait_for_timeout(600)
+            check(
+                "a .js file installs through the picker",
+                page.query_selector('[data-plugin-row="spike.panel"]') is not None,
+            )
+
+            conflict = PLUGIN.replace("spike.commands", "spike.conflict").replace(
+                '"Ctrl+Alt+U"', '"Ctrl+S"'
+            )
+            page.fill("[data-plugin-source]", conflict)
+            page.click("[data-plugin-install-paste]")
+            page.wait_for_timeout(600)
+            check(
+                "a plugin that claims an app shortcut is listed as failed",
+                page.inner_text('[data-plugin-status="spike.conflict"]') == "failed",
+            )
+            conflict_error = page.inner_text('[data-plugin-error="spike.conflict"]')
+            check(
+                "and the row names the shortcut",
+                "shortcut" in conflict_error.lower(),
+                conflict_error,
+            )
+            page.click('[data-plugin-row="spike.conflict"] [data-plugin-action="uninstall"]')
+            page.click('[data-plugin-confirm="spike.conflict"]')
+            page.wait_for_timeout(400)
+
+            page.fill("[data-plugin-source]", BROKEN_PLUGIN)
+            page.click("[data-plugin-install-paste]")
+            page.wait_for_timeout(600)
+            check(
+                "a plugin that throws is listed as failed",
+                page.inner_text('[data-plugin-status="spike.broken"]') == "failed",
+            )
+            broken_error = page.inner_text('[data-plugin-error="spike.broken"]')
+            check("the row carries the error", "boom" in broken_error, broken_error)
+
+            SHOT_DIR.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(SHOT_DIR / "plugin-manager-light.png"))
+            page.evaluate("async () => { await window.__workspace.applyPreferences({ theme: 'dark' }); }")
+            page.wait_for_timeout(250)
+            page.screenshot(path=str(SHOT_DIR / "plugin-manager-dark.png"))
+            page.evaluate(
+                "async () => { await window.__workspace.applyPreferences({ theme: 'notepadpp' }); }"
+            )
+            page.wait_for_timeout(150)
+
+            page.click('[data-dialog-action="close"]')
+            page.wait_for_timeout(200)
+
+            before_edit = text(page)
+            page.click(".cm-content")
+            page.keyboard.type("Y")
+            page.wait_for_timeout(200)
+            check(
+                "the app is still editable after a failed plugin",
+                len(text(page)) == len(before_edit) + 1,
+            )
+            page.keyboard.press("Control+z")
+            page.wait_for_timeout(200)
+
+            page.reload(wait_until="load")
+            page.wait_for_selector(".cm-editor", timeout=15000)
+            page.wait_for_timeout(900)
+            dismiss_dialogs(page)
+            check(
+                "a plugin that fails at startup raises a notice",
+                page.query_selector('[data-notice="plugin-failure"]') is not None,
+            )
+            notice_action = page.query_selector('[data-notice-action="plugin-failure"]')
+            check("the notice offers the manager", notice_action is not None)
+            if notice_action is not None:
+                notice_action.click()
+            page.wait_for_timeout(400)
+            check(
+                "the notice opens the manager on the failed plugin",
+                page.is_visible('[data-dialog="plugin-manager"]')
+                and page.query_selector('[data-plugin-row="spike.broken"]') is not None,
+            )
+            page.click('[data-plugin-row="spike.broken"] [data-plugin-action="uninstall"]')
+            page.click('[data-plugin-confirm="spike.broken"]')
+            page.wait_for_timeout(400)
+
+            page.click('[data-plugin-row="spike.panel"] [data-plugin-action="disable"]')
+            page.wait_for_timeout(300)
+            page.click('[data-dialog-action="close"]')
+            page.wait_for_timeout(200)
+
+            # ── recovery mode: ?plugins=off ────────────────────────────────────
+            page.goto(f"http://127.0.0.1:{port}/?plugins=off", wait_until="load")
+            page.wait_for_selector(".cm-editor", timeout=15000)
+            page.wait_for_timeout(700)
+            dismiss_dialogs(page)
+            offline = inspect(page).get("plugins", {})
+            check(
+                "?plugins=off loads nothing",
+                offline.get("skipped") is True and offline.get("active") == [],
+                str(offline.get("active")),
+            )
+            open_plugins_menu(page)
+            page.click('[data-menu-item="plugin-manager"]')
+            page.wait_for_selector('[data-dialog="plugin-manager"]', timeout=5000)
+            check(
+                "the manager still opens in recovery mode",
+                page.query_selector('[data-plugin-disabled-banner]') is not None,
+            )
+            check(
+                "recovery mode offers no install path",
+                page.query_selector("[data-plugin-install]") is None,
+            )
+            enable_button = page.query_selector(
+                '[data-plugin-row="spike.panel"] [data-plugin-action="enable"]'
+            )
+            check(
+                "Enable is refused while the flag is in force",
+                enable_button is not None and enable_button.is_disabled(),
+            )
+            page.click('[data-plugin-row="spike.panel"] [data-plugin-action="uninstall"]')
+            page.click('[data-plugin-confirm="spike.panel"]')
+            page.wait_for_timeout(400)
+            check(
+                "Uninstall still works in recovery mode",
+                page.query_selector('[data-plugin-row="spike.panel"]') is None,
+            )
+            page.click('[data-dialog-action="close"]')
             page.wait_for_timeout(200)
 
             errors = [line for line in console if "error" in line.lower()]

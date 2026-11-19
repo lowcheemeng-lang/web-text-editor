@@ -6,10 +6,12 @@
 > the model/store (`scripts/test-plugins.mjs` → **74/74**, `npm run typecheck` → 0, P2). **P3 is
 > DONE** (`api.ts`, `cm.ts`, `registry.ts`, `loader.ts`, `host.ts`), **P4 is DONE** — the Plugins
 > menu, the plugin compartment in every document state, document events and `inspect().plugins`,
-> `scripts/verify-plugins-dev.py` → **28/28** — and **P5 is DONE**: the right-hand dock for plugin
-> panels, same script → **43/43**. **P6 (the Plugin Manager) is next.** P7–P8 are unstarted.
+> `scripts/verify-plugins-dev.py` → **28/28** — **P5 is DONE**: the right-hand dock for plugin
+> panels, same script → **48/48** — and **P6 is DONE**: the Plugin Manager (install from file, drop or
+> paste; enable, disable, reload, uninstall; errors; `?plugins=off` recovery), same script →
+> **75/75**. **P7 (example plugins + the production acceptance check) is next.** P8 is unstarted.
 >
-> **For Hermes:** P1–P5 are done; continue at **P6 (the Plugin Manager)**. Work one task per
+> **For Hermes:** P1–P6 are done; continue at **P7 (the examples and the acceptance check)**. Work one task per
 > session with a reproducible check, appending a row to `PROGRESS.md` — the project's standing rules
 > (S1–S18) apply unchanged. Do not build around a spike result: if a later measurement contradicts
 > the design, record the measurement and amend this plan, the way R2 produced S5.
@@ -663,7 +665,7 @@ disabling closes it. `test-plugins.mjs` → 120/120; `verify-task3.py` 58/58; `v
 
 ---
 
-### Task P6 — Plugin Manager
+### Task P6 — Plugin Manager — **DONE 2026-11-18**
 
 **Objective:** N++'s Plugin Admin, minus the catalogue: install, enable, disable, reload, uninstall,
 see errors, see shortcut conflicts.
@@ -695,6 +697,20 @@ see errors, see shortcut conflicts.
 
 **Verification:** P7's script covers the flows end to end; manual screenshot of the dialog in both
 themes.
+
+**Result (2026-11-18): `PLUGIN_P4: PASS (75/75)`.** `src/plugins/manager-dialog.ts` is the dialog; the
+menu entry lives in `workspace.ts#pluginMenu` (this task's file list said `host.ts#menuEntries`, which
+does not exist — the menu has always been the workspace's). Proved through the real UI: open the
+manager; paste-install; install through the file picker; enable/disable/reload; two-step uninstall;
+a row that fails carries its error; a plugin claiming `Ctrl+S` is refused with the shortcut named;
+a startup failure raises a notice whose action opens the manager; `?plugins=off` opens the manager in
+recovery mode with no install path, Enable disabled, and Uninstall working. **Defects found and
+fixed:** `enable()` never persisted `enabled: true` (a re-enabled plugin ran but the row still said
+"Enable", and it would not have returned after reload); and `?plugins=off` did not stop
+`install()`/`enable()` — now it does, which narrows step 5's "can re-enable" deliberately. Screenshots:
+`.hermes/cache/screenshots/plugin-manager-{light,dark}.png`. `verify-task9.py` also gained a
+poll-instead-of-sleep fix for its Language submenu (flaky only when run straight after
+`verify-task3.py`).
 
 **Commit:** `task-P6: Plugin Manager — install, enable, disable, reload, uninstall, errors`
 

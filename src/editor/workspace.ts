@@ -141,6 +141,7 @@ import { backAtSavePoint, newDocumentName, tabLabel, type OpenDocument } from ".
 import { PluginRegistry, type RegisteredButton } from "../plugins/registry";
 import { PluginLoader } from "../plugins/loader";
 import { PluginDock } from "../plugins/panels";
+import { openPluginManager } from "../plugins/manager-dialog";
 import { createPluginContext, type WorkspaceBridge } from "../plugins/host";
 import { listPlugins } from "../plugins/store";
 import type { DocumentInfo, PluginEventType, UiApi } from "../plugins/api";
@@ -265,7 +266,9 @@ export class Workspace {
   #pluginRecords: PluginRecord[] = [];
   /** One `document:changed` per burst of typing, like the session write. */
   #pluginChangeTimer: number | null = null;
-  /** True when this page started with `?plugins=off`. */
+  /** True when this page was opened with `?plugins=off`. */
+  readonly #pluginsDisabled: boolean;
+  /** True once `start()` reported that it skipped loading (same flag, after start). */
   #pluginsSkipped = false;
   #bookmarkMargin = NPP_BOOKMARK_MARGIN;
   readonly #capabilities = detectCapabilities();
@@ -374,6 +377,7 @@ export class Workspace {
   }
 
   constructor(host: HTMLElement) {
+    this.#pluginsDisabled = new URLSearchParams(location.search).get("plugins") === "off";
     this.#chrome = new Chrome(host);
     this.#primary = this.#chrome.addPane("primary", "before-splitter");
     this.#find = new FindReplaceDialog(this.#searchHost(), host);
@@ -400,7 +404,7 @@ export class Workspace {
           ui: this.#pluginUi(),
         }),
       // The escape hatch for a plugin that breaks something at startup.
-      disabled: new URLSearchParams(location.search).get("plugins") === "off",
+      disabled: this.#pluginsDisabled,
     });
     this.#dock = new PluginDock(this.#chrome.workspace, this.#pluginRegistry);
     this.#chrome.setDockElement(this.#dock.root);
@@ -1105,7 +1109,10 @@ export class Workspace {
           ? "A plugin could not be started"
           : `${report.failed.length} plugins could not be started`,
         `${first.id}: ${first.error}`,
-        { kind: "plugin-failure" },
+        {
+          kind: "plugin-failure",
+          action: { label: "Open Plugin Manager", onClick: () => this.#openPluginManager() },
+        },
       );
     }
     this.#pluginRegistry.emit("ready", {});
@@ -1219,19 +1226,34 @@ export class Workspace {
 
   #pluginMenu(): MenuEntry[] {
     const commands = this.#pluginRegistry.commands();
-    if (commands.length === 0) {
-      // A status line, not a command: P6 replaces this with "Plugin Manager…".
-      return [{ id: "plugins-none", label: "(no plugins installed)", onClick: () => {} }];
-    }
-    return commands.map((command) => {
-      const entry: MenuEntry = {
-        id: `plugin:${command.key}`,
-        label: command.label,
-        onClick: () => this.#runPluginCommand(command.key),
-        ...(command.shortcut ? { shortcut: command.shortcut } : {}),
-        ...(command.checked ? { checked: command.checked() } : {}),
-      };
-      return entry;
+    const entries: MenuEntry[] = commands.map((command) => ({
+      id: `plugin:${command.key}`,
+      label: command.label,
+      onClick: () => this.#runPluginCommand(command.key),
+      ...(command.shortcut ? { shortcut: command.shortcut } : {}),
+      ...(command.checked ? { checked: command.checked() } : {}),
+    }));
+    if (entries.length > 0) entries.push({ id: "plugins-separator", separator: true });
+    // N++ ends Plugins with "Plugins Admin…"; this is the same door, and the only
+    // permanent entry here — with no plugins the menu is still usable.
+    entries.push({
+      id: "plugin-manager",
+      label: "Plugin Manager…",
+      onClick: () => this.#openPluginManager(),
+    });
+    return entries;
+  }
+
+  /** P6 — the manager, fed the same facade the console and the checks use. */
+  #openPluginManager(): void {
+    void openPluginManager({
+      list: () => listPlugins(),
+      install: (source) => this.installPlugin(source),
+      enable: (id) => this.enablePlugin(id),
+      disable: (id) => this.disablePlugin(id),
+      reload: (id) => this.reloadPlugin(id),
+      uninstall: (id) => this.uninstallPlugin(id),
+      disabled: this.#pluginsDisabled,
     });
   }
 

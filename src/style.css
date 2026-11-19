@@ -958,3 +958,189 @@ body {
   line-height: 1.5;
   white-space: pre-wrap;
 }
+
+/* ------------------------------------------------------------ plugin manager */
+
+.npp-manager-dialog {
+  min-width: min(720px, 92vw);
+  max-width: 92vw;
+}
+
+.npp-manager-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.npp-manager-trust,
+.npp-manager-banner {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--chrome-border);
+  background: var(--tab-bg);
+  color: var(--chrome-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.npp-manager-banner {
+  border-color: var(--pref-note);
+  font-weight: 600;
+}
+
+.npp-manager-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.npp-manager-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--chrome-border);
+  background: var(--pane-bg);
+}
+
+.npp-manager-main {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.npp-manager-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--chrome-text);
+}
+
+.npp-manager-version,
+.npp-manager-author,
+.npp-manager-meta {
+  font-size: 11.5px;
+  color: var(--pref-note);
+}
+
+.npp-manager-meta {
+  margin: 0;
+  font-family: var(--mono-font, monospace);
+}
+
+.npp-manager-status {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.npp-manager-status.is-enabled {
+  color: #1a7f37;
+  border-color: #1a7f37;
+}
+
+.npp-manager-status.is-disabled {
+  color: var(--pref-note);
+  border-color: var(--chrome-border);
+}
+
+.npp-manager-status.is-failed {
+  color: #b42318;
+  border-color: #b42318;
+}
+
+.npp-manager-error {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #b42318;
+  white-space: pre-wrap;
+}
+
+.npp-manager-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.npp-manager-button {
+  padding: 3px 10px;
+  border: 1px solid var(--chrome-border);
+  background: var(--tab-bg);
+  color: var(--chrome-text);
+  font: 12px var(--shell-font);
+  cursor: pointer;
+}
+
+.npp-manager-button:hover:not(:disabled) {
+  background: var(--chrome-active);
+}
+
+.npp-manager-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.npp-manager-question {
+  font-size: 12px;
+  color: var(--chrome-text);
+}
+
+.npp-manager-install {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.npp-manager-drop {
+  padding: 14px 10px;
+  border: 1px dashed var(--chrome-border);
+  color: var(--pref-note);
+  font-size: 12px;
+  text-align: center;
+}
+
+.npp-manager-drop.is-over {
+  border-color: var(--chrome-active);
+  background: var(--chrome-active);
+}
+
+.npp-manager-source {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--chrome-border);
+  background: var(--pane-bg);
+  color: var(--chrome-text);
+  font: 11.5px var(--mono-font, monospace);
+}
+
+.npp-manager-message {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 12px;
+  color: var(--pref-note);
+}
+
+.npp-manager-message[data-state="error"] {
+  color: #b42318;
+}
+
+.npp-manager-message[data-state="ok"] {
+  color: #1a7f37;
+}
+
+.npp-manager-empty {
+  margin: 0;
+  color: var(--pref-note);
+  font-size: 12px;
+}

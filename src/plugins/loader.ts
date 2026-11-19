@@ -106,6 +106,11 @@ export class PluginLoader {
    * install dialog says so before the file picker opens.
    */
   async install(source: string, options: { enabled?: boolean } = {}): Promise<PluginActionResult> {
+    // Recovery mode installs nothing: `?plugins=off` exists to get the app back,
+    // and the manager's install controls are hidden while it is in force.
+    if (this.#disabled) {
+      return { ok: false, error: "plugins are disabled for this page (?plugins=off)" };
+    }
     const problem = sourceProblem(source);
     if (problem) return { ok: false, error: problem };
 
@@ -140,6 +145,9 @@ export class PluginLoader {
   }
 
   async enable(id: string): Promise<PluginActionResult> {
+    if (this.#disabled) {
+      return { ok: false, error: "plugins are disabled for this page (?plugins=off)" };
+    }
     if (this.#active.has(id)) return { ok: true, id };
     const record = await getPlugin(id);
     if (!record) return { ok: false, error: `plugin ${id} is not installed` };
@@ -171,7 +179,12 @@ export class PluginLoader {
       const cleanup = await this.#activate(module.default as { activate(ctx: unknown): unknown }, context);
       if (typeof cleanup === "function") this.#registry.setCleanup(id, cleanup as () => void);
       this.#active.set(id, { record, url });
-      if (record.lastError) await putPlugin({ ...record, lastError: null });
+      // Persist the flag: `disable` writes `enabled: false`, so re-enabling must
+      // write `true` or the plugin runs now and does not come back on reload.
+      // Measured in P6: the manager showed "Enable" for a plugin that was running.
+      if (!record.enabled || record.lastError) {
+        await putPlugin({ ...record, enabled: true, lastError: null });
+      }
       this.#log(`loaded ${record.name} ${record.version}`);
       return { ok: true, id };
     } catch (error) {
