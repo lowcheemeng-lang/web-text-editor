@@ -94,7 +94,10 @@ node --experimental-strip-types scripts/test-themes.mjs           # the tables +
    toolbar button both run it, disabling removes every trace, the record survives a reload, enable
    and uninstall work — and `scripts/verify-task3.py` → **58/58**, `scripts/verify-task9.py` →
    **41/41** at the same HEAD (one deliberate assertion update: the menu bar now has six titles).
-   **P5 — the right-hand dock for plugin panels — is next.**
+   **P5 (the dock) is DONE:** `scripts/verify-plugins-dev.py` → **PASS (48/48)** — a panel's command
+   opens the right-hand dock, two panels switch by tab with one body mounted, the panel follows edits,
+   closing hides it, the last panel and the width survive a reload, the splitter cannot squeeze it
+   away, Dark Mode reaches it, and disabling closes it. **P6 — the Plugin Manager dialog — is next.**
 
 **Nothing is blocking, and no task needs the user for scope.** `D1` and `D8` remain `Proposed`
 — low-stakes consolidations of choices already implied by accepted decisions, and `D8` is now fully
@@ -1601,10 +1604,25 @@ against the plan's +10–15 kB estimate. Recorded rather than hidden — curatin
 the lever if that 14 kB gz ever matters, and the plan's risk table already names the plugin host's
 payload as a cost to watch.
 
-**Deliberately not done**
-- P5–P8: the dock, the manager, the example plugins and the acceptance check. The tree is left green
-  at P4: `verify-plugins-dev.py` 28/28, `test-plugins.mjs` 119/119, `verify-task3.py` 58/58,
-  `verify-task9.py` 41/41, `npm run typecheck` → 0, `npm run build` → 0.
+**P5 — the dock (PASS 48/48 in the browser)**
+`src/plugins/panels.ts` — one right-hand column, a tab strip and one visible panel, appended to the
+workspace as a flex sibling. Visibility and `onShow` live in the registry (`showPanel`/`hidePanel`),
+so the plugin's handle and a tab click take the same path. Width is `localStorage`
+(`npp-web.dock-width`); the last shown panel (`npp-web.dock-panel`) is reopened once per page load.
+`Chrome.setDockElement()` lets the splitter clamp against the dock's width — without it a drag past
+the dock squeezed it to nothing. The check now has 20 more assertions: a panel does **not** open the
+dock on registration (N++ behaviour — the plugin's command opens it), two panels switch by tab with
+exactly one body mounted, showing a second panel hides the first (one dock, one panel — the first
+implementation drew the older one, measured), the panel reports and follows the document through
+`document:changed`, closing hides the dock, the command reopens it, the last panel and width survive a
+reload, the splitter cannot take the dock's space, Dark Mode reaches the dock (computed backgrounds
+differ), and disabling closes it. `test-plugins.mjs` → **120/120** (one new check for the
+one-panel-at-a-time rule); `verify-task3.py` 58/58; `verify-task9.py` 41/41; `verify-task10.py` 24/24;
+typecheck 0; build 0. A screenshot of the dock in the light theme is at
+`.hermes/cache/screenshots/plugin-dock-light.png`. **Build cost:** index 138.21 → **142.39 kB raw /
+43.70 kB gz** (the dock); editor-core unchanged. One check-side lesson: a reload with unsaved work
+raises the restore alert, which is modal and silently blocks pointer-driven checks — the check now
+undoes its own edit before reloading and dismisses any alert as a safety net.
 
 ## Blockers / open questions
 

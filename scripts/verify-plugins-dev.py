@@ -29,7 +29,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
+SHOT_DIR = ROOT / ".hermes" / "cache" / "screenshots"
 PLUGIN = (ROOT / "scripts" / "fixtures" / "plugin-commands.js").read_text(encoding="utf-8")
+PANEL_PLUGIN = (ROOT / "scripts" / "fixtures" / "plugin-panel.js").read_text(encoding="utf-8")
 
 checks: list[tuple[str, bool, str]] = []
 console: list[str] = []
@@ -95,6 +97,19 @@ def stop(process: subprocess.Popen[str]) -> None:
 
 def inspect(page) -> dict:
     return page.evaluate("() => window.__workspace.inspect()")
+
+
+def dismiss_dialogs(page) -> None:
+    """A reload with unsaved work can raise the restore alert; it is modal."""
+    page.wait_for_timeout(300)
+    for button in page.query_selector_all(
+        "dialog[open] .npp-dialog-confirm, dialog[open] .npp-dialog-cancel"
+    ):
+        try:
+            button.click()
+        except Exception:
+            pass
+        page.wait_for_timeout(120)
 
 
 def text(page) -> str:
@@ -256,6 +271,190 @@ def main() -> int:
             final = inspect(page).get("plugins", {})
             check("uninstall removes the record", removed is True and not final.get("installed"))
             check("uninstall leaves no commands", final.get("commands") == 0)
+
+            # ── P5: the dock ───────────────────────────────────────────────────
+            installed_panel = page.evaluate(
+                "async ({ source }) => await window.__workspace.installPlugin(source)",
+                {"source": PANEL_PLUGIN},
+            )
+            check(
+                "the panel plugin installs",
+                installed_panel.get("ok") is True,
+                str(installed_panel.get("error", "")),
+            )
+            page.wait_for_timeout(300)
+
+            check(
+                "registering a panel does not open the dock by itself",
+                not page.query_selector(".npp-dock").is_visible(),
+            )
+            open_plugins_menu(page)
+            page.click('[data-menu-item="plugin:spike.panel/show"]')
+            page.wait_for_timeout(250)
+
+            dock = page.query_selector('.npp-dock[data-dock="plugins"]')
+            check("the plugin's command opens the dock", dock is not None and dock.is_visible())
+            tabs = page.eval_on_selector_all(".npp-dock-tab", "els => els.map((el) => el.textContent)")
+            check("the dock shows the panel's tab", "Word Count" in tabs, ", ".join(tabs))
+            body = page.eval_on_selector(".npp-dock-panel", "el => el.textContent")
+            check(
+                "the panel reports the active document",
+                "lines" in body and f"{len(text(page))} characters" in body,
+                repr(body),
+            )
+
+            page.click(".cm-content")
+            page.keyboard.type("X")
+            page.wait_for_timeout(500)
+            updated = page.eval_on_selector(".npp-dock-panel", "el => el.textContent")
+            check(
+                "the panel follows an edit through document:changed",
+                updated != body and f"{len(text(page))} characters" in updated,
+                repr(updated),
+            )
+            # Back to the save point, so the reload below does not raise the
+            # "unsaved changes could not be restored" alert (which is modal and
+            # would block the pointer-driven checks).
+            page.keyboard.press("Control+z")
+            page.wait_for_timeout(200)
+
+            # Two panels: tabs, and exactly one mounted body.
+            open_plugins_menu(page)
+            page.click('[data-menu-item="plugin:spike.panel/show-info"]')
+            page.wait_for_timeout(250)
+            tab_labels = page.eval_on_selector_all(
+                ".npp-dock-tab", "els => els.map((el) => el.textContent)"
+            )
+            check(
+                "a second panel adds a second tab",
+                sorted(tab_labels) == ["Document Info", "Word Count"],
+                ", ".join(tab_labels),
+            )
+            check(
+                "only one panel body is mounted at a time",
+                page.eval_on_selector_all(".npp-dock-body .npp-dock-panel", "els => els.length") == 1,
+            )
+            info_body = page.eval_on_selector(".npp-dock-panel", "el => el.textContent")
+            check(
+                "the panel just shown is the active one",
+                "plain text" in info_body or "modified" in info_body or "saved" in info_body,
+                repr(info_body),
+            )
+            page.click('[data-panel-tab="spike.panel:counts"]')
+            page.wait_for_timeout(200)
+            switched = page.eval_on_selector(".npp-dock-panel", "el => el.textContent")
+            check("clicking a tab switches the panel", "characters" in switched, repr(switched))
+
+            # The dock draws with the chrome variables, so Dark Mode must reach it.
+            light_bg = page.eval_on_selector(
+                ".npp-dock-body", "el => getComputedStyle(el).backgroundColor"
+            )
+            page.evaluate("async () => { await window.__workspace.applyPreferences({ theme: 'dark' }); }")
+            page.wait_for_timeout(200)
+            dark_bg = page.eval_on_selector(
+                ".npp-dock-body", "el => getComputedStyle(el).backgroundColor"
+            )
+            check("the dock follows the theme", light_bg != dark_bg, f"{light_bg} vs {dark_bg}")
+            page.evaluate(
+                "async () => { await window.__workspace.applyPreferences({ theme: 'notepadpp' }); }"
+            )
+            page.wait_for_timeout(150)
+
+            SHOT_DIR.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(SHOT_DIR / "plugin-dock-light.png"))
+
+            page.click(".npp-dock-close")
+            page.wait_for_timeout(200)
+            check(
+                "closing the panel hides the dock",
+                not page.query_selector(".npp-dock").is_visible(),
+            )
+
+            open_plugins_menu(page)
+            page.click('[data-menu-item="plugin:spike.panel/show"]')
+            page.wait_for_timeout(250)
+            check(
+                "the plugin's command reopens the dock",
+                page.query_selector(".npp-dock").is_visible(),
+            )
+            check(
+                "onShow ran when the panel was shown",
+                page.evaluate("() => (window.__panelShows ?? 0)") >= 1,
+            )
+
+            page.reload(wait_until="load")
+            page.wait_for_selector(".cm-editor", timeout=15000)
+            page.wait_for_timeout(600)
+            dismiss_dialogs(page)
+            check(
+                "the last shown panel reopens after a reload",
+                page.query_selector(".npp-dock").is_visible(),
+            )
+
+            before_width = page.eval_on_selector(
+                ".npp-dock", "el => el.getBoundingClientRect().width"
+            )
+            handle = page.query_selector(".npp-dock-handle")
+            box = handle.bounding_box()
+            page.mouse.move(box["x"] + 2, box["y"] + 60)
+            page.mouse.down()
+            page.mouse.move(box["x"] - 78, box["y"] + 60, steps=6)
+            page.mouse.up()
+            page.wait_for_timeout(200)
+            after_width = page.eval_on_selector(
+                ".npp-dock", "el => el.getBoundingClientRect().width"
+            )
+            check(
+                "dragging the handle widens the dock",
+                after_width > before_width + 40,
+                f"{before_width:.0f} -> {after_width:.0f}",
+            )
+
+            page.reload(wait_until="load")
+            page.wait_for_selector(".cm-editor", timeout=15000)
+            page.wait_for_timeout(600)
+            dismiss_dialogs(page)
+            restored_width = page.eval_on_selector(
+                ".npp-dock", "el => el.getBoundingClientRect().width"
+            )
+            check(
+                "the dock's width survives a reload",
+                abs(restored_width - after_width) <= 3,
+                f"{restored_width:.0f} vs {after_width:.0f}",
+            )
+
+            page.click('[data-tool="split"]')
+            page.wait_for_timeout(300)
+            splitter = page.query_selector(".npp-splitter")
+            split_box = splitter.bounding_box()
+            page.mouse.move(split_box["x"] + 3, split_box["y"] + 100)
+            page.mouse.down()
+            page.mouse.move(60, split_box["y"] + 100, steps=8)
+            page.mouse.up()
+            page.wait_for_timeout(250)
+            dock_width = page.eval_on_selector(
+                ".npp-dock", "el => el.getBoundingClientRect().width"
+            )
+            check(
+                "the splitter cannot squeeze the dock away",
+                page.query_selector(".npp-dock").is_visible() and dock_width >= 150,
+                f"{dock_width:.0f} px",
+            )
+            page.click('[data-tool="split"]')
+            page.wait_for_timeout(200)
+
+            page.evaluate("() => window.__workspace.disablePlugin('spike.panel')")
+            page.wait_for_timeout(300)
+            check(
+                "disabling the panel plugin closes the dock",
+                not page.query_selector(".npp-dock").is_visible(),
+            )
+            check(
+                "and leaves no tab behind",
+                page.eval_on_selector_all(".npp-dock-tab", "els => els.length") == 0,
+            )
+            page.evaluate("() => window.__workspace.uninstallPlugin('spike.panel')")
+            page.wait_for_timeout(200)
 
             errors = [line for line in console if "error" in line.lower()]
             check("no console or page errors", not errors, "; ".join(errors[:3]))

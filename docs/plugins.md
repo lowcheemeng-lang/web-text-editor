@@ -1,14 +1,14 @@
 # Plugins — host API, trust model, and limits
 
-**Status: P0–P4 OF THE PLAN ARE BUILT; NO DOCK OR MANAGER YET.** D5 was accepted as amended on
+**Status: P0–P5 OF THE PLAN ARE BUILT; THE MANAGER IS NOT.** D5 was accepted as amended on
 **2026-11-17**. What exists in the app today: the P1 loader spike (37/37), P2's model and store
-(DB version 3), P3's API surface, registry and loader (`api.ts`, `cm.ts`, `registry.ts`, `loader.ts`,
-`host.ts`), and P4's wiring — a **Plugins menu** listing registered commands, their shortcuts in a
-keymap, plugin toolbar buttons, document events, and `inspect().plugins`
-(`scripts/verify-plugins-dev.py`, 28/28; Node suite 119/119). **Not built:** the right-hand dock for
-panel plugins (P5), the Plugin Manager dialog (P6), the example plugins and the production acceptance
-check (P7), and the porting guide's final pass (P8). Installing today is through
-`window.__workspace.installPlugin(source)` — the same call P6's dialog will make.
+(DB version 3), P3's API surface, registry and loader, P4's wiring — a **Plugins menu**, shortcuts,
+toolbar buttons, document events, `inspect().plugins` — and P5's **right-hand dock** for panel
+plugins, with tab switching, resize, width and last-panel persistence, and Dark Mode
+(`scripts/verify-plugins-dev.py`, 48/48; Node suite 120/120). **Not built:** the Plugin Manager dialog
+(P6), the example plugins and the production acceptance check (P7), and the porting guide's final pass
+(P8). Installing today is through `window.__workspace.installPlugin(source)` — the same call P6's
+dialog will make.
 
 When a task lands, its section gains a **shipped / planned** marker and the check that proves it, the
 way `docs/session-persistence.md` and `docs/offline-pwa.md` do.

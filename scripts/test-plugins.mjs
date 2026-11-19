@@ -455,6 +455,17 @@ check("hide toggles and notifies", panel.visible === false && hidden === 1);
 panel.dispose();
 check("disposing a panel removes it", registry.panels().length === 0);
 
+const firstPanel = registry.addPanel("p.one", { id: "first", title: "First", render() {} });
+const secondPanel = registry.addPanel("p.one", { id: "second", title: "Second", render() {} });
+firstPanel.show();
+secondPanel.show();
+check(
+  "showing a panel hides the previously visible one (one dock, one panel)",
+  firstPanel.visible === false && secondPanel.visible === true,
+);
+firstPanel.dispose();
+secondPanel.dispose();
+
 /* teardown */
 
 let cleaned = false;

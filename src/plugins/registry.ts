@@ -203,6 +203,49 @@ export class PluginRegistry {
 
   /* ----------------------------------------------------------------- panels */
 
+  /**
+   * Show/hide a panel through the registry rather than the dock, so `onShow` is
+   * called exactly once however the panel was opened (its plugin's handle or a
+   * click on the dock's tab) and every change is announced the same way.
+   */
+  showPanel(pluginId: string, panelId: string): void {
+    const panel = this.#states.get(pluginId)?.panels.get(panelId);
+    if (!panel || panel.visible) return;
+    // One dock, one visible panel: showing this one hides whatever was visible in
+    // any other plugin's panel too, or the dock would have to guess which of two
+    // visible panels to draw (P5 measured that guess: it drew the older one).
+    for (const state of this.#states.values()) {
+      for (const other of state.panels.values()) {
+        if (other === panel || !other.visible) continue;
+        other.visible = false;
+        try {
+          other.spec.onHide?.();
+        } catch (error) {
+          this.noteError(state.id, error);
+        }
+      }
+    }
+    panel.visible = true;
+    try {
+      panel.spec.onShow?.();
+    } catch (error) {
+      this.noteError(pluginId, error);
+    }
+    this.#options.onPanelsChanged?.();
+  }
+
+  hidePanel(pluginId: string, panelId: string): void {
+    const panel = this.#states.get(pluginId)?.panels.get(panelId);
+    if (!panel || !panel.visible) return;
+    panel.visible = false;
+    try {
+      panel.spec.onHide?.();
+    } catch (error) {
+      this.noteError(pluginId, error);
+    }
+    this.#options.onPanelsChanged?.();
+  }
+
   addPanel(pluginId: string, spec: PanelSpec): PanelHandle {
     const state = this.#state(pluginId);
     if (state.panels.has(spec.id)) {
@@ -213,38 +256,18 @@ export class PluginRegistry {
     }
     const panel: RegisteredPanel = { pluginId, spec, visible: false };
     state.panels.set(spec.id, panel);
-    const notify = (): void => this.#options.onPanelsChanged?.();
+    this.#options.onPanelsChanged?.();
 
-    const safe = (fn: (() => void) | undefined): void => {
-      if (!fn) return;
-      try {
-        fn();
-      } catch (error) {
-        this.noteError(pluginId, error);
-      }
-    };
-
-    notify();
     return {
       get visible() {
         return panel.visible;
       },
-      show: () => {
-        if (panel.visible) return;
-        panel.visible = true;
-        safe(spec.onShow);
-        notify();
-      },
-      hide: () => {
-        if (!panel.visible) return;
-        panel.visible = false;
-        safe(spec.onHide);
-        notify();
-      },
+      show: () => this.showPanel(pluginId, spec.id),
+      hide: () => this.hidePanel(pluginId, spec.id),
       dispose: () => {
         if (state.panels.delete(spec.id)) {
           panel.visible = false;
-          notify();
+          this.#options.onPanelsChanged?.();
         }
       },
     };

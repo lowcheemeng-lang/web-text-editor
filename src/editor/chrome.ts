@@ -110,6 +110,8 @@ export class Chrome {
   readonly statusBar: HTMLElement;
 
   readonly #buttons = new Map<string, HTMLButtonElement>();
+  /** P5 — the plugin dock, when one exists; the splitter keeps clear of its width. */
+  #dock: HTMLElement | null = null;
   readonly #menus = new Map<
     string,
     { spec: MenuSpec; popup: HTMLElement; button: HTMLButtonElement }
@@ -425,8 +427,13 @@ export class Chrome {
       const startX = event.clientX;
       const startWidth = secondary.root.getBoundingClientRect().width;
       const total = this.workspace.getBoundingClientRect().width;
+      const dockWidth = this.#dock && !this.#dock.hidden ? this.#dock.getBoundingClientRect().width : 0;
       const move = (moveEvent: PointerEvent) => {
-        const width = Math.min(Math.max(startWidth + (startX - moveEvent.clientX), 120), total - 120);
+        // The dock is a flex sibling, so the clone must not be allowed to grow over
+        // it: `total - 120` would squeeze the dock to nothing while the splitter is
+        // dragged past it. P5 measured this with the dock open.
+        const limit = Math.max(120, total - dockWidth - 120);
+        const width = Math.min(Math.max(startWidth + (startX - moveEvent.clientX), 120), limit);
         secondary.root.style.flex = `0 0 ${width}px`;
       };
       const stop = () => {
@@ -443,6 +450,11 @@ export class Chrome {
 
   setSplitterVisible(visible: boolean): void {
     this.splitter.hidden = !visible;
+  }
+
+  /** P5 — let the splitter drag know how much room the plugin dock is using. */
+  setDockElement(dock: HTMLElement | null): void {
+    this.#dock = dock;
   }
 
   /**

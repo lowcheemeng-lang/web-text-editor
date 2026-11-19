@@ -140,6 +140,7 @@ import {
 import { backAtSavePoint, newDocumentName, tabLabel, type OpenDocument } from "./tabs";
 import { PluginRegistry, type RegisteredButton } from "../plugins/registry";
 import { PluginLoader } from "../plugins/loader";
+import { PluginDock } from "../plugins/panels";
 import { createPluginContext, type WorkspaceBridge } from "../plugins/host";
 import { listPlugins } from "../plugins/store";
 import type { DocumentInfo, PluginEventType, UiApi } from "../plugins/api";
@@ -256,6 +257,8 @@ export class Workspace {
   readonly #pluginRegistry: PluginRegistry;
   /** Loads plugin modules from their stored source. */
   readonly #plugins: PluginLoader;
+  /** The right-hand dock a plugin's panel appears in (P5). */
+  readonly #dock: PluginDock;
   /** Toolbar buttons plugins added, by their `plugin:<plugin>:<id>` key. */
   readonly #pluginButtons = new Set<string>();
   /** Installed records, cached for `inspect()` and the (P6) manager. */
@@ -385,6 +388,7 @@ export class Workspace {
       onCommandsChanged: () => this.#applyPluginExtensions(),
       onButtonsChanged: () => this.#syncPluginButtons(),
       onExtensionsChanged: () => this.#applyPluginExtensions(),
+      onPanelsChanged: () => this.#dock.sync(),
     });
     this.#plugins = new PluginLoader({
       registry: this.#pluginRegistry,
@@ -398,6 +402,8 @@ export class Workspace {
       // The escape hatch for a plugin that breaks something at startup.
       disabled: new URLSearchParams(location.search).get("plugins") === "off",
     });
+    this.#dock = new PluginDock(this.#chrome.workspace, this.#pluginRegistry);
+    this.#chrome.setDockElement(this.#dock.root);
     this.#addMenus();
 
     this.#chrome.addButton({
@@ -1103,6 +1109,7 @@ export class Workspace {
       );
     }
     this.#pluginRegistry.emit("ready", {});
+    this.#dock.sync();
     this.#render();
   }
 

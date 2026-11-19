@@ -4,11 +4,12 @@
 > "proceed" (2026-11-18), ahead of the Task-22 slot they had named. **P0–P2 are DONE:** the decision
 > and `docs/plugins.md` (P0), the loader spike (`scripts/spike-plugin-host.py` → **37/37**, P1), and
 > the model/store (`scripts/test-plugins.mjs` → **74/74**, `npm run typecheck` → 0, P2). **P3 is
-> DONE** (`api.ts`, `cm.ts`, `registry.ts`, `loader.ts`, `host.ts`) and **P4 is DONE** — the Plugins
+> DONE** (`api.ts`, `cm.ts`, `registry.ts`, `loader.ts`, `host.ts`), **P4 is DONE** — the Plugins
 > menu, the plugin compartment in every document state, document events and `inspect().plugins`,
-> `scripts/verify-plugins-dev.py` → **28/28**. **P5 (the dock) is next.** P6–P8 are unstarted.
+> `scripts/verify-plugins-dev.py` → **28/28** — and **P5 is DONE**: the right-hand dock for plugin
+> panels, same script → **43/43**. **P6 (the Plugin Manager) is next.** P7–P8 are unstarted.
 >
-> **For Hermes:** P1–P4 are done; continue at **P5 (the dock)**. Work one task per
+> **For Hermes:** P1–P5 are done; continue at **P6 (the Plugin Manager)**. Work one task per
 > session with a reproducible check, appending a row to `PROGRESS.md` — the project's standing rules
 > (S1–S18) apply unchanged. Do not build around a spike result: if a later measurement contradicts
 > the design, record the measurement and amend this plan, the way R2 produced S5.
@@ -623,7 +624,7 @@ notations and `Mod`.
 
 ---
 
-### Task P5 — The dock and panels
+### Task P5 — The dock and panels — **DONE 2026-11-18**
 
 **Objective:** plugin panels dock on the right, switch by tab, resize, remember width, and close
 without disturbing split view.
@@ -647,6 +648,16 @@ without disturbing split view.
 **Verification:** new assertions in the P7 script; re-run `verify-task3.py` (58/58) and
 `spike-r2-split.py` (R2_SPIKE: PASS); screenshot both themes (a panel is only "working" if it is
 visible and legible).
+
+**Result (2026-11-18): `PLUGIN_P4: PASS (48/48)`.** The script's panel phase installs
+`scripts/fixtures/plugin-panel.js` (two panels, two commands), and proves: registration alone does
+**not** open the dock; the command opens it; two tabs with exactly one body mounted; showing a second
+panel hides the first (the first implementation drew the older one — measured, fixed in
+`registry.showPanel`); a tab click switches; the panel follows edits through `document:changed`;
+closing hides the dock; the command reopens it; the last panel and the width survive a reload; the
+splitter cannot squeeze the dock away (400 px held); Dark Mode changes the dock's computed background;
+disabling closes it. `test-plugins.mjs` → 120/120; `verify-task3.py` 58/58; `verify-task9.py` 41/41;
+`verify-task10.py` 24/24. Screenshot: `.hermes/cache/screenshots/plugin-dock-light.png`.
 
 **Commit:** `task-P5: right-hand dock for plugin panels; splitter clamped`
 

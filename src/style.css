@@ -855,3 +855,106 @@ body {
   line-height: 1.4;
   color: var(--pref-note);
 }
+
+/* --------------------------------------------------------------------- dock */
+
+/*
+ * P5 — the plugin dock. One column on the right of the workspace, a tab strip and
+ * one visible panel. It reuses the chrome variables rather than inventing a
+ * palette, so Dark Mode needs no second rule set: `[data-theme="dark"]` swaps
+ * every colour the dock draws with.
+ *
+ * `[hidden]` needs its own rule: `.npp-dock` sets `display: flex`, which beats the
+ * user-agent's `[hidden]` — the same trap the toolbar hit in Task 7.
+ */
+.npp-dock {
+  display: flex;
+  flex: 0 0 320px;
+  min-width: 180px;
+  background: var(--strip-bg);
+  border-left: 1px solid var(--chrome-border);
+  font-family: var(--shell-font);
+  color: var(--chrome-text);
+}
+
+.npp-dock[hidden] {
+  display: none;
+}
+
+.npp-dock-handle {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: var(--strip-bg);
+  border-right: 1px solid var(--chrome-border);
+}
+
+.npp-dock-handle:hover {
+  background: var(--chrome-active);
+}
+
+.npp-dock-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.npp-dock-header {
+  display: flex;
+  align-items: stretch;
+  background: var(--tab-bg);
+  border-bottom: 1px solid var(--tab-border);
+}
+
+.npp-dock-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.npp-dock-tab {
+  border: 0;
+  border-right: 1px solid var(--tab-border);
+  background: transparent;
+  color: var(--tab-text);
+  padding: 4px 10px;
+  font: 12px var(--shell-font);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.npp-dock-tab.is-active {
+  background: var(--pane-bg);
+  color: var(--tab-active-text);
+}
+
+.npp-dock-close {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--tab-close);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.npp-dock-close:hover {
+  background: var(--close-hover-bg);
+  color: var(--close-hover-text);
+}
+
+.npp-dock-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--pane-bg);
+}
+
+.npp-dock-panel {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
