@@ -51,6 +51,7 @@ A new session (human or agent) needs zero prior context if it reads these files 
 | 9 | Language menu & the current-line selection order | DONE | **`python3 scripts/verify-task9.py` → PASS (41/41)** — N++'s Language menu driven through the menu bar, **opened by hover (no click)**: "None (Normal Text)" first (`Notepad_plus.rc:1000`), the 140 languages grouped **A–Z under first-letter submenus** (N++'s compact form) with N++'s short-name order inside each group and N++'s radio check on the active document's language, Python / JavaScript / Brainfuck applying live with the status bar naming N++'s long name, "None" clearing it, a choice surviving a real `page.reload()` (Task 7's session), and a choice **overriding a `.txt` file's detection** through the real File ▸ Open path. The check also asserts that hovering a title drops its menu down and moving to another title switches it (S17), that a submenu opens beside its row and stays inside the window, that clicking a group is a disclosure rather than a command, and that all 140 languages appear **exactly once under their own initial** (S16). **The selection bug, measured and fixed (S15):** the theme's selection rule lost on specificity to CM6's five-class base rule — the selection stayed CM6's `#d7d4f0`, the same pale lavender as the `#e8e8ff` current-line band — **and** CM6 paints its selection at z-index −2, behind the content, so the opaque band hid it outright (every pixel on the current row sampled `#e8e8ff`). The band now lives on `.cm-activeLine::before` at z-index −3, which is Scintilla's order: band, selection, text. The check samples real pixels — `#c0c0c0` inside the selection, `#e8e8ff` on the rest of the row, with and without a selection. Regressions at HEAD: `verify-task3.py` **58/58**; `verify-task4.py` **44/44**; `verify-task4-pickers.py` **PASS (43/43)** with the real OS chooser; `verify-task5.py` **105/105**; `verify-task6.py` **67/67**; `verify-task7.py` **82/82**; `verify-task8.py` **57/57**; `test-file-io.mjs` **45/45**; `test-session.mjs` **75/75**; `test-languages.mjs` **238/238**; `gen-language-registry.mjs --check` **OK**; `spike-r2-split.py` **PASS**; `npm run typecheck` exit 0; `npm run build` exit 0, `index` **117.43 kB / 35.91 kB gz**, `editor-core` unchanged at **335.26 kB / 109.14 kB gz** | `3274581` · follow-up `34e1ad4` |
 | 10 | Dark Mode (phase 2) | DONE | **`python3 scripts/verify-task10.py` → PASS (24/24)** — through the real Preferences dialog and menus: the light theme is unchanged (editor #ffffff, gutter #e4e4e4, `def` #0000ff bold); Cancel applies nothing; OK applies Dark Mode live and stores it; the editor takes `DarkModeDefault.xml` (#3f3f3f background, #dcdccc text, #0c0c0c margin, #101010 current line); the chrome takes `NppDarkMode.cpp` (#202020 status bar, #2b2b2b tab strip / menu / Preferences / Find, #e0e0e0 text); tokens become #dfc47d keyword, #7f9f7f comment, #8cd0d3 number (keyword 6.18:1 on the dark background); the S4 notice is dark too; a reload puts `data-theme="dark"` on the document **at DOMContentLoaded** (no white flash — the localStorage mirror plus the inline script in `index.html`); switching back is live and leaves the text untouched; no console/page errors, no request off the machine. `node --experimental-strip-types scripts/test-themes.mjs` → **PASS (18/18)** — key parity between the palettes and between the token tables, 6-digit hex values, N++'s sourced values pinned, and the contrast tables: **five dark tokens and eight light tokens are below WCAG AA, which is N++'s own palette** (dark comment/docComment 3.59, operator 3.77, regexp 3.97, string 4.09; light number/heading 2.52, string 3.95, added 3.80, attribute/error 4.00, removed 4.13) — kept rather than "fixed", and named in `DEVIATIONS_FROM_NPP`. Regressions at HEAD: `verify-task3.py` **58/58**; `verify-task4.py` **44/44**; `verify-task4-pickers.py` **PASS (43/43)** with the real OS chooser; `verify-task5.py` **105/105**; `verify-task6.py` **67/67**; `verify-task7.py` **82/82**; `verify-task8.py` **57/57**; `verify-task9.py` **41/41**; `test-file-io.mjs` **45/45**; `test-session.mjs` **75/75** (with one deliberate change: `dark` is now a real theme, so its unknown-theme case uses `obsidian`); `test-languages.mjs` **238/238**; `gen-language-registry.mjs --check` **OK**; `spike-r2-split.py` **PASS**; `npm run typecheck` exit 0; `npm run build` exit 0, `index` **118.67 kB / 36.33 kB gz**, CSS **12.17 kB / 2.98 kB gz**, `editor-core` unchanged at **335.26 kB / 109.14 kB gz** | `f3fc966` |
 | 11 | Plugin host (D5, P0–P8) | DONE | **`python3 scripts/verify-task-plugins.py` → PASS (63/63)** against a production build served with `no-cache`: the manager installs from the real file input, a `ViewPlugin` reaches **both** split panes, base64 edits are undone by **one** Ctrl+Z, JSON format refuses without rewriting, the word-count panel's counts match and follow typing, disable removes extension and command, a reload brings enabled plugins back and leaves the disabled one off, `?plugins=off` opens recovery mode, a broken example is a `failed` row and a startup notice with an "Open Plugin Manager" action, an app-shortcut claim is refused while the app's own save still works, a same-id re-install is an update, and with the **server stopped** the app mounts from the worker (every non-blob response `fromServiceWorker`), plugins load from IndexedDB, and a plugin command still runs. `python3 scripts/verify-plugins-dev.py` → **PASS (75/75)** (the same UI in dev, plus the dock's resize/persistence and both themes); `node --experimental-strip-types scripts/test-plugins.mjs` → **120/120**; `python3 scripts/spike-plugin-host.py` → **37/37**. Regressions at HEAD: `verify-task3.py` **58/58**; `verify-task9.py` **41/41**; `verify-task10.py` **24/24**; `npm run typecheck` exit 0; `npm run build` exit 0, `index` **148.69 kB / 45.39 kB gz**, `editor-core` **380.99 kB / 123.15 kB gz** (the host's `cm.ts` namespace imports, recorded in P4); `node scripts/check-precache.mjs` → **OK**, still **9** shell files. Docs: `docs/plugins.md`, `plugins/README.md`; plan and per-task evidence in `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md` | `8c7171c` · `6c19a78` · `4862420` · `3047e73` · `34a1662` · `d38c27d` · `8fcc75d` · `cb2b7de` · `26ac7db` · `625e2e8` |
+| 12 | Encoding fidelity: UTF-32 and the DOS codepages (Task 11) | DONE | **`node --experimental-strip-types scripts/test-file-io.mjs` → PASS (70/70)** — UTF-32LE/BE round trips with astral characters and a BOM-less named UTF-32, invalid code points → U+FFFD + `hadErrors`, an unpaired surrogate refused; cp437/cp850/cp852 round trips, **all 256 CP437 bytes encode back to themselves**, unrepresentable characters refused by name, CP720 refused by name; the windows-1252 / ISO-8859-2 / KOI8-R / UTF-16 cases unchanged. **`node scripts/gen-codepages.mjs --check` → OK** (3 tables, 13 codepages named as refused) and **wired into `npm run build`**. `python3 scripts/verify-task11.py` → **PASS (30/30)** in Chrome: UTF-32LE/BE open with the status bar naming them and save byte-identically; a CP437 file opens as windows-1252 **assumed** (D4), becomes cp437 from the new **Encoding** menu, renders ──┌┐, and saves byte-identically; a character CP437 cannot hold is refused with the character named and **nothing written**; UTF-8+BOM unchanged. `python3 scripts/verify-task4.py` → **PASS (49/49)** — its UTF-32 *refusal* assertion is now the acceptance, recorded rather than quietly dropped. `python3 scripts/spike-encoding-tables.mjs` → 16/17 N++ DOS codepages have no `TextDecoder` label; ~1.4 kB of source per table; 557 K characters encode in 74 ms / decode in 55 ms → **JS and tables, not WASM**. Regressions at HEAD: `verify-task3.py` **58/58**; `verify-task9.py` **41/41** with `File, Search, View, Encoding, Language, Settings, Plugins`; `verify-task10.py` **24/24**; `test-plugins.mjs` **120/120**; `verify-plugins-dev.py` **75/75**; `verify-task-plugins.py` **63/63**. `npm run build` exit 0 — `index` **156.78 kB / 48.10 kB gz** (+8.09 raw / +2.71 gz: three tables, the UTF-32 codec, the menu), `editor-core` unchanged 380.99 / 123.15 | `0e81309` |
 
 **Status vocabulary:** `TODO` · `WIP` · `DONE` · `BLOCKED` · `DEFERRED`
 
@@ -61,10 +62,11 @@ check that it passes, or a measured number. "Implemented X" is not evidence. "`n
 
 ## Next action
 
-**The plugin host (D5) is SHIPPED — P0–P8 are DONE and committed** (`625e2e8` for P7 is the last
-task commit; P8 is documentation). Install path: **Plugins ▸ Plugin Manager…** (file, drop or paste).
-The next unit of work is the phase-2 queue, starting with **Task 11 — encoding fidelity** (D10), which
-still needs its spike to choose table-vs-WASM before any WebAssembly is written.
+**Task 11 (encoding fidelity) is DONE and committed** — UTF-32LE/BE by arithmetic, CP437/850/852
+from generated tables, an **Encoding** menu to name one, and refusals that name what cannot be
+encoded. The next unit of work is **Task 12 — large-file mode (D10) and the ruler's tick cap**,
+which also needs its threshold measured rather than guessed (the ruler saturates at 2000 ticks; it
+was fine at 10k lines and is wrong at 1M).
 
 **Task 10 is DONE (2026-11-16): Notepad++ Dark Mode.** The preference Task 7 stored now has a
 second, real value; the palette is N++'s own (`DarkModeDefault.xml` for the editor,
@@ -1695,6 +1697,40 @@ The user paused the build after P5 (`cb2b7de`) and asked to be told when to resu
 Verified at that pause point: typecheck 0, build 0, `verify-plugins-dev.py` 48/48,
 `test-plugins.mjs` 120/120, `verify-task3.py` 58/58, `verify-task9.py` 41/41,
 `verify-task10.py` 24/24.
+
+**Session 14 — Task 11: encoding fidelity (2026-11-19)**
+Asked to "resume" after the plugin host shipped, so the phase-2 queue resumed at **Task 11**.
+**Measured first, as the plan demanded:** `scripts/spike-encoding-tables.mjs` found that **16 of
+N++'s 17 DOS codepages have no `TextDecoder` label** (only IBM866 does), that a generated 256-entry
+table is ~1.4 kB of source, and that 557 K characters encode through one in 74 ms (decode 55 ms).
+That settled D10's "WASM encoders" question against WebAssembly: there is no arithmetic here that JS
+does not already do in linear time, and UTF-32 is arithmetic outright (four bytes per code point).
+**Built:** `scripts/data/CP437|850|852.TXT` (Microsoft's mappings, vendored from unicode.org with
+their Unicode version in the header) → `scripts/gen-codepages.mjs` → `src/file/codepages.ts`;
+`npm run build` now runs the generator with `--check` first, so a stale table fails the build and not
+a user's file. `file-io.ts` gained `decodeUtf32`/`encodeUtf32`, the table decode/encode branches, BOM
+bytes for the UTF-32 pair, and a `canEncode()` that answers for both; `UNSUPPORTED_CODEPAGES` names
+the pages this build does not implement, so a refusal says "DOS Arabic (CP720)" instead of calling it
+multi-byte.
+**The plan's files list was one short, and the acceptance proved it.** A CP437 file has no BOM and is
+not valid UTF-8, so D4 opens it as windows-1252 (assumed) — there was no way to *name* CP437, which
+made the new tables unreachable. So Task 11 also adds an **Encoding menu** between View and Language
+(where N++ has it): ten entries, only encodings this build can both read and write, re-reading the
+file in place, refused while the document is dirty, and moving the save point so the reinterpreted
+document is clean. The menu-order assertion in `verify-task9.py` changed in the same commit on
+purpose.
+**Defects found while checking.** (a) `file-io.ts`'s new value import had no `.ts` extension, which
+`node --experimental-strip-types` cannot resolve — the type-only imports had hidden the requirement
+(`ERR_MODULE_NOT_FOUND` on `codepages`). (b) Flipping verify-task4's UTF-32 block from "refused" to
+"opened" left `utf32.txt` as the *active* tab, and the later Save As section saved that document
+instead of `latin.txt` — a check that tested the wrong file and said so in bytes; it now re-activates
+the tab it means. (c) Two expectations compared against `\r\n` when `inspect().text` is the editor's
+LF-normalised text; the line ending is asserted separately, which is the rule the other checks
+already followed.
+**Final numbers:** test-file-io 70/70, verify-task11 30/30, verify-task4 49/49, task3 58/58, task9
+41/41, task10 24/24, test-plugins 120/120, verify-plugins-dev 75/75, verify-task-plugins 63/63,
+typecheck 0, build 0 (index 156.78 kB / 48.10 gz; `editor-core` unchanged). Screenshot:
+`.hermes/cache/screenshots/task11-encodings.png`.
 
 ## Blockers / open questions
 

@@ -6,9 +6,11 @@
   "description": "Browser-based, backend-free text editor in the spirit of Notepad++",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/gen-codepages.mjs --check && tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "gen:codepages": "node scripts/gen-codepages.mjs",
+    "check:codepages": "node scripts/gen-codepages.mjs --check",
     "status": "node scripts/status.mjs"
   },
   "dependencies": {

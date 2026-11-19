@@ -177,17 +177,29 @@ with sync_playwright() as p:
     check("windows-1252: byte-identical round trip", read_back(page, "latin.txt") == win1252,
           repr(read_back(page, "latin.txt")[:12]))
 
-    # ── UTF-32 is refused, not mojibaked (D4) ───────────────────────────────
-    seed(page, "utf32.txt", b"\xff\xfe\x00\x00A\x00\x00\x00")
+    # ── UTF-32LE opens and round-trips (Task 11) ─────────────────────────────
+    # This block used to assert D4's *refusal*: UTF-32 was detected only to be
+    # refused, because the browser has no decoder for it. Task 11 added the decoder
+    # (arithmetic, not WebAssembly — see the spike), so the assertion is now the
+    # acceptance it always wanted to be. The change is deliberate and recorded in
+    # PROGRESS.md's Task 11 row.
+    utf32 = b"\xff\xfe\x00\x00" + "Aé😀".encode("utf-32-le")
+    seed(page, "utf32.txt", utf32)
     stub_pickers(page, "utf32.txt", "utf32.txt")
-    before_count = info(page)["documents"]
     page.click("button[data-tool='open']")
-    page.wait_for_selector("[data-dialog='alert']", timeout=5000)
-    body = page.locator(".npp-dialog-body").text_content() or ""
-    check("UTF-32: refused with an explanation", "UTF-32" in body, body[:60])
-    page.click("[data-dialog-action='ok']")
-    page.wait_for_timeout(100)
-    check("UTF-32: nothing was opened", info(page)["documents"] == before_count)
+    page.wait_for_timeout(500)
+
+    opened32 = info(page)
+    check("UTF-32LE: opened", opened32["activeFileName"] == "utf32.txt", str(opened32["activeFileName"]))
+    check("UTF-32LE: decoded as code points", opened32["text"] == "Aé😀", repr(opened32["text"]))
+    check("UTF-32LE: encoding recorded", opened32["encoding"] == "utf-32le", str(opened32["encoding"]))
+    check("UTF-32LE: not marked assumed", opened32["assumedEncoding"] is False)
+    status = page.locator(".npp-statusbar").text_content() or ""
+    check("UTF-32LE: the status bar names the encoding", "utf-32le" in status, status.strip())
+    page.click("button[data-tool='save']")
+    page.wait_for_timeout(300)
+    check("UTF-32LE: byte-identical round trip", read_back(page, "utf32.txt") == utf32,
+          repr(read_back(page, "utf32.txt")[:16]))
 
     # ── a dismissed picker is a cancel, not an error ────────────────────────
     page.evaluate(STUB_CANCEL)
@@ -198,6 +210,12 @@ with sync_playwright() as p:
     check("cancel: no document opened", info(page)["documents"] == before_count)
 
     # ── Save As reaches the save picker and writes where told ───────────────
+    # Save As acts on the *active* tab, and the UTF-32 phase above left its file in
+    # front of the windows-1252 one, so re-activate latin.txt first.
+    page.click(".npp-tab:has-text('latin.txt')")
+    page.wait_for_timeout(150)
+    check("re-activated latin.txt before Save As",
+          info(page)["activeFileName"] == "latin.txt", str(info(page)["activeFileName"]))
     stub_pickers(page, "latin.txt", "copy-as.txt")
     page.click(".npp-menu-title >> nth=0")
     page.click("[data-menu-item='save-as']")

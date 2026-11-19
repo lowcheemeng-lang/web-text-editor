@@ -134,13 +134,117 @@ check("us-ascii folds to windows-1252", normaliseEncodingLabel("us-ascii") === "
   check("0x80 decodes as € (windows-1252), not a C1 control", decoded.text === "€", JSON.stringify(decoded.text));
 }
 
-/* --------------------------------------------- refusals and honest edges */
+/* ------------------------------------------------------ UTF-32 round-trips */
 
 {
-  const utf32 = new Uint8Array([0xff, 0xfe, 0x00, 0x00, 0x41, 0x00, 0x00, 0x00]);
+  // "Aé" in UTF-32LE with its BOM: four bytes per code point.
+  const utf32 = new Uint8Array([0xff, 0xfe, 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0xe9, 0x00, 0x00, 0x00]);
   const decoded = decodeFile(utf32);
-  check("UTF-32: refused, not mojibake", decoded.unsupported !== null && decoded.text === "");
-  check("UTF-32: refusal names the encoding", (decoded.unsupported ?? "").includes("UTF-32"));
+  check("UTF-32LE: decodes", decoded.text === "Aé", JSON.stringify(decoded.text));
+  check("UTF-32LE: records the encoding", decoded.encoding === "utf-32le");
+  check("UTF-32LE: not flagged as an error", decoded.hadErrors === false);
+  const encoded = encodeFile(decoded.text, decoded);
+  check("UTF-32LE: byte-identical round-trip", "bytes" in encoded && bytesEqual(encoded.bytes, utf32),
+        "bytes" in encoded ? show(encoded.bytes) : encoded.problem);
+}
+
+{
+  // "A😀" in UTF-32BE — the astral character is one four-byte unit, not a surrogate pair.
+  const utf32be = new Uint8Array([0x00, 0x00, 0xfe, 0xff, 0x00, 0x00, 0x00, 0x41, 0x00, 0x01, 0xf6, 0x00]);
+  const decoded = decodeFile(utf32be);
+  check("UTF-32BE: decodes an astral character", decoded.text === "A😀", JSON.stringify(decoded.text));
+  const encoded = encodeFile(decoded.text, decoded);
+  check("UTF-32BE: byte-identical round-trip", "bytes" in encoded && bytesEqual(encoded.bytes, utf32be),
+        "bytes" in encoded ? show(encoded.bytes) : encoded.problem);
+}
+
+{
+  // No BOM, but the user said it is UTF-32LE: honour it rather than sniffing UTF-8.
+  const body = new Uint8Array([0x41, 0x00, 0x00, 0x00, 0x42, 0x00, 0x00, 0x00]);
+  const decoded = decodeFile(body, "utf-32le");
+  check("UTF-32LE without a BOM: decodes when named", decoded.text === "AB", JSON.stringify(decoded.text));
+  check("UTF-32LE without a BOM: not assumed", decoded.assumed === false);
+}
+
+{
+  // 0x00110000 is above Unicode's ceiling; 0x0000D800 is a surrogate. Both are
+  // replaced and reported, not silently rendered.
+  const bad = new Uint8Array([0xff, 0xfe, 0x00, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0xd8, 0x00, 0x00]);
+  const decoded = decodeFile(bad);
+  check("UTF-32: invalid code points become U+FFFD", decoded.text === "\uFFFD\uFFFD", JSON.stringify(decoded.text));
+  check("UTF-32: and the document is marked as having errors", decoded.hadErrors === true);
+}
+
+{
+  const decoded = decodeFile(new Uint8Array([0x41]), "utf-32le");
+  const encoded = encodeFile(`${decoded.text}\uD800`, decoded);
+  check("UTF-32: an unpaired surrogate is refused, not written", "problem" in encoded);
+  check("UTF-32: the refusal names the surrogate",
+        "problem" in encoded && encoded.problem.includes("D800"),
+        "problem" in encoded ? encoded.problem.slice(0, 60) : "");
+}
+
+/* ---------------------------------------------------------- DOS codepages */
+
+const CP437_BOX = new Uint8Array([0xc4, 0xc4, 0xda, 0xbf, 0x20, 0x82, 0x91]);
+{
+  // ──┌┐ é æ in CP437 (0x82 = é, 0x91 = æ)
+  const decoded = decodeFile(CP437_BOX, "cp437");
+  check("cp437: decodes box-drawing and accents", decoded.text === "──┌┐ éæ", JSON.stringify(decoded.text));
+  check("cp437: records the encoding", decoded.encoding === "cp437");
+  check("cp437: not assumed", decoded.assumed === false);
+  const encoded = encodeFile(decoded.text, decoded);
+  check("cp437: byte-identical round-trip", "bytes" in encoded && bytesEqual(encoded.bytes, CP437_BOX),
+        "bytes" in encoded ? show(encoded.bytes) : encoded.problem);
+}
+
+{
+  // Every byte is defined in CP437 and the mapping is a bijection, so all 256 must
+  // survive decode→encode. This is the check a hand-typed table fails.
+  let failuresInPage = 0;
+  for (let byte = 0; byte < 256; byte += 1) {
+    const decoded = decodeFile(Uint8Array.of(byte), "cp437");
+    const encoded = encodeFile(decoded.text, decoded);
+    if (!("bytes" in encoded) || encoded.bytes[0] !== byte || encoded.bytes.length !== 1) {
+      failuresInPage += 1;
+    }
+  }
+  check("cp437: all 256 bytes round-trip", failuresInPage === 0, `${failuresInPage} failed`);
+}
+
+{
+  // CP850: é = 0x82, ü = 0x81; CP852: ł = 0x88, ą = 0xA5, ę = 0xA9
+  const cp850 = new Uint8Array([0x82, 0x81, 0x9b]); // éüø
+  const d850 = decodeFile(cp850, "cp850");
+  check("cp850: decodes", d850.text === "éüø", JSON.stringify(d850.text));
+  const e850 = encodeFile(d850.text, d850);
+  check("cp850: byte-identical round-trip", "bytes" in e850 && bytesEqual(e850.bytes, cp850),
+        "bytes" in e850 ? show(e850.bytes) : e850.problem);
+
+  const cp852 = new Uint8Array([0x88, 0xa5, 0xa9]);
+  const d852 = decodeFile(cp852, "cp852");
+  check("cp852: decodes", d852.text === "łąę", JSON.stringify(d852.text));
+  const e852 = encodeFile(d852.text, d852);
+  check("cp852: byte-identical round-trip", "bytes" in e852 && bytesEqual(e852.bytes, cp852),
+        "bytes" in e852 ? show(e852.bytes) : e852.problem);
+}
+
+{
+  const decoded = decodeFile(new Uint8Array([0x41]), "cp437");
+  const encoded = encodeFile("A你", decoded);
+  check("cp437: an unrepresentable character is refused", "problem" in encoded);
+  check("cp437: the refusal names the character and the page",
+        "problem" in encoded && encoded.problem.includes("你") && encoded.problem.includes("cp437"));
+}
+
+check("cp437 can be encoded", canEncode("cp437") === true);
+check("cp850 can be encoded", canEncode("cp850") === true);
+check("an unimplemented N++ codepage cannot be encoded", canEncode("cp720") === false);
+{
+  const encoded = encodeFile("A", { encoding: "cp720", bom: "none", eol: "LF" });
+  check("an unimplemented codepage is refused by name",
+        "problem" in encoded && encoded.problem.includes("CP720"),
+        "problem" in encoded ? encoded.problem.slice(0, 60) : "");
 }
 
 {

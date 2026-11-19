@@ -217,10 +217,11 @@ with sync_playwright() as p:
     menu_titles = info()["menuTitles"]
     # D5/P4 added a sixth menu, Plugins, in N++'s own late position — its bar is
     # File … Language, Settings, Tools, Macro, Run, Plugins, Window — so the five
-    # original titles keep their order and Plugins follows Settings.
+    # original titles keep their order. Task 11 added Encoding between View and
+    # Language, which is where N++ has it, so this assertion now expects seven.
     check(
-        "the menu bar keeps N++'s order, with Plugins after Settings (D5/P4)",
-        menu_titles == ["File", "Search", "View", "Language", "Settings", "Plugins"],
+        "the menu bar keeps N++'s order, with Encoding before Language (Task 11)",
+        menu_titles == ["File", "Search", "View", "Encoding", "Language", "Settings", "Plugins"],
         str(menu_titles),
     )
 

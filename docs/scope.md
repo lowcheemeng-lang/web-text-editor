@@ -49,7 +49,7 @@ See the decision log in `PROGRESS.md`, which is the authority on status.
 | **D1** | **Browser-first SPA/PWA.** Desktop packaging (Tauri/Wails/Electron) deferred to a later phase. | Answers open question 1 in the plan. Desktop wrappers can reuse the same bundle later, so this is not a one-way door. |
 | **D2** | **Editor core: CodeMirror 6** (not Monaco). | Monaco is monolithically loaded (no lazy loading) and Replit measured it at 51.17 MB raw / 5.01 MB gzip vs CM6 + all languages at 8.23 MB raw / 1.26 MB gzip. CM6 is modular, its syntax tree powers Function List and folding for free, and `StreamLanguage` lets us build runtime-defined tokenizers — the only credible path to UDL parity. Monaco's minimap is the one thing we lose; a canvas minimap is a Tier-3 substitute. |
 | **D3** | **Two-tier file I/O, capability-detected at runtime.** Tier A (Chromium): File System Access pickers, real in-place save. Tier B (Firefox/Safari/iOS): `<input type=file>` read + Blob download write, with OPFS as the editable home. | Pickers are Chromium-only and Mozilla's standards position is formally *harmful*, so a single-API implementation would exclude ~30% of users. **Narrowed by D11:** the MVP implements Tier A only; the Tier B/C fallback I/O moves to phase 2. The feature-detection *principle* survives as the thin capability check in Task 4 (S4). |
-| **D4** | **Encoding: what the Encoding API gives us, and be honest about the rest.** | The WHATWG label list is fixed; UTF-32 and DOS/IBM codepages are absent. See §6. **Split by D10:** the MVP ships the WHATWG label set; the WASM half (UTF-32, DOS codepages) is the scheduled phase-3 priority. |
+| **D4** | **Encoding: what the Encoding API gives us, and be honest about the rest.** | The WHATWG label list is fixed; UTF-32 and DOS/IBM codepages are absent. See §6. **Split by D10, then re-split by measurement (Task 11, 2026-11-19):** the WHATWG label set ships, and so do UTF-32 and CP437/850/852 — as hand-written code and generated tables, **not WebAssembly**. The spike measured the tables at ~1.4 kB of source each and a 557 K-character encode at 74 ms, so WASM would have added a compiler and a loader for work plain JS does in milliseconds. Multi-byte legacy encodings remain decode-only, and the remaining DOS pages are refused by name. |
 | **D5** | **"Plugins" = runtime-loaded ES modules** against a documented host API. No native ABI. **Amended and accepted 2026-11-17:** one ES module *file* per plugin (this port's analogue of one DLL); installed from a local file the user selects, stored as source text in IndexedDB, loaded with `import()` of a blob URL; **no remote catalogue and no auto-update** (D1); **no sandbox claim** — an in-page module holds the page's privileges, so the install dialog states that plainly instead of pretending otherwise. WASM stays available to a plugin (it may instantiate bytes itself) but v1 defines no WASM contract. | The only backend-free option. The original wording's two mechanisms are corrected by measurement rather than by taste: a *folder* pick needs the File System Access picker, which cannot be driven by a check (Task 4's real-chooser script is the proof of that cost) and does not exist outside Chromium, while a plain `<input type=file>` works everywhere the app runs and is automatable; and "sandboxed" cannot be honoured by a module that runs in the page — the alternatives (Worker, sandboxed iframe) reduce the API to declarative data and would not be a plugin model in N++'s sense. Full assessment in `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`, API and trust model in `docs/plugins.md`. **Scheduled after phase-2 Task 22** (user, 2026-11-17), because Tasks 11–22 keep changing the extension seams this host would sit on. |
 | **D6** | **Macro recording = editor transaction recording**, not OS input replay. | CM6 exposes every change as a transaction, so record/replay/run-N-times is genuinely feasible without native hooks. |
 | **D7** | **Run/exec features (NppExec-style, external tools) are out of scope.** | Requires a process/shell. Impossible backend-free; would need a desktop wrapper. |
@@ -115,8 +115,11 @@ Tasks 13–19, with the deferred contracts (Tier B/C I/O per D11, print, macros 
 
 **Scheduled first (D10 — phase-3 priority):**
 
-- **Encoding conversions requiring WASM** (UTF-32, DOS/IBM codepages) — see §6.
 - **Large-file mode** — disable expensive extensions above a threshold; spike the million-line case.
+
+*(Encoding conversions were on this list as "needs WASM"; Task 11 built them as JS and
+tables instead — see §6. What is left of that item is the multi-byte legacy encoders and
+the remaining DOS codepages.)*
 
 **Below that, unscheduled:**
 
@@ -164,7 +167,7 @@ because the phase-2 work will need them, and because they explain *why* tier A i
 | Service worker / PWA install | ✅ | ✅ | ⚠️ iOS install is manual, storage evictable | App still works online-only, without offline caching. |
 | Clipboard API (`navigator.clipboard`) | ✅ | ✅ | ⚠️ needs user gesture | `document.execCommand('copy')` legacy path. |
 | File Handling API (OS "open with" for installed PWA) | ✅ | ❌ | ❌ | Upload / drag-drop only. |
-| Encoding API (see §6) | ✅ | ✅ | ✅ | WASM decoder, or warn + lossy read. |
+| Encoding API (see §6) | ✅ | ✅ | ✅ | UTF-32 and CP437/850/852 are done in JS and generated tables; the remaining N++ DOS pages are refused by name, and multi-byte legacy is decode-only. |
 | Storage quota (`navigator.storage.estimate`) | ✅ | ✅ | ⚠️ quota can be aggressively cleared | Warn user; offer explicit export/backup. |
 
 **Consequence for the MVP (as revised by D11):** Chromium is the only target, so the editing
@@ -183,16 +186,39 @@ Task 4 (S4) that reports "this browser is not supported yet" instead of throwing
 ## 6. Text encoding matrix
 
 The WHATWG Encoding API mandates a fixed label list (verified against MDN). Coverage
-versus Notepad++'s character-set menu:
+versus Notepad++'s character-set menu, **as built**:
 
-**Covered by `TextDecoder` / `TextEncoder` (no extra work):**
-UTF-8, UTF-16LE/BE, windows-1250–1258, ISO-8859-2/3/4/5/6/7/8/10/13/14/15/16,
-KOI8-R/U, IBM866, Macintosh, x-mac-cyrillic, windows-874 (TIS-620), GBK, GB18030,
-Big5, EUC-JP, ISO-2022-JP, Shift_JIS, EUC-KR.
+**Decoded and encoded by the browser:** UTF-8, UTF-16LE/BE, windows-1250–1258,
+ISO-8859-2/3/4/5/6/7/8/10/13/14/15/16, KOI8-R/U, IBM866, Macintosh, x-mac-cyrillic,
+windows-874 (TIS-620). The browser *decodes* the multi-byte legacy set (GBK, GB18030,
+Big5, EUC-JP, ISO-2022-JP, Shift_JIS, EUC-KR) but has **no encoder** for any of it, so
+those stay decode-only and a save is refused with UTF-8 offered instead.
 
-**NOT covered — needs WASM (phase-3 priority per D10), or an honest warning until then:**
-- **UTF-32 (UCS-4) LE/BE** — not in the mandated list.
-- **DOS/IBM codepages** (cp437, cp850, …) beyond IBM866.
+**Built outside the Encoding API (Task 11, 2026-11-19):**
+
+- **UTF-32 LE/BE** — decoded and encoded in `src/file/file-io.ts` by arithmetic: four
+  bytes per code point, both endiannesses, astral characters as one unit, BOMs detected
+  in the right order (UTF-32LE's BOM begins with UTF-16LE's). Invalid code points become
+  U+FFFD and mark the document; an unpaired surrogate is refused on save. This is the
+  work D10 assumed needed WebAssembly, and the spike measured that it does not.
+- **DOS codepages CP437, CP850, CP852** — 256-entry tables generated from Microsoft's
+  mappings published by the Unicode Consortium (`scripts/data/CP437|850|852.TXT`) by
+  `scripts/gen-codepages.mjs`, which `npm run build` runs with `--check` so a stale table
+  fails the build rather than a user's file. About 1.4 kB of source per page; the spike
+  measured a 557 K-character encode at 74 ms and the decode at 55 ms, so WASM would buy
+  nothing. All 256 CP437 bytes are asserted to round-trip in `test-file-io.mjs`.
+- **Why the Encoding menu exists:** these pages carry no BOM and are not valid UTF-8, so
+  D4's no-autodetection rule opens every one of them as windows-1252 (assumed). The
+  **Encoding** menu is how a person says otherwise; it lists only encodings this build
+  can both read and write, and re-reads the file in place (refused while the document is
+  dirty, so unsaved work is never replaced from disk).
+
+**NOT covered — refused by name:**
+
+- The other DOS codepages N++ offers (720, 737, 775, 855, 857, 858, 860, 861, 862, 863,
+  864, 865, 869). They live in `UNSUPPORTED_CODEPAGES`, so a save names the page instead
+  of mis-encoding it.
+- Encoding multi-byte legacy text (the decode-only set above).
 - Autodetect of arbitrary legacy encodings (N++'s "Character sets → Autodetect").
 
 **Trap to document in code:** the labels `iso-8859-1`, `latin1`, `cp819`, `us-ascii` and

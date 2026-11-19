@@ -1,13 +1,13 @@
 # Notepad++ Web Edition — Phase 2 Implementation Plan
 
-> **For Hermes:** this file is the **spec**. It began as planning only; **Task 10 is implemented**
-> (2026-11-16) and carries an Outcome block, and **Tasks 11–22 are still unstarted**. Progress lives
-> in [`PROGRESS.md`](../../PROGRESS.md), not here. Start a session by reading `PROGRESS.md` →
-> `docs/scope.md` → the phase-1 plan → this plan, in that order.
+> **For Hermes:** this file is the **spec**. It began as planning only; **Tasks 10 and 11 are
+> implemented** (2026-11-16, 2026-11-19) and each carries a Result block, and **Tasks 12–22 are
+> still unstarted**. Progress lives in [`PROGRESS.md`](../../PROGRESS.md), not here. Start a
+> session by reading `PROGRESS.md` → `docs/scope.md` → the phase-1 plan → this plan, in that order.
 
-**Status:** Task 10 (Dark Mode) is **DONE** (2026-11-16). **Tasks 11–22 are unstarted.** Phase 1
-(Tasks 1–8) is fully built and verified; the Language menu was Task 9 and is not part of this
-document.
+**Status:** Task 10 (Dark Mode) is **DONE** (2026-11-16); Task 11 (encoding fidelity) is **DONE**
+(2026-11-19). **Tasks 12–22 are unstarted.** Phase 1 (Tasks 1–8) is fully built and verified; the
+Language menu was Task 9 and is not part of this document.
 
 **Predecessor:** `.hermes/plans/2026-09-24_notepadpp-web-plan.md` (Tasks 1–8, all DONE).
 **Scope authority:** `docs/scope.md` §4 (Tier 1 / Tier 2 / Tier 3) — this plan claims what that
@@ -32,7 +32,7 @@ IndexedDB, File System Access (Tier A only until Task 20).
 | Left over from | Item | Why it was left | Task |
 |---|---|---|---|
 | Tier 1, unclaimed | **Dark Mode** — the *preference* shipped in Task 7, the skin did not | no task claimed it; `THEMES` has one value | **10** |
-| D10, scheduled | **UTF-32 + DOS codepage** encode/decode | D4 refused them with a warning until this work | **11** |
+| D10, scheduled | **UTF-32 + DOS codepage** encode/decode | D4 refused them with a warning until this work | **11** — ✅ done |
 | D10, scheduled | **Large-file mode** | needs a measured threshold, not a guess | **12** |
 | Task 6 | overview ruler **saturates at 2000 ticks** instead of thinning out | fine at 10k lines (measured 8.5 ms), wrong at 1M | **12** |
 | Tier 2 | Smart Highlighter + incremental search | phase 1 shipped Mark All only | **13** |
@@ -146,7 +146,7 @@ the lexer table is the one that matters for token colours. If a value cannot be 
 
 ---
 
-## Task 11 — Encoding fidelity: UTF-32 and the DOS/IBM codepages (D4 → D10)
+## Task 11 — Encoding fidelity: UTF-32 and the DOS/IBM codepages (D4 → D10) — ✅ DONE (2026-11-19)
 
 **Objective:** read and write UTF-32 and the DOS codepages N++ offers, under D4's standing rule —
 what cannot be done is refused *loudly*, and what is done round-trips byte-identically.
@@ -193,6 +193,36 @@ before writing any C/Rust: which of N++'s encodings are actually missing, and is
 
 **Acceptance:** D4's line in `PROGRESS.md`/`docs/scope.md` moves from "refused" to "shipped for
 UTF-32 and the DOS codepages; multi-byte legacy remains decode-only", with the numbers.
+
+**Result (2026-11-19).** The spike (`scripts/spike-encoding-tables.mjs`) measured before any code
+was written: **16 of N++'s 17 DOS codepages have no `TextDecoder` label** (only IBM866 does), a
+generated 256-entry table is **~1.4 kB of source**, and 557 K characters encode through a table in
+**74 ms** (decode 55 ms) — so WebAssembly, which D10 had assumed, would add a compiler, a binary and
+a loader for work plain JS does in milliseconds. **UTF-32 is arithmetic**, not a table: four bytes
+per code point, both endiannesses, astral characters as one unit, and the BOM order is the trap the
+old comment already warned about (UTF-32LE's BOM begins with UTF-16LE's).
+
+Built: `src/file/codepages.ts` (generated), `scripts/gen-codepages.mjs` (parses Microsoft's mappings
+from `scripts/data/CP437|850|852.TXT`, refuses anything that is not 256 well-formed rows, `--check`
+wired into `npm run build`), UTF-32 decode/encode and the codepage tables in `file-io.ts`, and the
+rebuild of `SINGLE_BYTE_ENCODINGS`'s boundary — `canEncode()` now answers for UTF-32 and the tables,
+`UNSUPPORTED_CODEPAGES` names the rest, and a refusal names the page (CP720) instead of calling it
+"multi-byte".
+
+**The plan's files list was one short.** The acceptance assumes a CP437 file can be *named* CP437,
+and the port had no way to name an encoding: no BOM, not valid UTF-8, so D4 opens it as
+windows-1252 (assumed) forever. Task 11 therefore adds an **Encoding menu** (between View and
+Language, where N++ has it) listing the encodings this build can both read and write; choosing one
+re-reads the file in place, is refused while the document is dirty, and moves the save point so the
+reinterpreted document is clean. `verify-task9.py`'s menu-order assertion changed with it —
+deliberately, in the same commit.
+
+**Evidence:** `test-file-io.mjs` **70/70** (UTF-32LE/BE incl. astral, BOM-less named UTF-32, invalid
+code points → U+FFFD, unpaired surrogate refused; cp437/850/852; **all 256 CP437 bytes round-trip**;
+CP720 refused by name); `gen-codepages --check` OK; `verify-task11.py` **30/30**; `verify-task4.py`
+**49/49** with its UTF-32 *refusal* assertion flipped to the acceptance; task3 58/58, task9 41/41,
+task10 24/24, test-plugins 120/120, verify-plugins-dev 75/75, verify-task-plugins 63/63. Build
+index **156.78 kB / 48.10 kB gz** (+8.09 raw, +2.71 gz), `editor-core` unchanged.
 
 ---
 

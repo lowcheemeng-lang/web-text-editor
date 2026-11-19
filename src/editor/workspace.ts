@@ -42,6 +42,7 @@ import {
 
 import {
   canEncode,
+  decodeFile,
   encodeFile,
   pickFileToOpen,
   pickFileToSave,
@@ -150,6 +151,32 @@ import { toKeymapKey } from "../plugins/model";
 
 /** What a scratch buffer claims until it is given a file of its own. */
 const DEFAULT_FORMAT: DocumentFormat = { encoding: "utf-8", bom: "none", eol: "LF" };
+
+/**
+ * Encoding ▸ … — the encodings this build can both read and write. N++ offers a
+ * much longer list; every entry here has a working decoder *and* encoder, which
+ * is the rule the menu's title promises. `bom` is what a save will write when the
+ * file does not already carry one.
+ */
+interface EncodingChoice {
+  id: string;
+  label: string;
+  encoding: string;
+  bom: DocumentFormat["bom"];
+}
+
+const ENCODING_CHOICES: readonly EncodingChoice[] = [
+  { id: "enc-utf8", label: "UTF-8", encoding: "utf-8", bom: "none" },
+  { id: "enc-utf8-bom", label: "UTF-8 with BOM", encoding: "utf-8", bom: "utf-8" },
+  { id: "enc-utf16le", label: "UTF-16 LE", encoding: "utf-16le", bom: "utf-16le" },
+  { id: "enc-utf16be", label: "UTF-16 BE", encoding: "utf-16be", bom: "utf-16be" },
+  { id: "enc-utf32le", label: "UTF-32 LE", encoding: "utf-32le", bom: "utf-32le" },
+  { id: "enc-utf32be", label: "UTF-32 BE", encoding: "utf-32be", bom: "utf-32be" },
+  { id: "enc-win1252", label: "Windows-1252", encoding: "windows-1252", bom: "none" },
+  { id: "enc-cp437", label: "DOS (CP437)", encoding: "cp437", bom: "none" },
+  { id: "enc-cp850", label: "DOS (CP850)", encoding: "cp850", bom: "none" },
+  { id: "enc-cp852", label: "DOS (CP852)", encoding: "cp852", bom: "none" },
+];
 
 /** Shown in the first document so a fresh clone explains what it can do. */
 const WELCOME = `Notepad++ Web — Task 7
@@ -598,6 +625,16 @@ export class Workspace {
           { id: "zoom-out", label: "Zoom Out", onClick: () => void this.zoomBy(-1) },
           { id: "zoom-restore", label: "Restore Default Zoom", onClick: () => void this.setZoom(0) },
         ],
+      },
+      {
+        // N++'s Encoding menu sits between View and Language. This port had none until
+        // Task 11: nothing could *name* an encoding, so the WHATWG labels were only ever
+        // used to round-trip what a BOM or valid UTF-8 had already identified. The DOS
+        // codepages have no such signal, so without this menu the new tables would be
+        // unreachable. It is deliberately the small list this build implements, not
+        // N++'s full character-set tree.
+        label: "Encoding",
+        items: () => this.#encodingMenu(),
       },
       {
         // N++'s Language menu sits between View and Settings (Notepad_plus.rc:998). Its list
@@ -1504,6 +1541,80 @@ export class Workspace {
       await forgetRecent(name);
       await this.#refreshRecent();
     }
+  }
+
+  #encodingMenu(): MenuEntry[] {
+    const document = this.#active();
+    if (!document?.handle) {
+      // N++ greys its Character sets submenu on an unsaved buffer; this menu has no
+      // disabled state, so it says why instead of pretending the choice exists.
+      return [{ id: "encoding-none", label: "(no file open)", onClick: () => {} }];
+    }
+    const current = document.format;
+    return ENCODING_CHOICES.map((choice) => ({
+      id: choice.id,
+      label: choice.label,
+      checked:
+        current.encoding === choice.encoding &&
+        (choice.encoding !== "utf-8" || current.bom === choice.bom),
+      onClick: () => void this.reopenWithEncoding(choice),
+    }));
+  }
+
+  /**
+   * Read the active file again with the chosen encoding, in place.
+   *
+   * This is what makes the DOS codepages reachable at all: a CP437 file carries no
+   * byte-order mark and is not valid UTF-8, so D4's no-autodetection rule leaves it
+   * as windows-1252 (assumed) until a person says otherwise. The text is replaced in
+   * one transaction and the save point moves with it, so the reinterpreted document
+   * is clean — saving then writes the bytes back in the encoding just chosen.
+   *
+   * Refused on a dirty document: the text is about to be replaced from the file on
+   * disk, and silently dropping unsaved edits to reinterpret bytes is not a trade
+   * this app makes.
+   */
+  async reopenWithEncoding(choice: EncodingChoice): Promise<void> {
+    const document = this.#active();
+    if (!document?.handle) return;
+    if (document.dirty) {
+      await this.#chrome.alert({
+        title: "Save before changing the encoding",
+        body:
+          "This document has unsaved changes. Save or discard them first — changing the " +
+          "encoding reads the file on disk again, and would replace work it does not contain.",
+      });
+      return;
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = new Uint8Array(await (await document.handle.getFile()).arrayBuffer());
+    } catch (error) {
+      await this.#chrome.alert({ title: `Could not read ${document.name}`, body: describe(error) });
+      return;
+    }
+    const decoded = decodeFile(bytes, choice.encoding);
+    if (decoded.unsupported) {
+      await this.#chrome.alert({ title: `${document.name} was not reopened`, body: decoded.unsupported });
+      return;
+    }
+    const view = ownerView(document.runtime);
+    if (!view) return;
+    const text = toEditorLineEndings(decoded.text);
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+    // A file that carries a BOM has already said what it is; that wins over the menu
+    // entry, or a UTF-16 file "reopened as UTF-8" would save as BOM-less UTF-16.
+    document.format =
+      decoded.bom !== "none"
+        ? { encoding: decoded.encoding, bom: decoded.bom, eol: decoded.eol }
+        : { encoding: choice.encoding, bom: choice.bom, eol: decoded.eol };
+    document.assumedEncoding = false;
+    // The file on disk *is* the save point of the reinterpreted document.
+    document.savedText = view.state.doc;
+    document.dirty = false;
+    this.#emitDocumentChanged(document);
+    this.#scheduleSessionWrite(0);
+    this.#render();
   }
 
   /**

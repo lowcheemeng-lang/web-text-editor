@@ -15,10 +15,18 @@
  * So this module builds the missing encoders itself:
  *
  *   - UTF-16LE/BE are written by hand (two bytes per code unit, endianness by name);
- *   - each **single-byte** encoding gets a table *derived from its own decoder*:
- *     decoding the 256 individual bytes 0x00–0xFF with that label yields each byte's
- *     code point, and inverting it gives the byte for each character. Exact,
- *     dependency-free, and it cannot drift from the browser's own tables.
+ *   - UTF-32LE/BE are written by hand too — four bytes per code point. This is
+ *     arithmetic, not a table, which is what Task 11's spike measured before
+ *     deciding against the WebAssembly decoder D10 had assumed;
+ *   - each **single-byte WHATWG** encoding gets a table *derived from its own
+ *     decoder*: decoding the 256 individual bytes 0x00–0xFF with that label yields
+ *     each byte's code point, and inverting it gives the byte for each character.
+ *     Exact, dependency-free, and it cannot drift from the browser's own tables;
+ *   - the **DOS codepages** the browser cannot decode at all (CP437/850/852; only
+ *     IBM866 has a WHATWG label) are table-backed in both directions from
+ *     `codepages.ts`, generated from Microsoft's published mappings by
+ *     `scripts/gen-codepages.mjs`. The remaining N++ DOS pages are named in
+ *     `UNSUPPORTED_CODEPAGES` and refused by name rather than mis-decoded.
  *
  * Multi-byte legacy encodings (GBK, Big5, Shift_JIS, EUC-*, ISO-2022-JP) are
  * **decode-only**: no encoder exists for them here, so `canEncode()` returns false
@@ -32,6 +40,7 @@
  * `encodeFile` takes them back.
  */
 import type { BomKind, Bytes, DecodedFile, DocumentFormat, EncodeResult } from "./types";
+import { CODEPAGES, UNSUPPORTED_CODEPAGES } from "./codepages.ts";
 
 /**
  * The single-byte encodings in the WHATWG mandate. Every one of these can be
@@ -101,6 +110,9 @@ export function canEncode(label: string): boolean {
   const canonical = normaliseEncodingLabel(label);
   return (
     (TEXT_ENCODINGS as readonly string[]).includes(canonical) ||
+    canonical === "utf-32le" ||
+    canonical === "utf-32be" ||
+    Object.hasOwn(CODEPAGES, canonical) ||
     SINGLE_BYTE_ENCODINGS.includes(canonical)
   );
 }
@@ -129,6 +141,10 @@ export function bomBytes(bom: BomKind): Uint8Array {
       return new Uint8Array([0xff, 0xfe]);
     case "utf-16be":
       return new Uint8Array([0xfe, 0xff]);
+    case "utf-32le":
+      return new Uint8Array([0xff, 0xfe, 0x00, 0x00]);
+    case "utf-32be":
+      return new Uint8Array([0x00, 0x00, 0xfe, 0xff]);
     default:
       return new Uint8Array();
   }
@@ -157,19 +173,17 @@ export function decodeFile(bytes: Uint8Array, encoding?: string): DecodedFile {
   const bom = detectBom(bytes);
 
   if (bom === "utf-32le" || bom === "utf-32be") {
-    // D4: not in the WHATWG set; refused with a warning until the phase-3 WASM work.
+    // Task 11: arithmetic, not the WebAssembly decoder D10 had assumed. The BOM is
+    // four bytes, so the code points start at offset 4.
+    const decoded = decodeUtf32(bytes.subarray(4), bom === "utf-32le");
     return {
-      text: "",
+      text: decoded.text,
       encoding: bom,
       bom,
-      eol: "LF",
-      hadErrors: true,
+      eol: detectEol(decoded.text),
+      hadErrors: decoded.hadErrors,
       assumed: false,
-      unsupported:
-        `This file starts with a ${bom === "utf-32le" ? "UTF-32 LE" : "UTF-32 BE"} byte-order mark. ` +
-        "UTF-32 is not one of the encodings a browser can decode, and the MVP does not ship the " +
-        "WebAssembly decoder for it yet (decision D4/D10), so the file has been left unopened " +
-        "rather than shown as mojibake.",
+      unsupported: null,
     };
   }
 
@@ -178,6 +192,47 @@ export function decodeFile(bytes: Uint8Array, encoding?: string): DecodedFile {
   else if (bom === "utf-16le") label = "utf-16le";
   else if (bom === "utf-16be") label = "utf-16be";
   else label = encoding ? normaliseEncodingLabel(encoding) : "utf-8";
+
+  // A BOM-less file the user named as UTF-32 or as a DOS codepage: neither has a
+  // TextDecoder, so both are decoded here rather than falling through to the
+  // windows-1252 fallback (which would be a lie, not a guess).
+  if (bom === "none") {
+    if (label === "utf-32le" || label === "utf-32be") {
+      const decoded = decodeUtf32(bytes, label === "utf-32le");
+      return {
+        text: decoded.text,
+        encoding: label,
+        bom,
+        eol: detectEol(decoded.text),
+        hadErrors: decoded.hadErrors,
+        assumed: false,
+        unsupported: null,
+      };
+    }
+    const codepage = Object.hasOwn(CODEPAGES, label) ? CODEPAGES[label] : undefined;
+    if (codepage) {
+      let decoded = "";
+      let hadErrors = false;
+      for (const byte of bytes) {
+        const char = codepage.chars[byte];
+        if (char === null) {
+          decoded += "\uFFFD";
+          hadErrors = true;
+        } else {
+          decoded += char;
+        }
+      }
+      return {
+        text: decoded,
+        encoding: label,
+        bom,
+        eol: detectEol(decoded),
+        hadErrors,
+        assumed: false,
+        unsupported: null,
+      };
+    }
+  }
 
   let assumed = false;
   let hadErrors = false;
@@ -281,6 +336,76 @@ function encodeUtf16(text: string, littleEndian: boolean): Bytes {
   return out;
 }
 
+interface Utf32Decoded {
+  readonly text: string;
+  readonly hadErrors: boolean;
+}
+
+/**
+ * Four bytes per code point, either endianness. Invalid values (above U+10FFFF, a
+ * surrogate, or a trailing partial unit) become U+FFFD and mark the document as
+ * having errors, the same policy TextDecoder uses non-fatally — a file opens with
+ * its bad characters visible rather than refusing to open at all.
+ */
+function decodeUtf32(bytes: Uint8Array, littleEndian: boolean): Utf32Decoded {
+  let text = "";
+  let hadErrors = false;
+  const usable = bytes.length - (bytes.length % 4);
+  if (usable !== bytes.length) hadErrors = true;
+  for (let at = 0; at < usable; at += 4) {
+    const b0 = bytes[at] as number;
+    const b1 = bytes[at + 1] as number;
+    const b2 = bytes[at + 2] as number;
+    const b3 = bytes[at + 3] as number;
+    const code = littleEndian
+      ? (b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) >>> 0
+      : ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3) >>> 0;
+    if (code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
+      text += "\uFFFD";
+      hadErrors = true;
+      continue;
+    }
+    text += String.fromCodePoint(code);
+  }
+  return { text, hadErrors };
+}
+
+function encodeUtf32(text: string, littleEndian: boolean): EncodeResult {
+  const codePoints: number[] = [];
+  let index = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) as number;
+    // A lone surrogate cannot be a code point. Refuse rather than write a byte
+    // sequence no other reader can interpret.
+    if (code >= 0xd800 && code <= 0xdfff) {
+      const where = index > 40 ? `…${text.slice(index - 40, index + 1)}` : text.slice(0, index + 1);
+      return {
+        problem:
+          `The text contains an unpaired UTF-16 surrogate (U+${code.toString(16).toUpperCase()}, ` +
+          `near “${where}”), which cannot be written as UTF-32.`,
+      };
+    }
+    codePoints.push(code);
+    index += char.length;
+  }
+  const out = new Uint8Array(codePoints.length * 4);
+  codePoints.forEach((code, i) => {
+    const at = i * 4;
+    if (littleEndian) {
+      out[at] = code & 0xff;
+      out[at + 1] = (code >>> 8) & 0xff;
+      out[at + 2] = (code >>> 16) & 0xff;
+      out[at + 3] = (code >>> 24) & 0xff;
+    } else {
+      out[at] = (code >>> 24) & 0xff;
+      out[at + 1] = (code >>> 16) & 0xff;
+      out[at + 2] = (code >>> 8) & 0xff;
+      out[at + 3] = code & 0xff;
+    }
+  });
+  return { bytes: out };
+}
+
 /**
  * Encode text for saving. Returns bytes, or a `problem` describing exactly why it
  * cannot be done — never silently lossy (scope §8 criterion 6).
@@ -305,7 +430,49 @@ export function encodeFile(text: string, format: DocumentFormat): EncodeResult {
 
   if (label === "utf-16le" || label === "utf-16be") {
     body = encodeUtf16(text, label === "utf-16le");
+  } else if (label === "utf-32le" || label === "utf-32be") {
+    const encoded = encodeUtf32(text, label === "utf-32le");
+    if ("problem" in encoded) return encoded;
+    body = encoded.bytes;
+  } else if (Object.hasOwn(CODEPAGES, label)) {
+    // A DOS codepage: the table is the authority in both directions, because the
+    // browser has no decoder for these labels at all.
+    const page = CODEPAGES[label];
+    if (!page) {
+      return { problem: `The ${label} character table is missing from this build.` };
+    }
+    const table = new Map<string, number>();
+    page.chars.forEach((char, byte) => {
+      if (char !== null && !table.has(char)) table.set(char, byte);
+    });
+    const out: number[] = [];
+    let index = 0;
+    for (const char of text) {
+      const byte = table.get(char);
+      if (byte === undefined) {
+        const code = (char.codePointAt(0) as number).toString(16).toUpperCase().padStart(4, "0");
+        const where = index > 40 ? `…${text.slice(index - 40, index + 1)}` : text.slice(0, index + 1);
+        return {
+          problem:
+            `The character “${char}” (U+${code}, near “${where}”) does not exist in ${label} ` +
+            `(${page.name}). Saving now would corrupt it. Save as UTF-8 instead, or remove the ` +
+            "character.",
+        };
+      }
+      out.push(byte);
+      index += char.length;
+    }
+    body = asBytes(Uint8Array.from(out));
   } else {
+    // A DOS codepage N++ offers and this build does not: name it rather than claim
+    // it is "multi-byte".
+    if (Object.hasOwn(UNSUPPORTED_CODEPAGES, label)) {
+      return {
+        problem:
+          `${UNSUPPORTED_CODEPAGES[label]} is a DOS codepage this build does not implement. ` +
+          "The text can be saved as UTF-8 instead (D4).",
+      };
+    }
     // The WHATWG mandate defines exactly which encodings are single-byte, and only
     // those can be rebuilt from their own decoder. The allowlist is the honest
     // gate — see the note in `singleByteEncoder` about why inference fails.
