@@ -6,9 +6,11 @@
  *
  * Three stores, one version, one upgrade path:
  *
- *   recent-files   File ▸ Recent, keyed by name (Task 4)
- *   preferences    the `config.xml` GUIConfig analogue (Task 7)
- *   session        the `session.xml` analogue — one record, keyed "session" (Task 7)
+ *   recent-files    File ▸ Recent, keyed by name (Task 4)
+ *   preferences     the `config.xml` GUIConfig analogue (Task 7)
+ *   session         the `session.xml` analogue — one record, keyed "session" (Task 7)
+ *   plugins         installed plugin records, keyed by plugin id (P2, D5)
+ *   plugin-settings per-plugin key/value objects, keyed by plugin id (P2, D5)
  *
  * Two rules the whole layer keeps:
  *
@@ -24,10 +26,15 @@
 
 export const DB_NAME = "notepadpp-web";
 
-/** 1 → recent-files (Task 4) · 2 → preferences and session (Task 7). */
-export const DB_VERSION = 2;
+/** 1 → recent-files (Task 4) · 2 → preferences and session (Task 7) · 3 → plugins (P2). */
+export const DB_VERSION = 3;
 
-export type StoreName = "recent-files" | "preferences" | "session";
+export type StoreName =
+  | "recent-files"
+  | "preferences"
+  | "session"
+  | "plugins"
+  | "plugin-settings";
 
 /** Resolve a request's result, for the callers that need the value before the commit. */
 export function request<T>(req: IDBRequest<T>): Promise<T> {
@@ -62,6 +69,10 @@ export function openDatabase(): Promise<IDBDatabase | null> {
       // preferences and session use out-of-line keys: there is exactly one of each.
       if (!db.objectStoreNames.contains("preferences")) db.createObjectStore("preferences");
       if (!db.objectStoreNames.contains("session")) db.createObjectStore("session");
+      // P2 (D5): one record per plugin id, and one settings object per plugin id. Both
+      // out-of-line so the store's key is the plugin id and nothing else.
+      if (!db.objectStoreNames.contains("plugins")) db.createObjectStore("plugins");
+      if (!db.objectStoreNames.contains("plugin-settings")) db.createObjectStore("plugin-settings");
     };
     open.onsuccess = () => resolve(open.result);
     open.onerror = () => resolve(null);
