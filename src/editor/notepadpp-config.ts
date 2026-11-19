@@ -343,6 +343,17 @@ export function tokenColoursFor(theme?: ThemeName): TokenColours {
  */
 export const languageCompartment = new Compartment();
 
+/**
+ * P4 (D5). Everything plugins contribute to a document's editor: their view-level
+ * extensions, plus a keymap built from the commands they registered. A compartment
+ * for the same reason the theme and the language have one — the plugin set can
+ * change while documents are open (enable, disable, reload), and every view has to
+ * follow. Both states carry it: `createDocumentState` and `createCloneState` both
+ * build from `editorCoreExtensions`, so a split pane gets plugin extensions without
+ * a second mechanism.
+ */
+export const pluginCompartment = new Compartment();
+
 export function wordWrapExtension(on: boolean): Extension {
   return on ? EditorView.lineWrapping : [];
 }
@@ -353,6 +364,8 @@ export interface EditorCoreOptions {
   bookmarkMargin?: boolean;
   /** The document's loaded language support, if it has one and it has arrived. */
   language?: Extension;
+  /** P4 — what active plugins contribute: extensions and their command keymap. */
+  plugins?: Extension;
   /** Task 7 — the zoom preference (`<ScintillaViewParams zoom="0">`), in points. */
   zoom?: number;
   /** Task 7 — the theme preference; only N++'s own palette exists so far. */
@@ -415,6 +428,9 @@ export function editorCoreExtensions(options: EditorCoreOptions = {}): Extension
     // (empty until it loads).
     highlightCompartment.of(nppHighlighting(tokenColoursFor(options.theme))),
     languageCompartment.of(options.language ?? []),
+    // P4 (D5): active plugins' extensions and command keymap. Empty until one is
+    // enabled, and reconfigured on every live view when that set changes.
+    pluginCompartment.of(options.plugins ?? []),
     // Task 6: the overview ruler, per view like the marks it draws from.
     overviewRuler,
     wordWrapCompartment.of(wordWrapExtension(wordWrap)),

@@ -354,6 +354,9 @@ export class Chrome {
   }
 
   addButton(spec: ToolbarButtonSpec): void {
+    // A re-registration replaces the button instead of appending a second one:
+    // plugin buttons are synced on every change, and that has to be idempotent.
+    this.removeButton(spec.id);
     const button = el("button", {
       className: "npp-tool",
       text: spec.label,
@@ -367,6 +370,14 @@ export class Chrome {
     });
     this.#buttons.set(spec.id, button);
     this.toolbar.appendChild(button);
+  }
+
+  /** Remove a button by id; a missing id is a no-op, so teardown can call it blindly. */
+  removeButton(id: string): void {
+    const button = this.#buttons.get(id);
+    if (!button) return;
+    this.#buttons.delete(id);
+    button.remove();
   }
 
   setButtonActive(id: string, active: boolean): void {
