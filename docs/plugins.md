@@ -1,13 +1,12 @@
 # Plugins — host API, trust model, and limits
 
-**Status: P0–P6 OF THE PLAN ARE BUILT; EXAMPLES AND THE ACCEPTANCE CHECK ARE NOT.** D5 was accepted
-as amended on **2026-11-17**. What exists in the app today: the P1 loader spike (37/37), P2's model
-and store (DB version 3), P3's API surface, registry and loader, P4's wiring — a **Plugins menu**,
-shortcuts, toolbar buttons, document events, `inspect().plugins` — P5's **right-hand dock** for panel
-plugins, and P6's **Plugin Manager** (install from a `.js` file, drag-and-drop or paste; enable,
-disable, reload, uninstall; per-plugin error text; `?plugins=off` recovery mode)
-(`scripts/verify-plugins-dev.py`, 75/75; Node suite 120/120). **Not built:** the example plugins and
-the production acceptance check (P7), and the porting guide's final pass (P8).
+**Status: P0–P7 ARE BUILT; ONLY THE DOCUMENTATION CLOSE-OUT (P8) IS LEFT.** D5 was accepted as
+amended on **2026-11-17**. What exists in the app today: the Plugins menu, plugin commands and
+shortcuts, toolbar buttons, document events, the right-hand dock for panels, and the Plugin Manager
+(install from a `.js` file, drag-and-drop or paste; enable, disable, reload, uninstall; per-plugin
+error text; `?plugins=off` recovery). Five example plugins live in `plugins/examples/`, and
+`scripts/verify-task-plugins.py` is the end-to-end evidence — **63/63** against a production build,
+including an offline reload with the server stopped. `plugins/README.md` is the author's guide.
 
 When a task lands, its section gains a **shipped / planned** marker and the check that proves it, the
 way `docs/session-persistence.md` and `docs/offline-pwa.md` do.

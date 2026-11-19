@@ -60,7 +60,8 @@ PROGRESS.md    task-by-task ledger with the evidence behind every claim
 
 - `docs/scope.md` — compatibility matrix, encoding support, and known risks
 - `docs/editor-core-decision.md`, `docs/session-persistence.md`, `docs/offline-pwa.md` — design write-ups
-- `docs/plugins.md` — the plugin host's trust model, API surface and v1 limits (**P0–P6 built**: Plugins menu, commands, events, dock, Plugin Manager; examples and acceptance check still to come)
+- `docs/plugins.md` — the plugin host's trust model, API surface and v1 limits (**P0–P7 built**: Plugins menu, commands, events, dock, Plugin Manager, examples, acceptance check)
+- `plugins/README.md` — how to write and install a plugin, with the API table and the five examples
 - `PROGRESS.md` — the full task ledger: every feature with the exact verification runs (assertion counts, timings) behind it
 
 ## Status

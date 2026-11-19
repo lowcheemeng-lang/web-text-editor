@@ -106,8 +106,12 @@ node --experimental-strip-types scripts/test-themes.mjs           # the tables +
    script → **PASS (75/75)** — open manager, install from paste and from a `.js` file, enable, disable,
    reload, uninstall with a confirm step, a failed row with its error, an app-shortcut conflict refused
    with the reason, a startup failure that raises a notice with an "Open Plugin Manager" action, and
-   `?plugins=off` recovery mode. **P7 — example plugins and the production acceptance check — is
-   next.**
+   `?plugins=off` recovery mode. **P7 is DONE too:** the five example plugins, `plugins/README.md`, and
+   `scripts/verify-task-plugins.py` → **PASS (63/63)** against a production build served with
+   `no-cache` — install through the manager, a `ViewPlugin` in both panes, base64 with one undo, JSON
+   format + refusal, word-count panel counts and debounce, disable, reload, `?plugins=off`, a broken
+   plugin, an app-shortcut conflict (and the app's own save still working), a re-install, and an
+   offline reload with the server stopped. **P8 — documentation and ledger close-out — is next.**
 
 **Nothing is blocking, and no task needs the user for scope.** `D1` and `D8` remain `Proposed`
 — low-stakes consolidations of choices already implied by accepted decisions, and `D8` is now fully
@@ -1655,6 +1659,34 @@ Regressions at HEAD: `test-plugins.mjs` 120/120; `verify-task3.py` 58/58; `verif
 `verify-task10.py` 24/24; typecheck 0; build 0. **Build:** index 142.39 → **148.69 kB raw / 44.98 kB
 gz** (the manager); editor-core unchanged. Screenshots: `.hermes/cache/screenshots/plugin-manager-light.png`
 and `plugin-manager-dark.png`.
+
+**P7 — example plugins and the acceptance check (PASS 63/63, production build)**
+`plugins/examples/{probe,base64,word-count,json-format,broken}.js` and `plugins/README.md` (the API
+table, the trust paragraph, the limits). `scripts/verify-task-plugins.py` builds `dist/`, serves it
+with `Cache-Control: no-cache` from its own server, uses a fresh profile, and drives only the UI a
+user has — the menu, the manager's file input, the dock — because a production build has no
+`window.__workspace`. It covers the plan's thirteen steps: empty manager; probe via the file input
+(`[data-plugin-probe]` on the editor); base64 encode/decode with **one** Ctrl+Z; JSON format plus a
+refusal that leaves the text alone; the word-count dock with counts that match and a debounce that
+adds exactly the six characters typed; split view with the extension in **both** panes; disable;
+reload (enabled return, the disabled one stays off); `?plugins=off` recovery; a broken example;
+shortcut rejection with the app's own save still working; a same-id re-install as an update; and an
+offline reload with the server stopped where every non-blob response came from the service worker and
+a plugin command still ran.
+**Three defects the check found.** (a) The example's `ViewPlugin` defined `destroy(view)`, but
+CodeMirror calls `destroy()` with no argument — the crash surfaced as "CodeMirror plugin crashed" and
+the extension disappeared from the split pane; it now keeps the view. (b) Even fixed, the class never
+reached the clone: CodeMirror owns `view.dom.className` and rewrites it when it applies theme classes,
+so the example now marks with `data-plugin-probe` — recorded in the README because it is a trap every
+plugin author will hit. (c) The panel's counts were being compared against `.cm-content`'s
+`textContent`, which has no newlines and only the rendered lines; the check now rebuilds the text from
+`.cm-line` nodes and compares like with like.
+**Deliberate deviation from the plan's step 8:** with `?plugins=off` the manager does **not** enable a
+plugin (P6's decision); the check asserts the banner, the missing install path, and Uninstall working.
+**Bundle:** the examples are not bundled — plugin sources live in IndexedDB — so the build is
+byte-identical to P6's (`index-e52qIhza.js` 148.69 kB / 45.39 kB gz, `editor-core` 380.99 / 123.15,
+same hashes), and `node scripts/check-precache.mjs` agrees with the shell (9 precached files).
+`npm run typecheck` → 0. Screenshot: `.hermes/cache/screenshots/plugins-acceptance.png`.
 
 **Session 13 — paused at P5, resumed the same day**
 The user paused the build after P5 (`cb2b7de`) and asked to be told when to resume. They said

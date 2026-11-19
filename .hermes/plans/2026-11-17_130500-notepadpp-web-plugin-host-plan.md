@@ -9,9 +9,12 @@
 > `scripts/verify-plugins-dev.py` → **28/28** — **P5 is DONE**: the right-hand dock for plugin
 > panels, same script → **48/48** — and **P6 is DONE**: the Plugin Manager (install from file, drop or
 > paste; enable, disable, reload, uninstall; errors; `?plugins=off` recovery), same script →
-> **75/75**. **P7 (example plugins + the production acceptance check) is next.** P8 is unstarted.
+> **75/75** — and **P7 is DONE**: the five examples, `plugins/README.md` and
+> `scripts/verify-task-plugins.py` → **63/63** against a production build (install, both panes, undo,
+> disable, reload, recovery mode, offline reload with the server stopped). **P8 (docs and ledger
+> close-out) is next.**
 >
-> **For Hermes:** P1–P6 are done; continue at **P7 (the examples and the acceptance check)**. Work one task per
+> **For Hermes:** P1–P7 are done; continue at **P8 (docs and ledger)**. Work one task per
 > session with a reproducible check, appending a row to `PROGRESS.md` — the project's standing rules
 > (S1–S18) apply unchanged. Do not build around a spike result: if a later measurement contradicts
 > the design, record the measurement and amend this plan, the way R2 produced S5.
@@ -716,7 +719,7 @@ poll-instead-of-sleep fix for its Language submenu (flaky only when run straight
 
 ---
 
-### Task P7 — Example plugins and the acceptance check
+### Task P7 — Example plugins and the acceptance check — **DONE 2026-11-19**
 
 **Objective:** three small real plugins that prove the API, and one script that is the evidence.
 
@@ -765,6 +768,18 @@ poll-instead-of-sleep fix for its Language submenu (flaky only when run straight
 - Build delta recorded: `index` chunk before/after (expected +10–15 kB raw / +4–6 kB gz)
 
 **Commit:** `task-P7: example plugins and end-to-end plugin acceptance check`
+
+**Result (2026-11-19): `VERIFY-PLUGINS: PASS (63/63)`** against a production build served with
+`no-cache` from the script's own server. The five examples and `plugins/README.md` are in place. Three
+defects were found by the check and fixed in the examples: `ViewPlugin.destroy(view)` is called with
+no argument (the extension crashed and vanished from the split pane); CodeMirror owns
+`view.dom.className` and drops foreign classes when it applies theme classes, so the probe marks with
+`data-plugin-probe`; and the panel's counts had been compared against `.cm-content`'s `textContent`
+(no newlines, rendered lines only) — the check now rebuilds from `.cm-line`. **Step 8's "manager still
+lets the user enable" is not what ships:** `?plugins=off` blocks Enable by P6's design; the check
+asserts the banner, no install path, and Uninstall working. The examples add **no bundle weight** —
+the build is byte-identical to P6's (`index-e52qIhza.js`, 148.69 kB / 45.39 kB gz; `editor-core`
+380.99 / 123.15) — and `check-precache.mjs` still agrees with the shell.
 
 ---
 
