@@ -12,7 +12,7 @@ Built with [Vite](https://vitejs.dev), TypeScript and [CodeMirror 6](https://cod
 - **Session persistence & preferences** — unsaved buffers, dirty files, caret, folds, bookmarks, language choices and preferences are restored after a reload from IndexedDB; a Preferences dialog covers the usual knobs.
 - **Dark Mode** — faithful to Notepad++'s own dark theme (`DarkModeDefault.xml` for the editor, `NppDarkMode.cpp` for the chrome), applied live and with no white flash on reload.
 - **Encodings** — UTF-8/16/32 with their byte-order marks preserved, the browser's single-byte set, and the DOS codepages CP437/CP850/CP852 from tables generated out of Microsoft's own mappings. The **Encoding** menu names one and re-reads the file in place; anything this build cannot encode (the multi-byte legacy set, the remaining DOS pages) is refused by name rather than mangled, and a file never changes encoding behind your back.
-- **Plugins** — Notepad++'s plugin menu without the DLLs: install one `.js` module from the Plugin Manager, and it can add commands, shortcuts, toolbar buttons, a docked panel and editor decorations. Sources live in IndexedDB, so plugins work offline; there is no remote catalogue and no sandbox — the manager says so before you pick a file. Five worked examples in `plugins/examples/`.
+- **Plugins** — Notepad++'s plugin menu without the DLLs: install one `.js` module from the Plugin Manager, and it can add commands, shortcuts, toolbar buttons, a docked panel and editor decorations. Sources live in IndexedDB, so plugins work offline; there is no remote catalogue and no sandbox — the manager says so before you pick a file. Six worked examples in `plugins/examples/`.
 - **Installable & offline (PWA)** — installable as a standalone window; once loaded it works with no network at all, and edits still save through to your files.
 
 ## Getting started
@@ -52,7 +52,7 @@ src/
   storage/     IndexedDB helpers, session store, backup store, preferences
   platform/    capability detection
   pwa/         service worker registration
-plugins/       the plugin author's guide and five worked examples
+plugins/       the plugin author's guide and six worked examples
 public/        manifest + icons
 scripts/       verification harnesses (browser-driven) and unit-style Node tests
 docs/          design decisions: scope, editor core, session persistence, offline/PWA

@@ -5,7 +5,7 @@ was built ahead of the Task-22 slot at the user's direction. Everything in this 
 shipped behaviour unless a section says otherwise. The author's guide is `plugins/README.md`; the
 evidence is `scripts/verify-task-plugins.py` (**63/63**, production build) and
 `scripts/verify-plugins-dev.py` (**75/75**, dev server), plus `scripts/test-plugins.mjs` (**120/120**,
-Node). The five examples live in `plugins/examples/`.
+Node). The six examples live in `plugins/examples/`.
 
 ---
 
@@ -164,7 +164,8 @@ Two traps worth knowing before writing the rest:
    it; the first version of the probe example assumed otherwise and CodeMirror logged a crash.
 
 `plugins/examples/` is the template to copy: `probe.js` for extensions, `base64.js` for edits,
-`word-count.js` for a docked panel, `json-format.js` for the refusal path.
+`word-count.js` for a docked panel, `json-format.js` for the refusal path, `xml-format.js` for a
+plugin that carries its own parser (and knows which text it must not rewrite).
 
 ## 6. Install, storage, lifecycle (shipped)
 

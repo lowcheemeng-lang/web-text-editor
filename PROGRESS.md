@@ -1732,6 +1732,15 @@ already followed.
 typecheck 0, build 0 (index 156.78 kB / 48.10 gz; `editor-core` unchanged). Screenshot:
 `.hermes/cache/screenshots/task11-encodings.png`.
 
+**Addendum (same day) — `plugins/examples/xml-format.js`, on request.** A sixth example: a formatter
+with its own small parser, because a plugin is one module with no imports. It re-indents element-only
+content, keeps text-only elements inline, **leaves mixed content byte-for-byte as written** and says
+how many subtrees it preserved, keeps entities undecoded, emits LF (the editor's line ending), and
+refuses invalid XML with the line number while changing nothing. `scripts/test-plugin-xml.mjs` →
+**21/21** (`formatXml` is exported alongside the plugin object so Node can test it without a browser);
+`scripts/verify-plugin-xml.py` → **14/14** in Chrome (install, format, one Ctrl+Z, refusal notice,
+mixed-content notice, a selected fragment, disable, uninstall).
+
 ## Blockers / open questions
 
 Nothing blocking, and nothing needs a task to proceed. **Task 9 closed the last open item that had

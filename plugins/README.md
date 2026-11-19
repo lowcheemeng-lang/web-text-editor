@@ -61,6 +61,7 @@ registration; a plugin cannot take one silently.
 | [base64.js](examples/base64.js) | replacing selections; UTF-8; one undoable edit |
 | [word-count.js](examples/word-count.js) | a docked panel that follows the active document |
 | [json-format.js](examples/json-format.js) | formatting, and a notice instead of corrupting invalid JSON |
+| [xml-format.js](examples/xml-format.js) | a small parser of its own: re-indents elements, leaves mixed content exactly as written, refuses invalid XML with a line number |
 | [broken.js](examples/broken.js) | the failure path: activation throws, the editor keeps working |
 
 Install `probe.js` first: if `[data-plugin-probe]` appears on the editor, the host
