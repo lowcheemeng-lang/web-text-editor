@@ -80,13 +80,17 @@ node --experimental-strip-types scripts/test-themes.mjs           # the tables +
 4. **Tasks 13–19 — the Tier-2 backlog** (Smart Highlighter + incremental search, per-pane tab sets,
    Function List, block-edit UI, minimap, autocompletion, drop files).
 5. **Tasks 20–22 — the deferred contracts**: Tier B/C file I/O per D11, print, and macros per D6.
-6. **Plugin host (D5) — P0–P2 are DONE, P3 is next.** The user said "proceed" on 2026-11-18, so the
+6. **Plugin host (D5) — P0–P3 are DONE, P4 is next.** The user said "proceed" on 2026-11-18, so the
    build started ahead of the Task-22 slot they had named; the phase-2 queue is otherwise unchanged
    and Task 11 is still its next unit. Evidence: P1 `python3 scripts/spike-plugin-host.py` →
    **PLUGIN_SPIKE: PASS (37/37)** — blob-URL import, one CM6 instance shared with the plugin, the
    extension in both panes, teardown in both, a contained activation failure, and the production
-   build under the service worker; P2 `node --experimental-strip-types scripts/test-plugins.mjs` →
-   **74/74**, `npm run typecheck` → exit 0. P3 — the host API and loader — is the next unit.
+   build under the service worker; P2+P3 `node --experimental-strip-types scripts/test-plugins.mjs`
+   → **114/114**, `npm run typecheck` → exit 0 — validation, store, shortcut conflicts in both
+   notations, registry registration/disposal, and the loader's containment contract. P3 added
+   `api.ts`, `cm.ts`, `registry.ts`, `loader.ts` and `host.ts`. **P4 — the Plugins menu, the
+   `pluginCompartment` in the real document states, document events and `inspect().plugins` — is
+   next.**
 
 **Nothing is blocking, and no task needs the user for scope.** `D1` and `D8` remain `Proposed`
 — low-stakes consolidations of choices already implied by accepted decisions, and `D8` is now fully
@@ -1557,9 +1561,20 @@ panel's show/hide/announce, and registration after disposal being refused. `npm 
 reload/start, blob import, activation timeout) and `host.ts` (the context built over a workspace
 bridge).
 
+**P3, part 2 — loader and context factory (PASS 114/114)**
+`src/plugins/loader.ts` (install/enable/disable/reload/uninstall/start; blob import; a 1.5 s
+activation deadline whose late registrations the registry refuses; per-plugin error capture persisted
+as `lastError`; every method resolves rather than rejecting) and `src/plugins/host.ts` (the
+`PluginContext` assembled over a `WorkspaceBridge`, so the document operations a plugin can reach are
+an explicit interface rather than the workspace itself). Ten more Node checks cover the loader's
+containment contract: empty and oversize sources, `?plugins=off`, missing plugins, and install
+resolving with an error when the module cannot load (Node cannot import `blob:` URLs — that is the
+browser's job, exercised in P4). `npm run typecheck` → 0, `test-plugins.mjs` → 114/114.
+**Not yet exercised in a browser:** `host.ts`'s context needs the workspace bridge, which P4 builds.
+
 **Deliberately not done**
 - P4–P8: the Plugins menu, the dock, the manager, the example plugins and the acceptance check. The
-  tree is left green at P3 part 1: `npm run typecheck` → 0, `test-plugins.mjs` → 104/104,
+  tree is left green at P3: `npm run typecheck` → 0, `test-plugins.mjs` → 114/114,
   `spike-plugin-host.py` → 37/37.
 
 ## Blockers / open questions

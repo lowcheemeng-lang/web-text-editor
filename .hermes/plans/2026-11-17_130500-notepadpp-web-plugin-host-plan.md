@@ -3,11 +3,11 @@
 > **Status:** D5 **accepted as amended by the user on 2026-11-17**, and the build started on their
 > "proceed" (2026-11-18), ahead of the Task-22 slot they had named. **P0–P2 are DONE:** the decision
 > and `docs/plugins.md` (P0), the loader spike (`scripts/spike-plugin-host.py` → **37/37**, P1), and
-> the model/store (`scripts/test-plugins.mjs` → **74/74**, `npm run typecheck` → 0, P2). **P3 is in
-> progress:** `api.ts`, `cm.ts` and the registry are done (Node suite now **104/104**); the loader and
-> the context factory are next. P4–P8 are unstarted.
+> the model/store (`scripts/test-plugins.mjs` → **74/74**, `npm run typecheck` → 0, P2). **P3 is
+> DONE** — `api.ts`, `cm.ts`, `registry.ts`, `loader.ts`, `host.ts`, Node suite now **114/114** — and
+> **P4 (the Plugins menu and the workspace wiring) is next.** P5–P8 are unstarted.
 >
-> **For Hermes:** P1 and P2 are done; continue at **P3 (the host API and loader)**. Work one task per
+> **For Hermes:** P1–P3 are done; continue at **P4 (the workspace wiring)**. Work one task per
 > session with a reproducible check, appending a row to `PROGRESS.md` — the project's standing rules
 > (S1–S18) apply unchanged. Do not build around a spike result: if a later measurement contradicts
 > the design, record the measurement and amend this plan, the way R2 produced S5.
@@ -511,7 +511,7 @@ IndexedDB does not exist: list → `[]`, write → `false`, settings → `{}`.
 
 ---
 
-### Task P3 — Host API, registry and loader — **IN PROGRESS (part 1 done 2026-11-18)**
+### Task P3 — Host API, registry and loader — **DONE 2026-11-18**
 
 **Objective:** the runtime: install → validate → import → activate → register → dispose, with a
 registry that owns every disposable.
@@ -552,6 +552,15 @@ registry that owns every disposable.
   `window.__workspace.plugins.installForTest(source)` handle — a dev-only affordance the P7 check
   replaces with the real dialog. **This temporary handle must be removed in P6** (record it in the
   ledger so it cannot leak into a release).
+
+**Result (2026-11-18): Node suite `114/114`, `npm run typecheck` → 0.** `api.ts` (the public
+surface), `cm.ts` (the single CodeMirror import site), `registry.ts` (registration, disposal,
+shortcut rejection), `loader.ts` (install/enable/disable/reload/uninstall/start, blob import, a 1.5 s
+activation deadline, per-plugin `lastError`), `host.ts` (the context over a `WorkspaceBridge`).
+**One deviation, recorded rather than hidden:** no temporary `installForTest` handle was added to
+`Workspace`. The loader's only meaningful browser exercise needs the workspace bridge and a menu to
+see the result, both of which are P4 — so the browser path is exercised there, and the real
+file-install dialog lands in P6 (P7 drives it). There is therefore no dev-only handle to remove later.
 
 **Commit:** `task-P3: plugin loader, registry, host API v1`
 

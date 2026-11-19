@@ -1,12 +1,14 @@
 # Plugins — host API, trust model, and limits
 
-**Status: DECIDED; THE FIRST THREE PLAN TASKS ARE BUILT; NO UI YET.** D5 was accepted as amended on
+**Status: DECIDED; P0–P3 OF THE PLAN ARE BUILT; NO UI YET.** D5 was accepted as amended on
 **2026-11-17**. What exists in the app today is the *foundation*: the P1 loader spike (a blob-loaded
 plugin, the app's own CM6 modules, both split panes, teardown — `scripts/spike-plugin-host.py`,
-37/37) and P2's model and store (`src/plugins/model.ts`, `src/plugins/store.ts`, DB version 3,
-`scripts/test-plugins.mjs`, 74/74). There is **no** Plugins menu, no loader in the app itself, no
-dock and no manager dialog yet: those are P3–P6 below. The sections that describe UI or the runtime
-loader are design, not shipped behaviour, and say so where it matters.
+37/37), P2's model and store (`src/plugins/model.ts`, `src/plugins/store.ts`, DB version 3), and P3's
+API surface, registry and loader (`api.ts`, `cm.ts`, `registry.ts`, `loader.ts`, `host.ts`) — the
+Node suite is `scripts/test-plugins.mjs`, 114/114. There is **no** Plugins menu, no dock and no
+manager dialog yet: those are P4–P6 below, and the context factory has not yet been exercised in a
+browser because it needs the workspace bridge P4 builds. The sections that describe UI are design,
+not shipped behaviour.
 
 When a task lands, its section gains a **shipped / planned** marker and the check that proves it, the
 way `docs/session-persistence.md` and `docs/offline-pwa.md` do.

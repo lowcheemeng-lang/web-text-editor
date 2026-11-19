@@ -45,6 +45,7 @@ import {
   writeSetting,
 } from "../src/plugins/store.ts";
 import { PluginRegistry } from "../src/plugins/registry.ts";
+import { PluginLoader } from "../src/plugins/loader.ts";
 
 let passed = 0;
 let failed = 0;
@@ -461,6 +462,74 @@ check(
 check("the other plugin is untouched", registry.isActive("p.two") === true);
 registry.clear();
 check("clear removes every plugin", registry.count() === 0 && registry.commands().length === 0);
+
+/* ------------------------------------------------------------------ loader */
+
+const loaderRegistry = new PluginRegistry({ knownKeys: [] });
+const loader = new PluginLoader({
+  registry: loaderRegistry,
+  context: () => {
+    throw new Error("no context is built in Node");
+  },
+  log: () => {},
+});
+
+const emptyInstall = await loader.install("   ");
+check(
+  "an empty source is refused before any import",
+  emptyInstall.ok === false && /empty/.test(emptyInstall.error ?? ""),
+);
+const bigInstall = await loader.install("a".repeat(MAX_SOURCE_BYTES + 1));
+check(
+  "an oversize source is refused before any import",
+  bigInstall.ok === false && /larger than/.test(bigInstall.error ?? ""),
+);
+
+const noStorageStart = await loader.start();
+check(
+  "start with no storage loads nothing and reports nothing",
+  noStorageStart.skipped === false &&
+    noStorageStart.loaded.length === 0 &&
+    noStorageStart.failed.length === 0,
+);
+
+const offLoader = new PluginLoader({
+  registry: new PluginRegistry(),
+  context: () => {
+    throw new Error("unused");
+  },
+  disabled: true,
+  log: () => {},
+});
+const offReport = await offLoader.start();
+check("?plugins=off skips every plugin", offReport.skipped === true && offReport.loaded.length === 0);
+
+const missing = await loader.enable("missing.plugin");
+check(
+  "enabling an uninstalled plugin is an error, not a throw",
+  missing.ok === false && /not installed/.test(missing.error ?? ""),
+);
+check("disabling an unknown plugin reports false", (await loader.disable("missing.plugin")) === false);
+check("uninstalling an unknown plugin reports false", (await loader.uninstall("missing.plugin")) === false);
+const missingReload = await loader.reload("missing.plugin");
+check(
+  "reloading an uninstalled plugin is an error",
+  missingReload.ok === false && /not installed/.test(missingReload.error ?? ""),
+);
+
+// Node's ESM loader cannot import a blob: URL, and there is no IndexedDB either.
+// What this pins is the containment contract: install() resolves with an error
+// instead of rejecting, which is what the manager depends on.
+const unrunnable = await loader.install(
+  'export default { id: "node.only", name: "Node only", version: "1.0.0", apiVersion: 1, activate() {} };',
+);
+check(
+  "install resolves with an error when the module cannot load",
+  unrunnable.ok === false && typeof unrunnable.error === "string" && unrunnable.error.length > 0,
+  String(unrunnable.error).slice(0, 60),
+);
+loader.stopAll();
+check("stopping every plugin leaves none active", loader.activeIds().length === 0);
 
 /* ------------------------------------------------------------------ summary */
 

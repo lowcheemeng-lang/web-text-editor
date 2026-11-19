@@ -60,7 +60,7 @@ PROGRESS.md    task-by-task ledger with the evidence behind every claim
 
 - `docs/scope.md` — compatibility matrix, encoding support, and known risks
 - `docs/editor-core-decision.md`, `docs/session-persistence.md`, `docs/offline-pwa.md` — design write-ups
-- `docs/plugins.md` — the plugin host's trust model, API surface and v1 limits (**foundation built**: loader spike + model/store; no UI yet)
+- `docs/plugins.md` — the plugin host's trust model, API surface and v1 limits (**foundation built**: loader spike, model/store, host API + loader; no UI yet)
 - `PROGRESS.md` — the full task ledger: every feature with the exact verification runs (assertion counts, timings) behind it
 
 ## Status
