@@ -209,9 +209,12 @@ with sync_playwright() as p:
     page.keyboard.press("Control+Home")
 
     menu_titles = info()["menuTitles"]
+    # D5/P4 added a sixth menu, Plugins, in N++'s own late position — its bar is
+    # File … Language, Settings, Tools, Macro, Run, Plugins, Window — so the five
+    # original titles keep their order and Plugins follows Settings.
     check(
-        "the menu bar carries Language between View and Settings (Notepad_plus.rc:998)",
-        menu_titles == ["File", "Search", "View", "Language", "Settings"],
+        "the menu bar keeps N++'s order, with Plugins after Settings (D5/P4)",
+        menu_titles == ["File", "Search", "View", "Language", "Settings", "Plugins"],
         str(menu_titles),
     )
 

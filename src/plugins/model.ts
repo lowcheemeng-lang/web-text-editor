@@ -401,6 +401,55 @@ export function findShortcutConflicts(
   return conflicts;
 }
 
+/**
+ * The same chord in CodeMirror's keymap notation (`Ctrl-Alt-u`), which is what
+ * `keymap.of()` understands. A plugin may write either notation; this is the one
+ * conversion point, and it exists because a plus-shaped string passed straight to
+ * CM6 matches nothing at all — measured: the shortcut was registered and shown in
+ * the menu, and pressing it did nothing until this conversion was added.
+ */
+export function toKeymapKey(shortcut: string): string | null {
+  const normalised = normaliseShortcut(shortcut);
+  if (!normalised) return null;
+  // Keep `Mod` as Mod: it is CodeMirror's own cross-platform alias, and turning it
+  // into Ctrl would bind the wrong key on macOS.
+  const usesMod = splitChord(shortcut)
+    .slice(0, -1)
+    .some((part) => part.toLowerCase() === "mod");
+  const parts = normalised.split("+");
+  const key = parts.pop() as string;
+  const modifiers = parts.map((modifier) => {
+    if (modifier === "ctrl" && usesMod) return "Mod";
+    return MODIFIER_LABELS[modifier] ?? modifier;
+  });
+  return [...modifiers, KEY_LABELS[key] ?? key].join("-");
+}
+
+const MODIFIER_LABELS: Readonly<Record<string, string>> = {
+  ctrl: "Ctrl",
+  alt: "Alt",
+  shift: "Shift",
+  meta: "Meta",
+};
+
+/** Canonical key names back to CodeMirror's spelling for named keys. */
+const KEY_LABELS: Readonly<Record<string, string>> = {
+  left: "ArrowLeft",
+  right: "ArrowRight",
+  up: "ArrowUp",
+  down: "ArrowDown",
+  pageup: "PageUp",
+  pagedown: "PageDown",
+  escape: "Escape",
+  space: "Space",
+  enter: "Enter",
+  tab: "Tab",
+  backspace: "Backspace",
+  delete: "Delete",
+  home: "Home",
+  end: "End",
+};
+
 /* ------------------------------------------------------------------- versions */
 
 /**

@@ -31,6 +31,7 @@ import {
   normaliseShortcut,
   sourceBytes,
   sourceProblem,
+  toKeymapKey,
   validateMetadata,
   validateModule,
 } from "../src/plugins/model.ts";
@@ -206,6 +207,14 @@ check(
   normaliseShortcut("Ctrl-Shift-z") === "ctrl+shift+z",
 );
 check("CodeMirror key names are aliased", normaliseShortcut("Shift-ArrowLeft") === "shift+left");
+check("a plus-shaped shortcut becomes a CodeMirror key", toKeymapKey("Ctrl+Alt+U") === "Ctrl-Alt-u");
+check("a dash-shaped shortcut keeps its spelling", toKeymapKey("Ctrl-Shift-z") === "Ctrl-Shift-z");
+check(
+  "named keys are spelled the CodeMirror way",
+  toKeymapKey("Shift-ArrowLeft") === "Shift-ArrowLeft",
+);
+check("Mod stays Mod for CodeMirror's own alias", toKeymapKey("Mod+Z") === "Mod-z");
+check("an invalid shortcut has no keymap key", toKeymapKey("Nonsense") === null);
 
 const appKeys = ["Ctrl+S", "Alt-F", "Ctrl-Shift-F", "F2", "Mod-z", "Ctrl+Alt+K"];
 const conflicts = (bindings) => findShortcutConflicts(bindings, appKeys);

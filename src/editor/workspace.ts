@@ -30,7 +30,7 @@
  * Keyboard: `WEB_PORT_KEYS` because Chrome owns Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+W
  * and no page can intercept them (recorded in `DEVIATIONS_FROM_NPP`).
  */
-import { EditorView } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { Text, type EditorState, type Extension } from "@codemirror/state";
 import {
   foldEffect,
@@ -120,6 +120,8 @@ import {
   highlightCompartment,
   languageCompartment,
   nppEditorLook,
+  nppKeymap,
+  pluginCompartment,
   tokenColoursFor,
   wordWrapCompartment,
   wordWrapExtension,
@@ -136,6 +138,13 @@ import {
   unregisterView,
 } from "./split-view";
 import { backAtSavePoint, newDocumentName, tabLabel, type OpenDocument } from "./tabs";
+import { PluginRegistry, type RegisteredButton } from "../plugins/registry";
+import { PluginLoader } from "../plugins/loader";
+import { createPluginContext, type WorkspaceBridge } from "../plugins/host";
+import { listPlugins } from "../plugins/store";
+import type { DocumentInfo, PluginEventType, UiApi } from "../plugins/api";
+import type { PluginRecord } from "../plugins/model";
+import { toKeymapKey } from "../plugins/model";
 
 /** What a scratch buffer claims until it is given a file of its own. */
 const DEFAULT_FORMAT: DocumentFormat = { encoding: "utf-8", bom: "none", eol: "LF" };
@@ -242,6 +251,19 @@ export class Workspace {
 
   readonly #chrome: Chrome;
   readonly #primary: PaneElements;
+  /* ─────────────────────────────────────────────── P4 (D5): plugins ── */
+  /** What plugins registered; the registry owns disposal. */
+  readonly #pluginRegistry: PluginRegistry;
+  /** Loads plugin modules from their stored source. */
+  readonly #plugins: PluginLoader;
+  /** Toolbar buttons plugins added, by their `plugin:<plugin>:<id>` key. */
+  readonly #pluginButtons = new Set<string>();
+  /** Installed records, cached for `inspect()` and the (P6) manager. */
+  #pluginRecords: PluginRecord[] = [];
+  /** One `document:changed` per burst of typing, like the session write. */
+  #pluginChangeTimer: number | null = null;
+  /** True when this page started with `?plugins=off`. */
+  #pluginsSkipped = false;
   #bookmarkMargin = NPP_BOOKMARK_MARGIN;
   readonly #capabilities = detectCapabilities();
   #secondary: PaneElements | null = null;
@@ -352,6 +374,30 @@ export class Workspace {
     this.#chrome = new Chrome(host);
     this.#primary = this.#chrome.addPane("primary", "before-splitter");
     this.#find = new FindReplaceDialog(this.#searchHost(), host);
+    this.#pluginRegistry = new PluginRegistry({
+      // The app's own bindings, in CodeMirror's notation, so a plugin cannot take
+      // one of them. `model.ts` parses both notations — that bug is pinned there.
+      knownKeys: [
+        ...nppKeymap({}).map((binding) => binding.key),
+        ...Object.values(WEB_PORT_KEYS),
+        ...Object.values(SEARCH_KEYS),
+      ].filter((key): key is string => typeof key === "string"),
+      onCommandsChanged: () => this.#applyPluginExtensions(),
+      onButtonsChanged: () => this.#syncPluginButtons(),
+      onExtensionsChanged: () => this.#applyPluginExtensions(),
+    });
+    this.#plugins = new PluginLoader({
+      registry: this.#pluginRegistry,
+      context: (record) =>
+        createPluginContext({
+          record,
+          registry: this.#pluginRegistry,
+          workspace: this.#pluginBridge(),
+          ui: this.#pluginUi(),
+        }),
+      // The escape hatch for a plugin that breaks something at startup.
+      disabled: new URLSearchParams(location.search).get("plugins") === "off",
+    });
     this.#addMenus();
 
     this.#chrome.addButton({
@@ -421,6 +467,10 @@ export class Workspace {
     void this.#restoreSession(startup);
     void this.#refreshRecent();
     this.#installLifecycleHooks();
+    // Not awaited: a plugin must never delay the first document, let alone the
+    // session restore. Each one applies to the documents already open when it
+    // activates (see `#applyPluginExtensions`).
+    void this.#startPlugins();
     const notice = unsupportedNotice(this.#capabilities);
     if (notice) this.#chrome.showNotice(notice.title, notice.body);
   }
@@ -559,6 +609,15 @@ export class Workspace {
           },
         ],
       },
+      {
+        // D5/P4: one entry per command a plugin registered, in activation order.
+        // Placed where N++ puts Plugins — late in the bar, after Settings (its own
+        // order is File … Language, Settings, Tools, Macro, Run, Plugins, Window) —
+        // and a function like File and Language, because enabling a plugin while
+        // the app is open changes the list without rebuilding the menu bar.
+        label: "Plugins",
+        items: () => this.#pluginMenu(),
+      },
     ]);
   }
 
@@ -644,6 +703,7 @@ export class Workspace {
     this.#nextDocumentNumber += 1;
     const document = this.#createDocument(newDocumentName(this.#nextDocumentNumber), content);
     this.#documents.push(document);
+    this.#emitPluginEvent("document:opened", document);
     this.#show(document.id);
     return document;
   }
@@ -755,6 +815,22 @@ export class Workspace {
     backupPath: string | null;
     /** Which pane has the focus: 0 = primary, 1 = the clone (N++'s `Session activeView`). */
     focusedPane: number;
+    /** P4 — what the plugin host holds; the manager (P6) and the acceptance check read this. */
+    plugins: {
+      installed: {
+        id: string;
+        name: string;
+        version: string;
+        enabled: boolean;
+        error: string | null;
+      }[];
+      active: string[];
+      commands: number;
+      panels: number;
+      buttons: number;
+      errors: Record<string, string>;
+      skipped: boolean;
+    };
   } {
     const document = this.#active();
     const views = document?.runtime.views ?? [];
@@ -827,6 +903,21 @@ export class Workspace {
       inaccessible: document?.inaccessible ?? false,
       backupPath: document?.backupPath ?? null,
       focusedPane: views.length > 1 && views[1]?.hasFocus ? 1 : 0,
+      plugins: {
+        installed: this.#pluginRecords.map((record) => ({
+          id: record.id,
+          name: record.name,
+          version: record.version,
+          enabled: record.enabled,
+          error: record.lastError,
+        })),
+        active: this.#plugins.activeIds(),
+        commands: this.#pluginRegistry.commands().length,
+        panels: this.#pluginRegistry.panels().length,
+        buttons: this.#pluginRegistry.buttons().length,
+        errors: this.#pluginRegistry.errors(),
+        skipped: this.#pluginsSkipped,
+      },
     };
   }
 
@@ -868,6 +959,7 @@ export class Workspace {
       bookmarkMargin: this.#bookmarkMargin,
       zoom: this.#preferences.zoom,
       theme: this.#preferences.theme,
+      plugins: this.#pluginExtensions(),
       readOnly: restore?.readOnly ?? false,
       // A restored document whose grammar the restore already waited for carries it in the state
       // from the start; anything else loads lazily and is swapped in through the compartment.
@@ -960,6 +1052,10 @@ export class Workspace {
     for (const view of [...document.runtime.views]) view.dispatch({ effects: empty });
     this.#render();
     if (wanted) await this.#loadLanguage(document);
+    this.#pluginRegistry.emit("language:changed", {
+      document: this.#pluginInfo(document),
+      language: wanted?.id ?? null,
+    });
     // N++ records the language in the buffer's session entry; a choice made from the menu is
     // state worth keeping even when no text changed, so it is a session write of its own.
     this.#scheduleSessionWrite();
@@ -985,7 +1081,346 @@ export class Workspace {
     // the buffer is dirty and modifications are present" (`Buffer.cpp:1247`).
     this.#scheduleSessionWrite();
     this.#scheduleSnapshot(document);
+    this.#emitDocumentChanged(document);
     this.#render();
+  }
+
+  /* --------------------------------------------------------------- plugins */
+
+  /** Load every enabled plugin, then tell them the app is ready. Never awaited by `start()`. */
+  async #startPlugins(): Promise<void> {
+    const report = await this.#plugins.start();
+    this.#pluginsSkipped = report.skipped;
+    await this.#refreshPluginRecords();
+    const [first] = report.failed;
+    if (first) {
+      this.#chrome.showNotice(
+        report.failed.length === 1
+          ? "A plugin could not be started"
+          : `${report.failed.length} plugins could not be started`,
+        `${first.id}: ${first.error}`,
+        { kind: "plugin-failure" },
+      );
+    }
+    this.#pluginRegistry.emit("ready", {});
+    this.#render();
+  }
+
+  async #refreshPluginRecords(): Promise<void> {
+    this.#pluginRecords = await listPlugins();
+  }
+
+  /** Install a plugin from source text — the manager's entry point (P6). */
+  async installPlugin(source: string): Promise<{ ok: boolean; error?: string; id?: string }> {
+    const result = await this.#plugins.install(source);
+    await this.#refreshPluginRecords();
+    this.#render();
+    return result;
+  }
+
+  async enablePlugin(id: string): Promise<{ ok: boolean; error?: string; id?: string }> {
+    const result = await this.#plugins.enable(id);
+    await this.#refreshPluginRecords();
+    this.#render();
+    return result;
+  }
+
+  async disablePlugin(id: string): Promise<boolean> {
+    const disabled = await this.#plugins.disable(id);
+    await this.#refreshPluginRecords();
+    this.#render();
+    return disabled;
+  }
+
+  async uninstallPlugin(id: string): Promise<boolean> {
+    const removed = await this.#plugins.uninstall(id);
+    await this.#refreshPluginRecords();
+    this.#render();
+    return removed;
+  }
+
+  async reloadPlugin(id: string): Promise<{ ok: boolean; error?: string; id?: string }> {
+    const result = await this.#plugins.reload(id);
+    await this.#refreshPluginRecords();
+    this.#render();
+    return result;
+  }
+
+  /** A read-only snapshot for plugins — never the `OpenDocument` itself. */
+  #pluginInfo(document: OpenDocument): DocumentInfo {
+    const view = ownerView(document.runtime);
+    const text = view?.state.doc ?? document.state.doc;
+    return {
+      id: document.id,
+      name: document.name,
+      fileName: document.handle?.name ?? null,
+      language: document.language?.id ?? null,
+      dirty: document.dirty,
+      readOnly: document.readOnly,
+      lineCount: text.lines,
+      characterCount: text.length,
+    };
+  }
+
+  #pluginDocument(documentId?: string): OpenDocument | null {
+    if (documentId === undefined) return this.#active();
+    return this.#documents.find((document) => document.id === documentId) ?? null;
+  }
+
+  /**
+   * What plugins contribute to a document: their extensions, plus a keymap built
+   * from the shortcuts they registered. A shortcut that could shadow one of the
+   * app's own was already refused at registration, so this keymap cannot steal
+   * Ctrl+S by construction.
+   */
+  #pluginExtensions(): Extension {
+    const bindings = this.#pluginRegistry
+      .commands()
+      .filter((command) => command.enabled && command.shortcut !== undefined)
+      .flatMap((command) => {
+        // CodeMirror's keymap understands `Ctrl-Alt-u`, not `Ctrl+Alt+U`. Without
+        // this conversion the binding exists and matches nothing — measured in P4.
+        const key = toKeymapKey(command.shortcut as string);
+        if (!key) return [];
+        return [
+          {
+            key,
+            preventDefault: true,
+            run: (): boolean => {
+              try {
+                return command.run() !== false;
+              } catch (error) {
+                this.#pluginRegistry.noteError(command.pluginId, error);
+                return false;
+              }
+            },
+          },
+        ];
+      });
+    return [...this.#pluginRegistry.extensions(), bindings.length > 0 ? keymap.of(bindings) : []];
+  }
+
+  /** Push the current plugin set into every live view, and keep the toolbar in step. */
+  #applyPluginExtensions(): void {
+    const effect = pluginCompartment.reconfigure(this.#pluginExtensions());
+    for (const document of this.#documents) {
+      this.#eachView(document, (view) => view.dispatch({ effects: effect }));
+    }
+    this.#syncPluginButtons();
+    this.#render();
+  }
+
+  #pluginMenu(): MenuEntry[] {
+    const commands = this.#pluginRegistry.commands();
+    if (commands.length === 0) {
+      // A status line, not a command: P6 replaces this with "Plugin Manager…".
+      return [{ id: "plugins-none", label: "(no plugins installed)", onClick: () => {} }];
+    }
+    return commands.map((command) => {
+      const entry: MenuEntry = {
+        id: `plugin:${command.key}`,
+        label: command.label,
+        onClick: () => this.#runPluginCommand(command.key),
+        ...(command.shortcut ? { shortcut: command.shortcut } : {}),
+        ...(command.checked ? { checked: command.checked() } : {}),
+      };
+      return entry;
+    });
+  }
+
+  #runPluginCommand(key: string): void {
+    const command = this.#pluginRegistry.findCommand(key);
+    if (!command || !command.enabled) return;
+    try {
+      command.run();
+    } catch (error) {
+      this.#pluginRegistry.noteError(command.pluginId, error);
+    }
+    this.#render();
+  }
+
+  #syncPluginButtons(): void {
+    const wanted = new Map<string, RegisteredButton>();
+    for (const button of this.#pluginRegistry.buttons()) {
+      wanted.set(`plugin:${button.pluginId}:${button.spec.id}`, button);
+    }
+    for (const id of [...this.#pluginButtons]) {
+      if (wanted.has(id)) continue;
+      this.#chrome.removeButton(id);
+      this.#pluginButtons.delete(id);
+    }
+    for (const [id, button] of wanted) {
+      if (this.#pluginButtons.has(id)) continue;
+      this.#chrome.addButton({
+        id,
+        label: button.spec.label,
+        title: button.spec.title ?? button.spec.label,
+        onClick: () => {
+          try {
+            return button.spec.onClick() === true;
+          } catch (error) {
+            this.#pluginRegistry.noteError(button.pluginId, error);
+            return false;
+          }
+        },
+      });
+      this.#pluginButtons.add(id);
+    }
+  }
+
+  /**
+   * The document operations a plugin may perform. Every edit is an ordinary
+   * transaction, so Ctrl+Z undoes it; a document with no mounted view is edited
+   * through its own state, which keeps the history it will show when reopened.
+   */
+  #pluginBridge(): WorkspaceBridge {
+    const textOf = (document: OpenDocument): Text =>
+      ownerView(document.runtime)?.state.doc ?? document.state.doc;
+    const rangesOf = (document: OpenDocument) =>
+      (ownerView(document.runtime)?.state ?? document.state).selection.ranges;
+
+    const apply = (
+      document: OpenDocument,
+      changes: readonly { from: number; to: number; insert: string }[],
+    ): boolean => {
+      if (document.readOnly || changes.length === 0) return false;
+      const view = ownerView(document.runtime);
+      if (view) {
+        view.dispatch({ changes: [...changes], userEvent: "input.plugin" });
+        return true;
+      }
+      document.state = document.state.update({
+        changes: [...changes],
+        userEvent: "input.plugin",
+      }).state;
+      this.#render();
+      return true;
+    };
+
+    return {
+      documents: () => this.#documents.map((document) => this.#pluginInfo(document)),
+      active: () => {
+        const document = this.#active();
+        return document ? this.#pluginInfo(document) : null;
+      },
+      text: (documentId) => {
+        const document = this.#pluginDocument(documentId);
+        return document ? textOf(document).toString() : null;
+      },
+      setText: (text, documentId) => {
+        const document = this.#pluginDocument(documentId);
+        return document
+          ? apply(document, [{ from: 0, to: textOf(document).length, insert: text }])
+          : false;
+      },
+      selections: (documentId) => {
+        const document = this.#pluginDocument(documentId);
+        return document
+          ? rangesOf(document).map((range) => ({
+              from: range.from,
+              to: range.to,
+              head: range.head,
+              anchor: range.anchor,
+            }))
+          : [];
+      },
+      replaceSelections: (map, documentId) => {
+        const document = this.#pluginDocument(documentId);
+        if (!document) return false;
+        const text = textOf(document);
+        const changes = rangesOf(document).map((range, index) => ({
+          from: range.from,
+          to: range.to,
+          insert: map(text.slice(range.from, range.to).toString(), index),
+        }));
+        return apply(document, changes);
+      },
+    };
+  }
+
+  /** Dialogs and notices for plugins, in the app's own chrome. */
+  #pluginUi(): UiApi {
+    const modal = (
+      spec: { title: string; body?: string; content?: HTMLElement },
+      actions: readonly { id: string; label: string; primary?: boolean }[],
+    ): Promise<string | null> =>
+      new Promise((resolve) => {
+        const dialog = document.createElement("dialog");
+        dialog.className = "npp-dialog";
+        dialog.dataset.dialog = "plugin";
+        const title = document.createElement("h2");
+        title.className = "npp-dialog-title";
+        title.textContent = spec.title;
+        dialog.append(title);
+        if (spec.body) {
+          const body = document.createElement("p");
+          body.className = "npp-dialog-body";
+          body.textContent = spec.body;
+          dialog.append(body);
+        }
+        if (spec.content) {
+          const content = document.createElement("div");
+          content.className = "npp-dialog-content";
+          content.append(spec.content);
+          dialog.append(content);
+        }
+        const row = document.createElement("div");
+        row.className = "npp-dialog-actions";
+        for (const action of actions) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = action.primary ? "npp-dialog-confirm" : "npp-dialog-cancel";
+          button.textContent = action.label;
+          button.dataset.dialogAction = action.id;
+          button.addEventListener("click", () => dialog.close(action.id));
+          row.append(button);
+        }
+        dialog.append(row);
+        dialog.addEventListener("close", () => {
+          const value = dialog.returnValue || null;
+          dialog.remove();
+          resolve(value);
+        });
+        document.body.append(dialog);
+        dialog.showModal();
+      });
+
+    return {
+      dialog: (spec) => {
+        const actions = spec.actions?.length
+          ? spec.actions.map((action) => ({ ...action, primary: false }))
+          : [{ id: "ok", label: "OK", primary: true }];
+        return modal(spec, actions);
+      },
+      confirm: async (message, options) => {
+        const value = await modal(
+          { title: options?.title ?? "Notepad++ Web", body: message },
+          [
+            { id: "cancel", label: "Cancel" },
+            { id: "ok", label: options?.confirmLabel ?? "OK", primary: true },
+          ],
+        );
+        return value === "ok";
+      },
+      notice: (title, body, options) => {
+        const kind = `plugin:${options?.kind ?? "notice"}`;
+        this.#chrome.showNotice(title, body, { kind });
+        return { dispose: () => this.#chrome.hideNotice(kind) };
+      },
+    };
+  }
+
+  #emitPluginEvent(type: PluginEventType, document?: OpenDocument): void {
+    this.#pluginRegistry.emit(type, document ? { document: this.#pluginInfo(document) } : {});
+  }
+
+  /** One `document:changed` per burst, like the session write — not one per keystroke. */
+  #emitDocumentChanged(document: OpenDocument): void {
+    if (this.#pluginChangeTimer !== null) window.clearTimeout(this.#pluginChangeTimer);
+    this.#pluginChangeTimer = window.setTimeout(() => {
+      this.#pluginChangeTimer = null;
+      this.#emitPluginEvent("document:changed", document);
+    }, 250);
   }
 
   /* ----------------------------------------------------------------- files */
@@ -1086,6 +1521,7 @@ export class Workspace {
       lastModified: await fileTimestamp(handle),
     });
     this.#documents.push(document);
+    this.#emitPluginEvent("document:opened", document);
     this.#show(document.id);
 
     await rememberRecent(handle);
@@ -1173,6 +1609,7 @@ export class Workspace {
     await this.#refreshRecent();
     this.#render();
     this.#scheduleSessionWrite(0);
+    this.#emitPluginEvent("document:saved", document);
     return true;
   }
 
@@ -1207,6 +1644,8 @@ export class Workspace {
     this.#activeId = id;
     this.#mountActive();
     this.#render();
+    const current = this.#active();
+    if (current) this.#emitPluginEvent("document:activated", current);
     // "before switch off to another tab (or close files on exit), check 1 & 2" — N++ syncs the
     // buffer being left behind, not only the one being opened (`Buffer.cpp:1249`).
     if (leaving) void this.#flushSession();
@@ -1262,6 +1701,7 @@ export class Workspace {
         handlers: this.#handlers,
         wordWrap: document.wordWrap,
         bookmarkMargin: this.#bookmarkMargin,
+        plugins: this.#pluginExtensions(),
         // Task 6: the clone highlights with the same language, and — because the language
         // is loaded per view — needs the extension at construction time.
         language: document.languageExtension,
@@ -1542,6 +1982,7 @@ export class Workspace {
     if (wasActive) this.#captureViewState(document);
     if (wasActive) this.#teardownActive();
     this.#documents.splice(index, 1);
+    this.#emitPluginEvent("document:closed", document);
     // N++ deletes a closed document's backup (`FileManager::deleteBufferBackup`, Buffer.cpp:1409),
     // whatever the close did with its edits: a discarded change must not come back on the next
     // restore, and a saved one has nothing left to protect.

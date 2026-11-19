@@ -88,9 +88,13 @@ node --experimental-strip-types scripts/test-themes.mjs           # the tables +
    build under the service worker; P2+P3 `node --experimental-strip-types scripts/test-plugins.mjs`
    → **114/114**, `npm run typecheck` → exit 0 — validation, store, shortcut conflicts in both
    notations, registry registration/disposal, and the loader's containment contract. P3 added
-   `api.ts`, `cm.ts`, `registry.ts`, `loader.ts` and `host.ts`. **P4 — the Plugins menu, the
-   `pluginCompartment` in the real document states, document events and `inspect().plugins` — is
-   next.**
+   `api.ts`, `cm.ts`, `registry.ts`, `loader.ts` and `host.ts`. **P4 (the wiring) is DONE too:**
+   `python3 scripts/verify-plugins-dev.py` → **PLUGIN_P4: PASS (28/28)** — installed from source,
+   commands and shortcut in the Plugins menu, a command edit undone by one Ctrl+Z, the shortcut and
+   toolbar button both run it, disabling removes every trace, the record survives a reload, enable
+   and uninstall work — and `scripts/verify-task3.py` → **58/58**, `scripts/verify-task9.py` →
+   **41/41** at the same HEAD (one deliberate assertion update: the menu bar now has six titles).
+   **P5 — the right-hand dock for plugin panels — is next.**
 
 **Nothing is blocking, and no task needs the user for scope.** `D1` and `D8` remain `Proposed`
 — low-stakes consolidations of choices already implied by accepted decisions, and `D8` is now fully
@@ -1572,10 +1576,28 @@ resolving with an error when the module cannot load (Node cannot import `blob:` 
 browser's job, exercised in P4). `npm run typecheck` → 0, `test-plugins.mjs` → 114/114.
 **Not yet exercised in a browser:** `host.ts`'s context needs the workspace bridge, which P4 builds.
 
+**P4 — the wiring (PASS 28/28 in the browser)**
+`pluginCompartment` added to `editorCoreExtensions` (P4 part 1, committed separately), then the
+workspace side: the `PluginRegistry`/`PluginLoader` are constructed with the app's own binding list;
+the Plugins menu is `items: () => …`, so enabling a plugin updates it without a rebuild; commands
+get a keymap built from `toKeymapKey()`; toolbar buttons are synced idempotently; `document:opened/
+saved/closed/activated/changed/language:changed/ready` are emitted at the existing lifecycle points;
+`inspect().plugins` reports installed/active/commands/panels/buttons/errors. `scripts/verify-plugins-dev.py`
+drives a fixture through the real UI: install from source, the menu lists the commands with the
+shortcut, clicking one edits the document, **one Ctrl+Z undoes it**, the shortcut and the toolbar
+button run it, disabling removes the menu entry, shortcut, button and extensions, the disabled record
+survives a reload, and enable/uninstall work. `scripts/test-plugins.mjs` → **119/119**;
+`npm run typecheck` → 0; `verify-task3.py` → 58/58; `verify-task9.py` → 41/41 (one assertion updated:
+the bar now carries six titles, with Plugins after Settings as in N++).
+**Two defects this task measured:** a plus-shaped `Ctrl+Alt+U` passed straight into CM6's keymap
+matches *nothing* — the shortcut showed in the menu and did nothing until `toKeymapKey()` converted
+it to `Ctrl-Alt-u`; and the first menu placement (between Language and Settings) split the pair
+`verify-task9.py` pins, so Plugins moved to N++'s own late position.
+
 **Deliberately not done**
-- P4–P8: the Plugins menu, the dock, the manager, the example plugins and the acceptance check. The
-  tree is left green at P3: `npm run typecheck` → 0, `test-plugins.mjs` → 114/114,
-  `spike-plugin-host.py` → 37/37.
+- P5–P8: the dock, the manager, the example plugins and the acceptance check. The tree is left green
+  at P4: `verify-plugins-dev.py` 28/28, `test-plugins.mjs` 119/119, `verify-task3.py` 58/58,
+  `verify-task9.py` 41/41, `npm run typecheck` → 0, `npm run build` → 0.
 
 ## Blockers / open questions
 

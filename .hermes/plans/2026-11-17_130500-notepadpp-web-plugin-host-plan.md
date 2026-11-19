@@ -4,10 +4,11 @@
 > "proceed" (2026-11-18), ahead of the Task-22 slot they had named. **P0–P2 are DONE:** the decision
 > and `docs/plugins.md` (P0), the loader spike (`scripts/spike-plugin-host.py` → **37/37**, P1), and
 > the model/store (`scripts/test-plugins.mjs` → **74/74**, `npm run typecheck` → 0, P2). **P3 is
-> DONE** — `api.ts`, `cm.ts`, `registry.ts`, `loader.ts`, `host.ts`, Node suite now **114/114** — and
-> **P4 (the Plugins menu and the workspace wiring) is next.** P5–P8 are unstarted.
+> DONE** (`api.ts`, `cm.ts`, `registry.ts`, `loader.ts`, `host.ts`) and **P4 is DONE** — the Plugins
+> menu, the plugin compartment in every document state, document events and `inspect().plugins`,
+> `scripts/verify-plugins-dev.py` → **28/28**. **P5 (the dock) is next.** P6–P8 are unstarted.
 >
-> **For Hermes:** P1–P3 are done; continue at **P4 (the workspace wiring)**. Work one task per
+> **For Hermes:** P1–P4 are done; continue at **P5 (the dock)**. Work one task per
 > session with a reproducible check, appending a row to `PROGRESS.md` — the project's standing rules
 > (S1–S18) apply unchanged. Do not build around a spike result: if a later measurement contradicts
 > the design, record the measurement and amend this plan, the way R2 produced S5.
@@ -566,7 +567,7 @@ file-install dialog lands in P6 (P7 drives it). There is therefore no dev-only h
 
 ---
 
-### Task P4 — Workspace, menu, toolbar, events, inspect
+### Task P4 — Workspace, menu, toolbar, events, inspect — **DONE 2026-11-18**
 
 **Objective:** plugins become visible and useful: a Plugins menu, toolbar buttons, document events,
 and the compartment that carries extensions into every view.
@@ -601,6 +602,22 @@ and the compartment that carries extensions into every view.
 acceptance script — asserting menu presence, command click, toolbar button, event counts, and
 `inspect().plugins`. Then `npm run typecheck`; re-run `verify-task3.py` (splitter, tabs) and
 `verify-task9.py` (menu hover, Language menu) because the menu list changed shape.
+
+**Result (2026-11-18): `PLUGIN_P4: PASS (28/28)`.** The fixture (`scripts/fixtures/plugin-commands.js`)
+is installed through `window.__workspace.installPlugin` — the same facade P6's dialog calls — and the
+check drives the real menu, keyboard and toolbar: install → menu lists both commands with the
+shortcut → click edits the document → **one Ctrl+Z reverts** → the shortcut works from the editor →
+the toolbar button works → disable removes menu, shortcut, button and extensions → the disabled
+record survives a reload → enable → uninstall. `test-plugins.mjs` → 119/119; `verify-task3.py` →
+58/58; `verify-task9.py` → 41/41. **Two deviations from the plan above, both measured:** (a) Chrome's
+`addButton` was left returning `void` with an idempotent `removeButton(id)` instead of returning a
+Disposable — the plugin sync is keyed by id, and a disposer would be a second owner of the same
+button; (b) the Plugins menu first sat between Language and Settings, which split the adjacency
+`verify-task9.py` pins, so it moved to N++'s late position (after Settings) and that one assertion
+now expects six titles. **The defect worth keeping:** a plus-shaped `Ctrl+Alt+U` handed to CM6's
+keymap matches nothing — the menu showed the shortcut and pressing it did nothing until
+`toKeymapKey()` converted it to `Ctrl-Alt-u`; the conversion is now in `model.ts` with tests for both
+notations and `Mod`.
 
 **Commit:** `task-P4: Plugins menu, plugin compartment, document events`
 
