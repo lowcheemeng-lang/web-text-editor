@@ -1,17 +1,15 @@
 # Notepad++-Style Plugin Host — Assessment and Implementation Plan
 
-> **Status:** D5 **accepted as amended by the user on 2026-11-17** ("accept D5 as amended"), and the
-> build **scheduled after phase-2 Task 22** ("schedule it after phase-2 Task 22"). **P0 is done** —
-> the decision is recorded in `docs/scope.md` §3/§4/§10 and the settled design (trust model, v1
-> limits, API surface, N++ mapping) is in `docs/plugins.md`. **P1–P8 are not started**: Task 11 is
-> still the next unit of work. Nothing in `src/` mentions plugins yet, and no `DONE` row exists for
-> this plan until its checks do.
+> **Status:** D5 **accepted as amended by the user on 2026-11-17**, and the build started on their
+> "proceed" (2026-11-18), ahead of the Task-22 slot they had named. **P0–P2 are DONE:** the decision
+> and `docs/plugins.md` (P0), the loader spike (`scripts/spike-plugin-host.py` → **37/37**, P1), and
+> the model/store (`scripts/test-plugins.mjs` → **74/74**, `npm run typecheck` → 0, P2). **P3 — the
+> host API and loader — is next.** P4–P8 are unstarted.
 >
-> **For Hermes:** when the phase-2 queue reaches Task 22, start at **P1 (the loader spike)** and work
-> one task per session with a reproducible check, appending a row to `PROGRESS.md` — the project's
-> standing rules (S1–S18) apply unchanged. Do not build around a spike result: if P1 measures
-> something the design assumes wrongly, record the measurement and amend this plan, the way R2
-> produced S5.
+> **For Hermes:** P1 and P2 are done; continue at **P3 (the host API and loader)**. Work one task per
+> session with a reproducible check, appending a row to `PROGRESS.md` — the project's standing rules
+> (S1–S18) apply unchanged. Do not build around a spike result: if a later measurement contradicts
+> the design, record the measurement and amend this plan, the way R2 produced S5.
 
 **Goal:** give the editor a **Plugins** menu, an install/enable/disable/uninstall manager, and a
 documented JavaScript host API — so third-party code can add commands, toolbar buttons, docked
@@ -426,14 +424,16 @@ words, the artifact map, Next action item 6, Blockers item 7, and Session 11's l
 
 ---
 
-### Task P1 — Loader spike (throwaway evidence, kept as a script)
+### Task P1 — Loader spike (throwaway evidence, kept as a script) — **DONE 2026-11-18**
 
 **Objective:** prove the four mechanics nobody should assume: blob import, singleton CM6, extension
 in both panes, teardown.
 
 **Files:**
+- Create: `src/editor/spike-plugin-host.ts` (dev-only harness, the peer of `spike-r2.ts`)
 - Create: `scripts/spike-plugin-host.py`
-- Create: `scripts/fixtures/plugin-probe.js` (temporary; becomes `plugins/examples/probe.js` in P7)
+- Create: `scripts/fixtures/plugin-probe.js` (becomes `plugins/examples/probe.js` in P7)
+- Create: `scripts/fixtures/plugin-broken.js`
 
 **What the spike must measure (each a printed number, not an opinion):**
 1. `import(blobURL)` succeeds in the **dev server** and in a **production build**.
@@ -455,11 +455,21 @@ Record the numbers (timings, accepted/rejected extension) in `docs/plugins.md` �
 **Abort condition:** if (2) or (3) fails, stop and re-plan before P2. Deferring the spike would make
 P3–P5 speculation.
 
+**Result (2026-11-18): `PLUGIN_SPIKE: PASS (37/37)`.** All six items measured, plus the production
+half. Two honest reductions, stated rather than papered over: (a) item 6's "record survives" uses
+`localStorage` as a stand-in, because the real store is P2's work — what it proves is the module-cache
+behaviour, which is the part that could have failed; (b) the production build cannot mount a dev-only
+harness, so the production phase proves blob-URL import in the built page **under the service worker**
+and zero network, while the CM6-identity half stays in dev. The real prod identity proof lands with
+P4/P7, where the host is part of the bundle. One defect in the harness itself: the first run passed
+37/37 and then crashed in `finally` closing a browser the `sync_playwright()` block already owned —
+the `browser.close()` was removed, and the comment says why.
+
 **Commit:** `task-P1: spike — blob-loaded plugin, CM6 singleton, both panes, teardown`
 
 ---
 
-### Task P2 — Model and store (Node-testable, no DOM)
+### Task P2 — Model and store (Node-testable, no DOM) — **DONE 2026-11-18**
 
 **Objective:** plugin metadata, validation, conflict rules and persistence, all assertable without a
 browser.
@@ -487,6 +497,14 @@ browser.
 **Verification:**
 - `node --experimental-strip-types scripts/test-plugins.mjs` → `PASS (n/n)`
 - `npm run typecheck` → exit 0
+
+**Result (2026-11-18): `74/74` checks; `npm run typecheck` → exit 0.** The suite found one real defect during P2, and it is worth naming because it is the kind a hand-written example hides: the host's conflict list
+comes from `nppKeymap()`, which is **CodeMirror dash notation** (`Mod-z`, `Alt-F`, `Ctrl-Shift-F`),
+while the plugin-facing notation is plus-shaped. The first parser split on `+` only, so every app
+binding was invisible and a plugin could have claimed Ctrl+S. `normaliseShortcut`/`expandShortcut`
+now split on `[+-]`, alias CodeMirror's `ArrowLeft`/`PageUp`/`Esc` names, and the suite pins both
+notations in both directions. The store's fail-soft contract is also asserted in Node, where
+IndexedDB does not exist: list → `[]`, write → `false`, settings → `{}`.
 
 **Commit:** `task-P2: plugin records, validation and shortcut conflicts; DB v3`
 

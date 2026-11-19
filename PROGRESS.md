@@ -80,11 +80,13 @@ node --experimental-strip-types scripts/test-themes.mjs           # the tables +
 4. **Tasks 13–19 — the Tier-2 backlog** (Smart Highlighter + incremental search, per-pane tab sets,
    Function List, block-edit UI, minimap, autocompletion, drop files).
 5. **Tasks 20–22 — the deferred contracts**: Tier B/C file I/O per D11, print, and macros per D6.
-6. **Then the plugin host (D5, accepted 2026-11-17 as amended)** — tasks P0–P8 in
-   `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md`. **P0 is done** (the decision
-   and `docs/plugins.md`); P1–P8 are not started, by the user's scheduling: it waits until after
-   Task 22, because Tasks 11–22 keep changing the extension seams (`notepadpp-config.ts`'s
-   compartments, the chrome, the storage layer) that a plugin host would sit on.
+6. **Plugin host (D5) — P0–P2 are DONE, P3 is next.** The user said "proceed" on 2026-11-18, so the
+   build started ahead of the Task-22 slot they had named; the phase-2 queue is otherwise unchanged
+   and Task 11 is still its next unit. Evidence: P1 `python3 scripts/spike-plugin-host.py` →
+   **PLUGIN_SPIKE: PASS (37/37)** — blob-URL import, one CM6 instance shared with the plugin, the
+   extension in both panes, teardown in both, a contained activation failure, and the production
+   build under the service worker; P2 `node --experimental-strip-types scripts/test-plugins.mjs` →
+   **74/74**, `npm run typecheck` → exit 0. P3 — the host API and loader — is the next unit.
 
 **Nothing is blocking, and no task needs the user for scope.** `D1` and `D8` remain `Proposed`
 — low-stakes consolidations of choices already implied by accepted decisions, and `D8` is now fully
@@ -1506,6 +1508,48 @@ that spike the gate on P2–P8 for exactly this reason — the R2/S5 precedent i
 surprise changes the plan, and the right move when it does is to record the measurement and amend,
 not to ship around it.
 
+### 2026-11-18 — Session 12 (plugin host P1–P2: the loader spike and the model)
+
+**User input received**
+- "proceed, let me know if it's pending my input before you can proceed" — the build starts now,
+  ahead of the Task-22 slot named in Session 11.
+
+**P1 — the loader spike (PASS 37/37)**
+Built `src/editor/spike-plugin-host.ts` (dev-only harness: two views over one document, one shared
+`pluginCompartment`), `scripts/fixtures/plugin-probe.js` (a plugin that imports nothing and takes
+CM6 from `ctx.cm`), `scripts/fixtures/plugin-broken.js` (throws in `activate`), and
+`scripts/spike-plugin-host.py` (starts its own dev server, builds and serves `dist/` for the
+production half). Measured, not assumed:
+- blob-URL `import()` works in the dev server and in a production build, with the service worker
+  controlling the page;
+- an extension built from `context.cm` is accepted by a mounted view, and the plugin's `instanceof
+  ctx.cm.view.EditorView` check on the host's view is true — one CM6 instance, both directions;
+- the extension and its decorations appear in **both** panes through one compartment, and disposing
+  the registration removes them from both;
+- a module that throws in `activate` is contained: the editor still types and the app's workspace is
+  still mounted;
+- a source kept across a `page.reload()` re-imports with a fresh URL, and a reload resets the module
+  cache;
+- no console or page errors, no request off the origin, and the blob import fetches nothing.
+The first run passed all 37 checks and then crashed closing a browser the `sync_playwright()` block
+already owned — fixed by not closing it in `finally` (recorded in the script, because "PASS followed
+by a traceback" is the worst shape a check can have).
+
+**P2 — model, store, tests (PASS 74/74)**
+`src/plugins/model.ts` (metadata/module validation, UTF-8 source cap, command namespacing, shortcut
+conflicts, version comparison), `src/plugins/store.ts` (plugins + plugin-settings, fail-soft),
+`src/storage/idb.ts` bumped to version 3 with two additive stores, and `scripts/test-plugins.mjs`.
+**The bug the tests found:** the host's conflict list is CodeMirror dash notation (`Mod-z`, `Alt-F`,
+`Ctrl-Shift-F`), but the parser split on `+` only, so every app binding was invisible and a plugin
+could have claimed Ctrl+S. Fixed by splitting on `[+-]` and aliasing `ArrowLeft`→`left`; both
+notations now have tests in both directions. The one dash-form case in the fixture was the only
+failing check — a hand-written example would have hidden this.
+
+**Deliberately not done**
+- P3–P8: the host API/loader, the Plugins menu, the dock, the manager, the example plugins and the
+  acceptance check. The tree is left at a green P2: `npm run typecheck` → 0,
+  `test-plugins.mjs` → 74/74, `spike-plugin-host.py` → 37/37.
+
 ## Blockers / open questions
 
 Nothing blocking, and nothing needs a task to proceed. **Task 9 closed the last open item that had
@@ -1536,12 +1580,16 @@ that plan claims, in the order it claims them:
 6. **The single portable HTML file is not shipped, by measurement** (Task 8): fusing the graph costs
    1 699.9 kB up front and a `file://` open loses OPFS, service-worker registration and the pickers.
    `docs/offline-pwa.md` has the numbers, so re-opening the idea starts from evidence.
-7. **The plugin host is decided and scheduled, not built.** D5 closed 2026-11-17; the assessment and
-   the P0–P8 breakdown are in `.hermes/plans/2026-11-17_130500-notepadpp-web-plugin-host-plan.md` and
-   the design is written down in `docs/plugins.md`. P1–P8 wait until after phase-2 Task 22 by the
-   user's scheduling, so nothing in `src/` mentions plugins yet — and P1 (the loader spike) is the
-   gate on the rest, because it measures the three things the design must not assume: blob-loaded
-   `import()`, one CodeMirror instance shared with the plugin, and teardown in both panes.
+7. **The plugin host is under way: P0–P2 done, P3–P8 unstarted.** D5 closed 2026-11-17; the build
+   started on the user's "proceed" (2026-11-18), ahead of the Task-22 slot they had named. P1's spike
+   (`scripts/spike-plugin-host.py`, 37/37) and P2's model/store (`scripts/test-plugins.mjs`, 74/74)
+   are green and committed; `src/plugins/` now exists, and `npm run typecheck` is exit 0.
+   **The load-bearing finding so far** is P2's shortcut parser: the host's own key list comes from
+   `nppKeymap()`, which is CodeMirror's dash notation (`Mod-z`, `Alt-F`, `Ctrl-Shift-F`), while the
+   plugin-facing notation is plus-shaped (`Ctrl+Shift+Z`). A plus-only parser finds *no* app
+   conflicts at all — the failing test that exposed it was the only one of the pair written in dash
+   form. Both notations are parsed now, with `Shift-ArrowLeft` aliasing and a test for each direction.
+   Nothing else is blocked; P3 (host API + loader) needs no user input.
 
 Resolved: ~~D2~~ · ~~D7~~ · ~~D10~~ · ~~D11~~ (2026-09-25) · ~~D3~~ · ~~D6~~ · ~~D9~~ (2026-10-06) ·
 ~~D12~~ (2026-10-12) · ~~D5~~ (2026-11-17, as amended).
