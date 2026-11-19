@@ -1545,10 +1545,22 @@ could have claimed Ctrl+S. Fixed by splitting on `[+-]` and aliasing `ArrowLeft`
 notations now have tests in both directions. The one dash-form case in the fixture was the only
 failing check — a hand-written example would have hidden this.
 
+**P3, part 1 — the API surface and the registry (PASS 104/104)**
+`src/plugins/api.ts` (the plugin-facing types), `src/plugins/cm.ts` (the single CodeMirror import
+site — the singleton rule made structural rather than a convention), `src/plugins/registry.ts`
+(commands, panels, toolbar buttons, event subscriptions, extensions, disposal, shortcut rejection),
+and 30 new checks in `scripts/test-plugins.mjs`. The registry holds no DOM and no CM6 value, so Node
+exercises every rule: duplicate and invalid command ids, an app-key collision, a browser-reserved
+chord, a chord already taken by another plugin, a throwing event handler contained per plugin, a
+panel's show/hide/announce, and registration after disposal being refused. `npm run typecheck` → 0,
+`test-plugins.mjs` → 104/104. **Still to come in P3:** `loader.ts` (install/enable/disable/uninstall/
+reload/start, blob import, activation timeout) and `host.ts` (the context built over a workspace
+bridge).
+
 **Deliberately not done**
-- P3–P8: the host API/loader, the Plugins menu, the dock, the manager, the example plugins and the
-  acceptance check. The tree is left at a green P2: `npm run typecheck` → 0,
-  `test-plugins.mjs` → 74/74, `spike-plugin-host.py` → 37/37.
+- P4–P8: the Plugins menu, the dock, the manager, the example plugins and the acceptance check. The
+  tree is left green at P3 part 1: `npm run typecheck` → 0, `test-plugins.mjs` → 104/104,
+  `spike-plugin-host.py` → 37/37.
 
 ## Blockers / open questions
 

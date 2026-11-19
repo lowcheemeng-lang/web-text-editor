@@ -3,8 +3,9 @@
 > **Status:** D5 **accepted as amended by the user on 2026-11-17**, and the build started on their
 > "proceed" (2026-11-18), ahead of the Task-22 slot they had named. **P0–P2 are DONE:** the decision
 > and `docs/plugins.md` (P0), the loader spike (`scripts/spike-plugin-host.py` → **37/37**, P1), and
-> the model/store (`scripts/test-plugins.mjs` → **74/74**, `npm run typecheck` → 0, P2). **P3 — the
-> host API and loader — is next.** P4–P8 are unstarted.
+> the model/store (`scripts/test-plugins.mjs` → **74/74**, `npm run typecheck` → 0, P2). **P3 is in
+> progress:** `api.ts`, `cm.ts` and the registry are done (Node suite now **104/104**); the loader and
+> the context factory are next. P4–P8 are unstarted.
 >
 > **For Hermes:** P1 and P2 are done; continue at **P3 (the host API and loader)**. Work one task per
 > session with a reproducible check, appending a row to `PROGRESS.md` — the project's standing rules
@@ -510,7 +511,7 @@ IndexedDB does not exist: list → `[]`, write → `false`, settings → `{}`.
 
 ---
 
-### Task P3 — Host API, registry and loader
+### Task P3 — Host API, registry and loader — **IN PROGRESS (part 1 done 2026-11-18)**
 
 **Objective:** the runtime: install → validate → import → activate → register → dispose, with a
 registry that owns every disposable.

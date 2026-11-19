@@ -44,6 +44,7 @@ import {
   settingsBytes,
   writeSetting,
 } from "../src/plugins/store.ts";
+import { PluginRegistry } from "../src/plugins/registry.ts";
 
 let passed = 0;
 let failed = 0;
@@ -288,6 +289,178 @@ check(
 check("no IndexedDB: deleting is not an error", (await deletePlugin("p.one")) === false);
 check("an over-long settings key is refused before any write", (await writeSetting("p.one", "k".repeat(65), 1)) === false);
 check("an empty settings key is refused", (await writeSetting("p.one", "", 1)) === false);
+
+/* ---------------------------------------------------------------- registry */
+
+function throwsWith(fn, needle) {
+  try {
+    fn();
+  } catch (error) {
+    return String(error?.message ?? error).includes(needle);
+  }
+  return false;
+}
+
+let commandChanges = 0;
+let panelChanges = 0;
+let publishedExtensions = [];
+let extensionPublishes = 0;
+
+const registry = new PluginRegistry({
+  knownKeys: ["Ctrl+Shift+K", "Mod-z"],
+  onCommandsChanged: () => {
+    commandChanges += 1;
+  },
+  onPanelsChanged: () => {
+    panelChanges += 1;
+  },
+  onExtensionsChanged: (extensions) => {
+    publishedExtensions = extensions;
+    extensionPublishes += 1;
+  },
+});
+
+registry.activate("p.one");
+check("a plugin can be activated", registry.isActive("p.one") === true);
+check("activating twice is idempotent", registry.activate("p.one") === undefined && registry.count() === 1);
+
+const encode = registry.addCommand("p.one", {
+  id: "encode",
+  label: "Encode",
+  run: () => true,
+});
+check(
+  "a command is registered under a namespaced key",
+  registry.commands()[0]?.key === "p.one/encode",
+);
+check("findCommand resolves the namespaced key", registry.findCommand("p.one/encode") !== null);
+check("a command change is announced", commandChanges === 1);
+
+check(
+  "a duplicate command id is refused",
+  throwsWith(
+    () => registry.addCommand("p.one", { id: "encode", label: "Again", run() {} }),
+    "already registered",
+  ),
+);
+check(
+  "an invalid command id is refused",
+  throwsWith(
+    () => registry.addCommand("p.one", { id: "Not Valid", label: "x", run() {} }),
+    "must be 1–64 characters",
+  ),
+);
+check(
+  "a command without a label is refused",
+  throwsWith(() => registry.addCommand("p.one", { id: "nolabel", label: " ", run() {} }), "label"),
+);
+check(
+  "a shortcut that collides with the app is refused",
+  throwsWith(
+    () => registry.addCommand("p.one", { id: "k", label: "K", shortcut: "Ctrl+Shift+K", run() {} }),
+    "application",
+  ),
+);
+check(
+  "a browser-reserved shortcut is refused",
+  throwsWith(
+    () => registry.addCommand("p.one", { id: "save", label: "Save", shortcut: "Ctrl+S", run() {} }),
+    "browser",
+  ),
+);
+const bound = registry.addCommand("p.one", {
+  id: "j",
+  label: "J",
+  shortcut: "Ctrl+Alt+J",
+  run() {},
+});
+check("a free shortcut is accepted", registry.findCommand("p.one/j")?.shortcut === "Ctrl+Alt+J");
+registry.activate("p.two");
+check(
+  "a chord already taken by another plugin is refused",
+  throwsWith(
+    () => registry.addCommand("p.two", { id: "j", label: "J", shortcut: "Ctrl+Alt+J", run() {} }),
+    "another plugin",
+  ),
+);
+bound.dispose();
+check("disposing a command removes it", registry.findCommand("p.one/j") === null);
+
+/* extensions */
+
+const fakeExtension = { fake: true };
+const extensionHandle = registry.addExtension("p.one", fakeExtension);
+check(
+  "an extension is published to the app",
+  publishedExtensions.length === 1 && extensionPublishes === 1,
+);
+extensionHandle.dispose();
+check("disposing an extension retracts it", publishedExtensions.length === 0);
+
+/* events */
+
+const received = [];
+const off = registry.subscribe("p.one", "document:opened", (payload) => received.push(payload.type));
+registry.emit("document:opened", { language: null });
+check("an event reaches its subscriber", received.length === 1 && received[0] === "document:opened");
+off.dispose();
+registry.emit("document:opened", { language: null });
+check("an unsubscribed handler stops receiving", received.length === 1);
+
+const seenBySecond = [];
+registry.subscribe("p.one", "document:changed", () => {
+  throw new Error("handler boom");
+});
+registry.subscribe("p.two", "document:changed", (payload) => seenBySecond.push(payload.type));
+registry.emit("document:changed", {});
+check("a throwing handler does not stop the next plugin", seenBySecond.length === 1);
+check(
+  "a throwing handler is recorded against its plugin",
+  (registry.lastError("p.one") ?? "").includes("handler boom"),
+);
+
+/* panels */
+
+let shown = 0;
+let hidden = 0;
+const panel = registry.addPanel("p.one", {
+  id: "counts",
+  title: "Counts",
+  render() {},
+  onShow() {
+    shown += 1;
+  },
+  onHide() {
+    hidden += 1;
+  },
+});
+check("a panel starts hidden", panel.visible === false);
+check("registering a panel announces it", panelChanges === 1);
+panel.show();
+check("show toggles and notifies", panel.visible === true && shown === 1);
+panel.show();
+check("show is idempotent", shown === 1);
+panel.hide();
+check("hide toggles and notifies", panel.visible === false && hidden === 1);
+panel.dispose();
+check("disposing a panel removes it", registry.panels().length === 0);
+
+/* teardown */
+
+let cleaned = false;
+registry.setCleanup("p.one", () => {
+  cleaned = true;
+});
+registry.disposePlugin("p.one");
+check("cleanup runs when a plugin is disposed", cleaned === true);
+check("a disposed plugin is not active", registry.isActive("p.one") === false);
+check(
+  "registration after disposal is refused",
+  throwsWith(() => registry.addCommand("p.one", { id: "late", label: "Late", run() {} }), "not active"),
+);
+check("the other plugin is untouched", registry.isActive("p.two") === true);
+registry.clear();
+check("clear removes every plugin", registry.count() === 0 && registry.commands().length === 0);
 
 /* ------------------------------------------------------------------ summary */
 
